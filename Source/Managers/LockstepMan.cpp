@@ -1,4 +1,5 @@
 #include "LockstepMan.h"
+#include "MathConsistency.h"
 
 #include "ActivityMan.h"
 #include "AudioMan.h"
@@ -24,20 +25,27 @@
 #include "RakPeerInterface.h"
 #include "RakNetTypes.h"
 
+#include <bit>
 #include <cinttypes>
+#include <cmath>
 #include <cstring>
 #include <sstream>
 
 using namespace RTE;
 
 namespace {
-	constexpr uint32_t c_ProtocolVersion = 1; //!< Bump whenever the message format changes.
+	constexpr uint32_t c_ProtocolVersion = 2; //!< Bump whenever the message format changes.
 	constexpr unsigned short c_DefaultPort = 7777; //!< Default UDP port.
 	constexpr int c_MaxClients = Players::MaxPlayerCount - 1; //!< At most one player per peer.
 	constexpr int c_InputTimeoutMS = 3000; //!< How long the host waits for a player's late input before repeating their previous input.
 	constexpr int c_WaitingOverlayDelayMS = 250; //!< How long to wait for input before showing "waiting for players".
 	constexpr int c_LeaveConfirmMS = 3000; //!< How long a first Esc press stays armed.
 	constexpr int c_ReconnectIntervalMS = 2000; //!< How often a client retries connecting to a host that isn't up yet.
+	constexpr int c_LagIdleMS = 10000; //!< After lagging this long, a player's held input is no longer repeated, so their actor stops instead of e.g. firing forever.
+	constexpr long long c_MaxInputLead = 600; //!< Input or checksums for sim updates further ahead than this are ignored (a buggy or malicious peer could otherwise grow the queues without bound).
+	constexpr int c_StalledEscapeDelayMS = 3000; //!< How long the sim must have been stalled before Esc is read outside the sim update.
+
+	static_assert(InputElements::INPUT_COUNT <= 64, "VirtualInputFrame keeps input elements in 64-bit masks.");
 	constexpr int c_MinAutoInputDelay = 3; //!< Smallest input delay (in sim updates) the host picks automatically.
 	constexpr int c_MaxAutoInputDelay = 20; //!< Largest input delay (in sim updates) the host picks automatically.
 
@@ -130,6 +138,39 @@ namespace {
 		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
 	}
 
+	/// Makes a frame received from the network safe to use: no NaNs or infinities, and values in range. Done by the host before bundling, so every peer gets the same values.
+	void SanitizeFrame(VirtualInputFrame& frame) {
+		auto clean = [](float& value, float limit) {
+			value = std::isfinite(value) ? std::clamp(value, -limit, limit) : 0.0F;
+		};
+		for (int axis = 0; axis < 2; ++axis) {
+			clean(frame.AnalogMove[axis], 1.0F);
+			clean(frame.AnalogAim[axis], 1.0F);
+			clean(frame.MouseMovement[axis], 10000.0F);
+		}
+		clean(frame.MousePosition[0], 100000.0F);
+		clean(frame.MousePosition[1], 100000.0F);
+		frame.MousePosition[0] = std::clamp(frame.MousePosition[0], 0.0F, static_cast<float>(g_WindowMan.GetResX() - 1));
+		frame.MousePosition[1] = std::clamp(frame.MousePosition[1], 0.0F, static_cast<float>(g_WindowMan.GetResY() - 1));
+	}
+
+	/// Folds a later frame into an earlier one queued for the same sim update, keeping the later held state and movement but every press and release.
+	void MergeFrameInto(VirtualInputFrame& queued, const VirtualInputFrame& later) {
+		const uint64_t pressed = queued.ElementPressed | later.ElementPressed;
+		const uint64_t released = queued.ElementReleased | later.ElementReleased;
+		const uint8_t mousePressed = queued.MousePressed | later.MousePressed;
+		const uint8_t mouseReleased = queued.MouseReleased | later.MouseReleased;
+		const float movementX = queued.MouseMovement[0] + later.MouseMovement[0];
+		const float movementY = queued.MouseMovement[1] + later.MouseMovement[1];
+		queued = later;
+		queued.ElementPressed = pressed;
+		queued.ElementReleased = released;
+		queued.MousePressed = mousePressed;
+		queued.MouseReleased = mouseReleased;
+		queued.MouseMovement[0] = movementX;
+		queued.MouseMovement[1] = movementY;
+	}
+
 	/// An input frame that keeps held inputs from the previous one but has no new presses, releases or movement. Used when a player's input is late.
 	VirtualInputFrame RepeatFrame(const VirtualInputFrame& previous) {
 		VirtualInputFrame frame = previous;
@@ -146,6 +187,7 @@ namespace {
 LockstepMan::LockstepMan() {
 	m_PlayerOwnerPeer.fill(-2);
 	m_PlayerDevices.fill(InputDevice::DEVICE_KEYB_ONLY);
+	m_PlayerDigitalAimSpeeds.fill(1.0F);
 }
 
 LockstepMan::~LockstepMan() {
@@ -336,6 +378,14 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 	if (m_Role == Role::Host) {
 		switch (packetId) {
 			case ID_NEW_INCOMING_CONNECTION: {
+				// A client reconnecting keeps its GUID. Forget it on the old, disconnected entry (which stays, as players' owner indices point into the
+				// list) so messages go to the new one.
+				for (Peer& oldPeer: m_Peers) {
+					if (oldPeer.Guid == guid) {
+						oldPeer.Guid = 0;
+						oldPeer.Connected = false;
+					}
+				}
 				Peer peer;
 				peer.Guid = guid;
 				peer.Address = packet->systemAddress.ToString(true);
@@ -374,6 +424,7 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 			hello.Write(static_cast<uint8_t>(g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDevice()));
 			hello.Write(static_cast<uint16_t>(g_WindowMan.GetResX()));
 			hello.Write(static_cast<uint16_t>(g_WindowMan.GetResY()));
+			hello.Write(g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDigitalAimSpeed());
 			Send(hello.Data(), m_HostGuid);
 			m_HelloSent = true;
 			return;
@@ -411,11 +462,13 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			uint8_t device = 0;
 			uint16_t resX = 0;
 			uint16_t resY = 0;
+			float digitalAimSpeed = 1.0F;
 			reader.Read(protocol);
 			reader.ReadString(compatibility);
 			reader.Read(device);
 			reader.Read(resX);
 			reader.Read(resY);
+			reader.Read(digitalAimSpeed);
 
 			std::string rejectReason;
 			if (!reader.Ok() || protocol != c_ProtocolVersion) {
@@ -436,6 +489,7 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			}
 			peer.Accepted = true;
 			peer.Device = static_cast<InputDevice>(std::clamp<int>(device, InputDevice::DEVICE_KEYB_ONLY, InputDevice::DEVICE_GAMEPAD_4));
+			peer.DigitalAimSpeed = std::isfinite(digitalAimSpeed) ? std::clamp(digitalAimSpeed, 0.01F, 100.0F) : 1.0F;
 			g_ConsoleMan.PrintString("CO-OP: " + peer.Address + " joined.");
 			BroadcastLobbyStatus();
 			return;
@@ -447,15 +501,23 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			reader.Read(matchId);
 			reader.Read(simUpdate);
 			reader.Read(frame);
-			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || peer.Player == Players::NoPlayer) {
+			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || peer.Player == Players::NoPlayer || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
 				return;
 			}
+			SanitizeFrame(frame);
 			m_PlayerHasSentInput[peer.Player] = true;
 			if (simUpdate >= m_NextBundleUpdate) {
 				m_PendingPlayerInputs[peer.Player][simUpdate] = frame;
 				if (m_PlayerLagging[peer.Player]) {
 					m_PlayerLagging[peer.Player] = false;
 					g_ConsoleMan.PrintString("CO-OP: Player " + std::to_string(peer.Player + 1) + " caught up.");
+				}
+			} else if (m_PlayerLagging[peer.Player]) {
+				// Too late for its own sim update, which was bundled without it. Use it for the next bundle instead, so a player who fell behind
+				// (and can only catch up by simulating faster than real time) still gets to play meanwhile, just with more delay.
+				auto [itr, inserted] = m_PendingPlayerInputs[peer.Player].try_emplace(m_NextBundleUpdate, frame);
+				if (!inserted) {
+					MergeFrameInto(itr->second, frame);
 				}
 			}
 			HostBuildBundles();
@@ -474,14 +536,25 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 		case MsgChecksum: {
 			uint32_t matchId = 0;
 			long long simUpdate = 0;
-			std::array<uint64_t, 7> hashes{};
+			std::array<uint64_t, 8> hashes{};
 			reader.Read(matchId);
 			reader.Read(simUpdate);
 			reader.Read(hashes);
-			if (!reader.Ok() || matchId != m_MatchId) {
+			if (!reader.Ok() || matchId != m_MatchId || peer.Player == Players::NoPlayer || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
 				return;
 			}
 			m_ClientChecksums[simUpdate].emplace_back(peer.Player, hashes);
+			return;
+		}
+		case MsgLeave: {
+			uint32_t matchId = 0;
+			if (reader.Read(matchId) && m_MatchRunning && matchId == m_MatchId && peer.Player != Players::NoPlayer) {
+				g_ConsoleMan.PrintString("CO-OP: Player " + std::to_string(peer.Player + 1) + " left the match and will stand idle.");
+				m_PlayerOwnerPeer[peer.Player] = -2;
+				m_PendingPlayerInputs[peer.Player].clear();
+				peer.Player = Players::NoPlayer;
+				HostBuildBundles();
+			}
 			return;
 		}
 		default:
@@ -531,6 +604,10 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			if (!activity) {
 				m_StatusMessage = "Could not create the host's activity. Are the same mods installed?";
 				g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_StatusMessage);
+				// Otherwise the host would wait for this player to finish loading forever.
+				MessageWriter leave(MsgLeave);
+				leave.Write(m_MatchId);
+				Send(leave.Data(), m_HostGuid);
 				return;
 			}
 			for (long long simUpdate = 0; simUpdate < m_InputDelay; ++simUpdate) {
@@ -561,11 +638,13 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			return;
 		}
 		case MsgDesync: {
+			uint32_t matchId = 0;
 			long long simUpdate = 0;
 			std::string description;
+			reader.Read(matchId);
 			reader.Read(simUpdate);
 			reader.ReadString(description);
-			if (reader.Ok() && m_MatchRunning) {
+			if (reader.Ok() && m_MatchRunning && matchId == m_MatchId) {
 				ReportDesync(simUpdate, description);
 			}
 			return;
@@ -579,15 +658,20 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			}
 			return;
 		}
-		case MsgEndMatch:
+		case MsgEndMatch: {
+			uint32_t matchId = 0;
+			if (!reader.Read(matchId) || matchId != m_MatchId) {
+				return;
+			}
 			if (m_MatchRunning) {
-				g_ConsoleMan.PrintString("CO-OP: The host left the match.");
+				g_ConsoleMan.PrintString("CO-OP: The host ended the match.");
 				g_ActivityMan.EndActivity();
 				g_ActivityMan.SetInActivity(false);
 				EndMatch();
 			}
-			m_StatusMessage = "The host left the match, waiting for the host to start an activity...";
+			m_StatusMessage = "The host ended the match, waiting for the host to start an activity...";
 			return;
+		}
 		default:
 			return;
 	}
@@ -600,7 +684,8 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 std::string LockstepMan::GetCompatibilityString() const {
 	// Everything that has to be identical for two machines to simulate identically, apart from the per-match settings the host sends.
 	std::ostringstream stream;
-	stream << c_VersionString << "|luaStates=" << g_LuaMan.GetThreadedScriptStates().size() << "|audio=" << g_AudioMan.IsAudioEnabled() << "|modules=";
+	stream << c_VersionString << "|luaStates=" << g_LuaMan.GetThreadedScriptStates().size() << "|audio=" << g_AudioMan.IsAudioEnabled();
+	stream << "|math=" << std::hex << MathConsistency::GetFingerprint() << std::dec << "|modules=";
 	for (int module = 0; module < g_PresetMan.GetTotalModuleCount(); ++module) {
 		if (const DataModule* dataModule = g_PresetMan.GetDataModule(module)) {
 			stream << dataModule->GetFileName() << ":" << dataModule->GetVersionNumber() << ";";
@@ -633,6 +718,8 @@ std::string LockstepMan::SerializeMatchConfig(const GameActivity* activity) cons
 		config << "playerHuman" << player << "=" << activity->PlayerHuman(player) << "\n";
 		config << "playerTeam" << player << "=" << activity->GetTeamOfPlayer(player) << "\n";
 		config << "playerDevice" << player << "=" << static_cast<int>(m_PlayerDevices[player]) << "\n";
+		// Exact bits, so every peer gets the same float whatever the locale.
+		config << "playerAimSpeedBits" << player << "=" << std::bit_cast<uint32_t>(m_PlayerDigitalAimSpeeds[player]) << "\n";
 	}
 	config << "inputDelay=" << m_InputDelay << "\n";
 
@@ -676,6 +763,7 @@ GameActivity* LockstepMan::BuildActivityFromConfig(const std::string& configText
 	const Entity* activityPreset = g_PresetMan.GetEntityPreset(ToString(config, "activityClass"), ToString(config, "activityPreset"));
 	GameActivity* activity = activityPreset ? dynamic_cast<GameActivity*>(activityPreset->Clone()) : nullptr;
 	if (!activity) {
+		RestoreLocalSettings();
 		return nullptr;
 	}
 
@@ -689,6 +777,7 @@ GameActivity* LockstepMan::BuildActivityFromConfig(const std::string& configText
 			g_SceneMan.SetSceneToLoad(scene, ToInt(config, "placeObjects", 1) != 0, ToInt(config, "placeUnits", 1) != 0);
 		} else {
 			delete activity;
+			RestoreLocalSettings();
 			return nullptr;
 		}
 	}
@@ -698,6 +787,10 @@ GameActivity* LockstepMan::BuildActivityFromConfig(const std::string& configText
 	m_MatchPlayers.fill(false);
 	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
 		m_PlayerDevices[player] = static_cast<InputDevice>(ToInt(config, "playerDevice" + std::to_string(player), InputDevice::DEVICE_KEYB_ONLY));
+		m_PlayerDigitalAimSpeeds[player] = 1.0F;
+		if (std::string bits = ToString(config, "playerAimSpeedBits" + std::to_string(player)); !bits.empty()) {
+			m_PlayerDigitalAimSpeeds[player] = std::bit_cast<float>(static_cast<uint32_t>(std::strtoul(bits.c_str(), nullptr, 10)));
+		}
 		if (ToInt(config, "playerActive" + std::to_string(player)) != 0) {
 			bool human = ToInt(config, "playerHuman" + std::to_string(player)) != 0;
 			activity->AddPlayer(player, human, ToInt(config, "playerTeam" + std::to_string(player)), 0);
@@ -842,6 +935,10 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 		if (chance(5)) {
 			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_NEXT;
 		}
+		if (chance(3)) {
+			// Raw keys reach scripts too (e.g. Space in Wave Defense).
+			m_BotHeld.KeysHeld[SDL_SCANCODE_SPACE / 64] |= 1ULL << (SDL_SCANCODE_SPACE % 64);
+		}
 		m_BotHeld.MouseMovement[0] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
 		m_BotHeld.MouseMovement[1] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
 		m_BotHoldUpdates = 10 + static_cast<int>(m_BotRNG() % 80);
@@ -891,6 +988,7 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 		// The host plays the first human player of the Activity it configured. Each connected client gets a free player slot on the host's team.
 		m_PlayerOwnerPeer.fill(-2);
 		m_PlayerDevices.fill(InputDevice::DEVICE_KEYB_ONLY);
+		m_PlayerDigitalAimSpeeds.fill(1.0F);
 		int hostTeam = Activity::Teams::TeamOne;
 		for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
 			if (activity->PlayerActive(player) && activity->PlayerHuman(player)) {
@@ -898,6 +996,7 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 				hostTeam = activity->GetTeamOfPlayer(player);
 				m_PlayerOwnerPeer[player] = -1;
 				m_PlayerDevices[player] = g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDevice();
+				m_PlayerDigitalAimSpeeds[player] = g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDigitalAimSpeed();
 				break;
 			}
 		}
@@ -913,6 +1012,7 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 					peer.Player = player;
 					m_PlayerOwnerPeer[player] = static_cast<int>(peerIndex);
 					m_PlayerDevices[player] = peer.Device;
+					m_PlayerDigitalAimSpeeds[player] = peer.DigitalAimSpeed;
 					break;
 				}
 			}
@@ -975,12 +1075,10 @@ void LockstepMan::BeginMatch() {
 		return;
 	}
 	g_TimerMan.SetDeterministicMode(true);
-	std::array<bool, Players::MaxPlayerCount> virtualPlayers = m_MatchPlayers;
 	if (m_LocalPlayer >= Players::PlayerOne && m_LocalPlayer < Players::MaxPlayerCount) {
-		virtualPlayers[m_LocalPlayer] = true;
+		m_MatchPlayers[m_LocalPlayer] = true;
 	}
-	g_UInputMan.BeginVirtualInput(m_LocalPlayer, virtualPlayers, m_PlayerDevices);
-	m_MatchPlayers = virtualPlayers;
+	g_UInputMan.BeginVirtualInput(m_LocalPlayer, m_PlayerDevices, m_PlayerDigitalAimSpeeds);
 
 	m_MatchRunning = true;
 	m_NextSimUpdate = 0;
@@ -1002,6 +1100,12 @@ void LockstepMan::EndMatch() {
 		return;
 	}
 	m_MatchRunning = false;
+	if (m_Role == Role::Host) {
+		// However the host's match ended, the clients' must end too. They'd otherwise wait for bundles forever.
+		MessageWriter endMatch(MsgEndMatch);
+		endMatch.Write(m_MatchId);
+		Broadcast(endMatch.Data());
+	}
 	g_TimerMan.SetDeterministicMode(false);
 	g_UInputMan.EndVirtualInput();
 	RestoreLocalSettings();
@@ -1029,8 +1133,10 @@ void LockstepMan::RequestLeave() {
 		m_LeaveRequestTime = std::chrono::steady_clock::now();
 		return;
 	}
-	if (m_Role == Role::Host) {
-		Broadcast(MessageWriter(MsgEndMatch).Data());
+	if (m_Role == Role::Client) {
+		MessageWriter leave(MsgLeave);
+		leave.Write(m_MatchId);
+		Send(leave.Data(), m_HostGuid);
 	}
 	g_ActivityMan.EndActivity();
 	g_ActivityMan.SetInActivity(false);
@@ -1099,14 +1205,15 @@ void LockstepMan::Update() {
 					++m_ChecksumsCompared;
 					continue;
 				}
-				static const char* componentNames[7] = {"combined", "RNG", "Lua RNG", "actors", "items", "particles", "terrain"};
+				static const char* componentNames[8] = {"combined", "RNG", "Lua RNG", "actors", "items", "particles", "terrain", "activity"};
 				std::string description = "player " + std::to_string(player + 1) + " differs in";
-				for (int component = 1; component < 7; ++component) {
+				for (int component = 1; component < 8; ++component) {
 					if (hashes[component] != own->second[component]) {
 						description += std::string(" ") + componentNames[component];
 					}
 				}
 				MessageWriter desync(MsgDesync);
+				desync.Write(m_MatchId);
 				desync.Write(itr->first);
 				desync.WriteString(description);
 				Broadcast(desync.Data());
@@ -1117,6 +1224,19 @@ void LockstepMan::Update() {
 		while (m_HostChecksums.size() > 64) {
 			m_HostChecksums.erase(m_HostChecksums.begin());
 		}
+	}
+
+	if (m_MatchRunning && m_Waiting && ElapsedMS(m_WaitingSince) > c_StalledEscapeDelayMS) {
+		// While the sim is stalled waiting for other players, input isn't updated (that happens per sim update), so look at the keyboard directly to
+		// let the player leave.
+		const bool* keyStates = SDL_GetKeyboardState(nullptr);
+		const bool escapeHeld = keyStates && keyStates[SDL_SCANCODE_ESCAPE];
+		if (escapeHeld && !m_StalledEscapeHeld) {
+			RequestLeave();
+		}
+		m_StalledEscapeHeld = escapeHeld;
+	} else {
+		m_StalledEscapeHeld = false;
 	}
 
 	if (m_MatchRunning && !g_ActivityMan.IsInActivity() && !g_ActivityMan.ActivitySetToRestart()) {
@@ -1172,9 +1292,11 @@ void LockstepMan::HostBuildBundles() {
 			} else {
 				const int owner = m_PlayerOwnerPeer[player];
 				const bool ownerGone = owner == -2 || (owner >= 0 && (owner >= static_cast<int>(m_Peers.size()) || !m_Peers[owner].Connected));
-				frames[player] = ownerGone ? VirtualInputFrame() : RepeatFrame(m_LastPlayerInputs[player]);
+				const bool laggedTooLong = m_PlayerLagging[player] && ElapsedMS(m_PlayerLaggingSince[player]) > c_LagIdleMS;
+				frames[player] = (ownerGone || laggedTooLong) ? VirtualInputFrame() : RepeatFrame(m_LastPlayerInputs[player]);
 				if (!ownerGone && player != m_LocalPlayer && !m_PlayerLagging[player]) {
 					m_PlayerLagging[player] = true;
+					m_PlayerLaggingSince[player] = std::chrono::steady_clock::now();
 					g_ConsoleMan.PrintString("CO-OP: Input from player " + std::to_string(player + 1) + " is late, repeating their previous input until they catch up.");
 				}
 			}
@@ -1264,7 +1386,7 @@ void LockstepMan::EndSimUpdate() {
 	const long long simUpdate = m_NextSimUpdate;
 	if ((simUpdate + 1) % c_ChecksumInterval == 0) {
 		DeterminismHarness::SimStateHashes hashes = DeterminismHarness::HashSimState((simUpdate + 1) % c_TerrainChecksumInterval == 0);
-		std::array<uint64_t, 7> hashArray = {hashes.Combined, hashes.RNG, hashes.LuaRNG, hashes.Actors, hashes.Items, hashes.Particles, hashes.Terrain};
+		std::array<uint64_t, 8> hashArray = {hashes.Combined, hashes.RNG, hashes.LuaRNG, hashes.Actors, hashes.Items, hashes.Particles, hashes.Terrain, hashes.Activity};
 		if (m_Role == Role::Host) {
 			m_HostChecksums[simUpdate] = hashArray;
 		} else {
@@ -1303,6 +1425,10 @@ void LockstepMan::DrawOverlay(BITMAP* targetBitmap) {
 	if (m_MatchRunning && m_Waiting && ElapsedMS(m_WaitingSince) > c_WaitingOverlayDelayMS) {
 		largeFont->DrawAligned(&bitmap, centerX, lineY, "Waiting for other players...", GUIFont::Centre);
 		lineY += 16;
+		if (ElapsedMS(m_WaitingSince) > c_StalledEscapeDelayMS) {
+			smallFont->DrawAligned(&bitmap, centerX, lineY, "Press Esc twice to leave", GUIFont::Centre);
+			lineY += 12;
+		}
 	}
 	if (m_Desynced) {
 		largeFont->DrawAligned(&bitmap, centerX, lineY, m_DesyncMessage, GUIFont::Centre);

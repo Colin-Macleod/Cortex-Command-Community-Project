@@ -43,6 +43,7 @@ namespace RTE {
 		uint8_t MousePressed = 0; //!< Bit per MouseButtons value: pressed this update.
 		uint8_t MouseReleased = 0; //!< Bit per MouseButtons value: released this update.
 		int8_t MouseWheel = 0; //!< Mouse wheel movement this update.
+		uint64_t KeysHeld[4] = {0, 0, 0, 0}; //!< Bit per SDL scancode below 256: held on the sending machine's keyboard this update. Scripts and some menus read raw keys.
 	};
 
 	/// The singleton manager responsible for handling user input.
@@ -188,39 +189,44 @@ namespace RTE {
 
 		/// Gets the state of the Left Ctrl key.
 		/// @return The state of the Left Ctrl key.
-		bool FlagLCtrlState() const { return (SDL_GetModState() & SDL_KMOD_LCTRL) > 0; }
+		bool FlagLCtrlState() const;
 
 		/// Gets the state of the Right Ctrl key.
 		/// @return The state of the Right Ctrl key.
-		bool FlagRCtrlState() const { return (SDL_GetModState() & SDL_KMOD_RCTRL) > 0; }
+		bool FlagRCtrlState() const;
 
 		/// Gets the state of either Ctrl key.
 		/// @return The state of either Ctrl key.
-		bool FlagCtrlState() const { return (SDL_GetModState() & SDL_KMOD_CTRL) > 0; }
+		bool FlagCtrlState() const;
 
 		/// Gets the state of the Left Alt key.
 		/// @return The state of the Alt key.
-		bool FlagLAltState() const { return (SDL_GetModState() & SDL_KMOD_LALT) > 0; }
+		bool FlagLAltState() const;
 
 		/// Gets the state of the Right Alt key.
 		/// @return The state of the Right Alt key.
-		bool FlagRAltState() const { return (SDL_GetModState() & (SDL_KMOD_RALT | SDL_KMOD_MODE)) > 0; }
+		bool FlagRAltState() const;
 
 		/// Gets the state of either Alt key.
 		/// @return The state of either Alt key.
-		bool FlagAltState() const { return (SDL_GetModState() & SDL_KMOD_ALT | SDL_KMOD_MODE) > 0; }
+		bool FlagAltState() const;
 
 		/// Gets the state of the Left Shift key.
 		/// @return The state of the Left Shift key.
-		bool FlagLShiftState() const { return (SDL_GetModState() & SDL_KMOD_LSHIFT) > 0; }
+		bool FlagLShiftState() const;
 
 		/// Gets the state of the Right Shift key.
 		/// @return The state of the Right Shift key.
-		bool FlagRShiftState() const { return (SDL_GetModState() & SDL_KMOD_RSHIFT) > 0; }
+		bool FlagRShiftState() const;
 
 		/// Gets the state of either Shift key.
 		/// @return The state of either Shift key.
-		bool FlagShiftState() const { return (SDL_GetModState() & SDL_KMOD_SHIFT) > 0; }
+		bool FlagShiftState() const;
+
+		/// Gets whether a specific player is holding either Shift key. Outside a lockstep session this is the same as FlagShiftState.
+		/// @param whichPlayer The player to check.
+		/// @return Whether that player is holding Shift.
+		bool FlagShiftStateOfPlayer(int whichPlayer) const;
 #pragma endregion
 
 #pragma region Keyboard Handling
@@ -362,7 +368,7 @@ namespace RTE {
 
 		/// Gets whether the mouse wheel has been moved past the threshold limit in either direction this frame.
 		/// @return The direction the mouse wheel has been moved which is past that threshold. 0 means not past, negative means moved down, positive means moved up.
-		int MouseWheelMoved() const { return m_MouseStates.at(0).wheelChange; }
+		int MouseWheelMoved() const { return RawInputVirtualized() ? MouseWheelMovedByPlayer(Players::NoPlayer) : m_MouseStates.at(0).wheelChange; }
 
 		/// Gets the relative mouse wheel position for the specified player.
 		/// @param player The player to get mouse wheel position for.
@@ -392,10 +398,11 @@ namespace RTE {
 #pragma region Virtual Input
 		/// Starts virtual input, used for lockstep multiplayer. While active, every per-player input query for a virtual player is answered from the
 		/// VirtualInputFrame most recently applied for that player, rather than from local devices, so all peers see exactly the same input.
+		/// Every player slot is virtual, so slots without a player in the match get no input at all rather than this machine's devices.
 		/// @param localPlayer The player controlled from this machine. Their input is captured from this machine's player one control scheme.
-		/// @param virtualPlayers Which players get their input from virtual input frames.
-		/// @param devices The input device each virtual player is using on their own machine. Determines how their input is interpreted.
-		void BeginVirtualInput(int localPlayer, const std::array<bool, Players::MaxPlayerCount>& virtualPlayers, const std::array<InputDevice, Players::MaxPlayerCount>& devices);
+		/// @param devices The input device of each player, as agreed for the match. Determines how their input is captured and interpreted.
+		/// @param digitalAimSpeeds The digital aim speed setting of each player, as agreed for the match.
+		void BeginVirtualInput(int localPlayer, const std::array<InputDevice, Players::MaxPlayerCount>& devices, const std::array<float, Players::MaxPlayerCount>& digitalAimSpeeds);
 
 		/// Stops virtual input and restores the local control schemes.
 		void EndVirtualInput();
@@ -403,6 +410,21 @@ namespace RTE {
 		/// Gets whether virtual input is active.
 		/// @return Whether virtual input is active.
 		bool IsVirtualInputActive() const { return m_VirtualInputActive; }
+
+		/// Gets whether queries that aren't tied to a virtual player (raw keys, mice and gamepads, "any key" checks) are answered from the players'
+		/// synced input instead of this machine's devices. True during a lockstep session, except while capturing local input or inside a RawInputScope.
+		/// @return Whether raw device queries are virtualized.
+		bool RawInputVirtualized() const { return m_VirtualInputActive && !m_BypassVirtualInput && m_RawInputScopeDepth == 0; }
+
+		/// While alive, raw device queries read this machine's real devices even during a lockstep session. Only for purely local things like the console
+		/// and screenshot shortcuts, never for anything that can affect the simulation.
+		class RawInputScope {
+		public:
+			RawInputScope();
+			~RawInputScope();
+			RawInputScope(const RawInputScope&) = delete;
+			RawInputScope& operator=(const RawInputScope&) = delete;
+		};
 
 		/// Gets whether a player's input currently comes from virtual input frames.
 		/// @param player The player to check.
@@ -585,10 +607,18 @@ namespace RTE {
 			Vector AnalogMouseAim; //!< Analog stick emulation from mouse movement, integrated the same way UpdateMouseInput does for local mice.
 			Vector MousePosition; //!< Absolute mouse position, in game pixels.
 			bool MouseTrapped = false; //!< Whether the simulation has trapped this player's mouse (relative mode).
+			uint64_t PreviousKeysHeld[4] = {0, 0, 0, 0}; //!< KeysHeld of the previous frame, to tell presses and releases.
 		};
+
+		/// Gets the state of a key from a virtual player's synced keyboard state.
+		bool GetVirtualKeyState(int whichPlayer, int scancode, InputState whichState) const;
+
+		/// Gets the state of a key for any virtual player.
+		bool GetAnyVirtualKeyState(int scancode, InputState whichState) const;
 
 		bool m_VirtualInputActive = false; //!< Whether virtual input is active.
 		bool m_BypassVirtualInput = false; //!< Set while capturing local input, so queries read the real devices.
+		int m_RawInputScopeDepth = 0; //!< Number of live RawInputScopes.
 		int m_LocalVirtualPlayer = Players::NoPlayer; //!< The player controlled from this machine while virtual input is active.
 		std::array<bool, Players::MaxPlayerCount> m_IsVirtualPlayer{}; //!< Which players' input is virtual.
 		std::array<VirtualPlayerInput, Players::MaxPlayerCount> m_VirtualInput; //!< Virtual input state of each player.

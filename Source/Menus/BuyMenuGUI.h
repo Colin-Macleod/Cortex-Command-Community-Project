@@ -487,6 +487,7 @@ namespace RTE {
 		std::vector<Loadout> m_Loadouts;
 		// The selected loadout index, -1 if no loadout is selected
 		int m_SelectedLoadoutIndex;
+		bool m_LoadoutsAreSessionDefaults = false; //!< Whether the loadouts were set up for a lockstep session, without the player's own file, so mustn't be saved over it.
 		// Purchase has been made
 		bool m_PurchaseMade;
 		int m_DeliveryWidth; //!< The width of the currently selected delivery craft, which will determine the width of the LZ marker.

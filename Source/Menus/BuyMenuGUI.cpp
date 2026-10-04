@@ -351,6 +351,11 @@ bool BuyMenuGUI::LoadAllLoadoutsFromFile() {
 	else {
 		std::snprintf(loadoutPath, sizeof(loadoutPath), "%sLoadoutsP%d.ini", System::GetUserdataDirectory().c_str(), m_pController->GetPlayer() + 1);
 	}
+	// In a lockstep session each machine would read its own file for every player, so only the shared defaults are used.
+	m_LoadoutsAreSessionDefaults = g_UInputMan.IsVirtualInputActive();
+	if (m_LoadoutsAreSessionDefaults) {
+		loadoutPath[0] = 0;
+	}
 
 	// Open the file
 	Reader loadoutFile(loadoutPath, false, nullptr, true, true);
@@ -426,8 +431,8 @@ bool BuyMenuGUI::LoadAllLoadoutsFromFile() {
 }
 
 bool BuyMenuGUI::SaveAllLoadoutsToFile() {
-	// Nothing to save
-	if (m_Loadouts.empty())
+	// Nothing to save. Nor during a lockstep session, whose loadouts aren't the player's own (see LoadAllLoadoutsFromFile).
+	if (m_Loadouts.empty() || m_LoadoutsAreSessionDefaults)
 		return true;
 
 	char loadoutPath[256];
@@ -1463,7 +1468,7 @@ void BuyMenuGUI::Update() {
 
 		// Fire button removes items from the order list, including equipment on AHumans
 		if (isKeyboardControlled ? (m_pController->IsState(PRESS_FACEBUTTON) && !m_pController->IsState(AIM_SHARP)) : (m_pController->IsState(RELEASE_FACEBUTTON) && !m_IsDragging)) {
-			if (g_UInputMan.FlagShiftState()) {
+			if (g_UInputMan.FlagShiftStateOfPlayer(m_pController->GetPlayer())) {
 				ClearCartList();
 				pItem = nullptr;
 			} else {
@@ -1797,7 +1802,7 @@ void BuyMenuGUI::Update() {
 					if (pItem) {
 						if (anEvent.GetData() & GUIListBox::MOUSE_LEFT) {
 							// TODO in future it would be nice to add the concept of a modifier key to Controller, so we can do this for gamepad inputs as well.
-							if (g_UInputMan.FlagShiftState()) {
+							if (g_UInputMan.FlagShiftStateOfPlayer(m_pController->GetPlayer())) {
 								ClearCartList();
 								pItem = nullptr;
 							}

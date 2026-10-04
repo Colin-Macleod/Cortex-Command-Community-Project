@@ -38,6 +38,7 @@
 #include "SettingsMan.h"
 #include "PresetMan.h"
 #include "UInputMan.h"
+#include "MathConsistency.h"
 #include "PerformanceMan.h"
 #include "FrameMan.h"
 #include "PostProcessMan.h"
@@ -440,6 +441,7 @@ void RunGameLoop() {
 		g_FrameMan.Draw();
 		g_WindowMan.DrawPostProcessBuffer();
 		g_WindowMan.UploadFrame();
+		DeterminismHarness::SleepFrameJitter();
 
 		drawTotalTime = g_TimerMan.GetAbsoluteTime() - drawStartTime;
 		g_PerformanceMan.UpdateMSPF(updateTotalTime, drawTotalTime);
@@ -458,6 +460,9 @@ static const bool RTESetExceptionHandlers = []() {
 /// Implementation of the main function.
 /// </summary>
 int main(int argc, char** argv) {
+	// Before anything else: on Linux this may restart the program.
+	MathConsistency::PrepareForLockstep(argc, argv);
+
 	install_allegro(SYSTEM_NONE, &errno, std::atexit);
 	loadpng_init();
 

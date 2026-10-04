@@ -131,6 +131,10 @@ namespace RTE {
 		/// Get the digital aim speed multiplier for this control scheme.
 		/// @return The digital aim speed set to this scheme.
 		float GetDigitalAimSpeed() const { return m_DigitalAimSpeed; }
+
+		/// Sets the digital aim speed multiplier of this scheme.
+		/// @param newSpeed The new multiplier, where 1 represents the default legacy value.
+		void SetDigitalAimSpeed(float newSpeed) { m_DigitalAimSpeed = newSpeed; }
 #pragma endregion
 
 #pragma region Input Mapping Capture Handling

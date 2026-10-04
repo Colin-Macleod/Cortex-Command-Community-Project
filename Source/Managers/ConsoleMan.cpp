@@ -246,6 +246,8 @@ void ConsoleMan::ShowShortcuts() {
 }
 
 void ConsoleMan::Update() {
+	// The console is purely local, so it reads this machine's keyboard even during a lockstep session.
+	UInputMan::RawInputScope localInput;
 	if (g_UInputMan.FlagRAltState() && g_UInputMan.KeyPressed(SDL_SCANCODE_GRAVE)) {
 		SetReadOnly();
 	}
@@ -365,7 +367,12 @@ void ConsoleMan::FeedString(bool feedEmptyString) {
 			if (!line.empty() && line != "\r") {
 				g_LuaMan.GetMasterScriptState().ClearErrors();
 				m_OutputLog.emplace_back("\n" + line);
-				g_LuaMan.GetMasterScriptState().RunScriptString(line, false);
+				if (g_UInputMan.IsVirtualInputActive()) {
+					// Running script on one machine only would desync a lockstep session.
+					m_OutputLog.emplace_back("\nERROR: Console commands are disabled during co-op matches.");
+				} else {
+					g_LuaMan.GetMasterScriptState().RunScriptString(line, false);
+				}
 
 				if (g_LuaMan.GetMasterScriptState().ErrorExists()) {
 					m_OutputLog.emplace_back("\nERROR: " + g_LuaMan.GetMasterScriptState().GetLastError());

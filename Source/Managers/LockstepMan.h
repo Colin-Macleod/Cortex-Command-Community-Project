@@ -144,7 +144,8 @@ namespace RTE {
 			MsgDesync, //!< Host -> clients: a desync was detected.
 			MsgEndMatch, //!< Host -> clients: the host left the match.
 			MsgPing, //!< Host -> client: round trip time measurement.
-			MsgPong //!< Client -> host: reply to MsgPing.
+			MsgPong, //!< Client -> host: reply to MsgPing.
+			MsgLeave //!< Client -> host: this client left the match, or couldn't start it.
 		};
 
 		/// A connected client, as seen by the host.
@@ -153,6 +154,7 @@ namespace RTE {
 			std::string Address; //!< Network address, for messages.
 			bool Accepted = false; //!< Whether the client passed the version checks.
 			InputDevice Device = InputDevice::DEVICE_KEYB_ONLY; //!< The input device the client plays with.
+			float DigitalAimSpeed = 1.0F; //!< The client's digital aim speed setting.
 			int Player = Players::NoPlayer; //!< The player the client controls in the current match.
 			bool Connected = true; //!< Whether the client is still connected.
 			float RoundTripMS = 0; //!< Smoothed round trip time to this client, as seen by the game loop (includes waiting for the next frame to process messages).
@@ -199,6 +201,7 @@ namespace RTE {
 		int m_LocalPlayer = Players::NoPlayer; //!< The player controlled from this machine.
 		std::array<bool, Players::MaxPlayerCount> m_MatchPlayers{}; //!< Which players' input goes through lockstep (all human players in the match).
 		std::array<InputDevice, Players::MaxPlayerCount> m_PlayerDevices{}; //!< The input device of each match player.
+		std::array<float, Players::MaxPlayerCount> m_PlayerDigitalAimSpeeds{}; //!< The digital aim speed setting of each match player.
 		std::array<int, Players::MaxPlayerCount> m_PlayerOwnerPeer{}; //!< Host: which peer index controls each player (-1 host, -2 nobody).
 		long long m_NextSimUpdate = 0; //!< Index of the next sim update to run in this match.
 		std::map<long long, std::array<VirtualInputFrame, Players::MaxPlayerCount>> m_UpdateInputs; //!< Input bundles for upcoming sim updates.
@@ -210,13 +213,15 @@ namespace RTE {
 		std::array<VirtualInputFrame, Players::MaxPlayerCount> m_LastPlayerInputs; //!< Host: the last input bundled for each player, repeated if a player's input is late.
 		std::array<bool, Players::MaxPlayerCount> m_PlayerHasSentInput{}; //!< Host: whether each player has sent any input this match (i.e. has finished loading).
 		std::array<bool, Players::MaxPlayerCount> m_PlayerLagging{}; //!< Host: whether each player's input timed out and hasn't caught up since. Their missing input is repeated without waiting.
+		std::array<std::chrono::steady_clock::time_point, Players::MaxPlayerCount> m_PlayerLaggingSince{}; //!< Host: when each lagging player started lagging.
+		bool m_StalledEscapeHeld = false; //!< Whether Esc was held on the previous frame while the sim was stalled.
 		long long m_NextBundleUpdate = 0; //!< Host: the next sim update to build a bundle for.
 
 		// Desync detection
 		static constexpr int c_ChecksumInterval = 60; //!< How often (in sim updates) peers compare state hashes.
 		static constexpr int c_TerrainChecksumInterval = 600; //!< How often the (expensive) terrain hash is included.
-		std::map<long long, std::array<uint64_t, 7>> m_HostChecksums; //!< Host: own state hashes by sim update.
-		std::map<long long, std::vector<std::pair<int, std::array<uint64_t, 7>>>> m_ClientChecksums; //!< Host: client state hashes by sim update, waiting for the host's own.
+		std::map<long long, std::array<uint64_t, 8>> m_HostChecksums; //!< Host: own state hashes by sim update.
+		std::map<long long, std::vector<std::pair<int, std::array<uint64_t, 8>>>> m_ClientChecksums; //!< Host: client state hashes by sim update, waiting for the host's own.
 		bool m_Desynced = false; //!< Whether a desync has been detected in this match.
 		std::string m_DesyncMessage; //!< Description of the detected desync.
 		long long m_ChecksumsCompared = 0; //!< Host: how many checksum comparisons succeeded, for the overlay and logs.

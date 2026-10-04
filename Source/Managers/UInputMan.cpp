@@ -294,6 +294,20 @@ bool UInputMan::AnyBackPress() {
 }
 
 bool UInputMan::AnyKeyPress(SDL_KeyboardID keyboardID) const {
+	if (RawInputVirtualized()) {
+		for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+			if (!IsVirtualPlayer(player)) {
+				continue;
+			}
+			const VirtualPlayerInput& virtualInput = m_VirtualInput[player];
+			for (int word = 0; word < 4; ++word) {
+				if (virtualInput.Frame.KeysHeld[word] & ~virtualInput.PreviousKeysHeld[word]) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 	if (auto keyboard = m_KeyboardStates.find(keyboardID); keyboard != m_KeyboardStates.end()) {
 		for (size_t testKey = SDL_SCANCODE_A; testKey < SDL_SCANCODE_COUNT; ++testKey) {
 			if (keyboard->second.keyStates[testKey] && keyboard->second.changedKeyStates[testKey]) {
@@ -400,6 +414,9 @@ Vector UInputMan::GetMouseMovement(int whichPlayer) const {
 			const VirtualInputFrame& frame = m_VirtualInput[whichPlayer].Frame;
 			return Vector(frame.MouseMovement[0], frame.MouseMovement[1]);
 		}
+		return Vector(0, 0);
+	}
+	if (RawInputVirtualized()) {
 		return Vector(0, 0);
 	}
 	if (whichPlayer == Players::NoPlayer || (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB && !m_EnableMultiMouseKeyboard)) {
@@ -511,6 +528,16 @@ void UInputMan::ClearMouseButtons() {
 int UInputMan::MouseWheelMovedByPlayer(int player) const {
 	if (IsVirtualPlayer(player)) {
 		return m_ControlScheme.at(player).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB ? m_VirtualInput[player].Frame.MouseWheel : 0;
+	}
+	if (RawInputVirtualized()) {
+		if (player == Players::NoPlayer) {
+			for (int virtualPlayer = Players::PlayerOne; virtualPlayer < Players::MaxPlayerCount; ++virtualPlayer) {
+				if (int wheel = IsVirtualPlayer(virtualPlayer) ? MouseWheelMovedByPlayer(virtualPlayer) : 0; wheel != 0) {
+					return wheel;
+				}
+			}
+		}
+		return 0;
 	}
 	if (player == Players::NoPlayer || player < Players::PlayerOne || player >= Players::MaxPlayerCount || !m_EnableMultiMouseKeyboard) {
 		return m_MouseStates.at(0).wheelChange;
@@ -676,7 +703,7 @@ int UInputMan::GetJoystickAxisCount(int whichJoy) const {
 }
 
 int UInputMan::WhichJoyButtonHeld(int whichJoy) const {
-	if (whichJoy >= 0 && whichJoy < s_PrevJoystickStates.size()) {
+	if (!RawInputVirtualized() && whichJoy >= 0 && whichJoy < s_PrevJoystickStates.size()) {
 		for (int button = 0; button < s_PrevJoystickStates[whichJoy].m_Buttons.size(); ++button) {
 			if (s_PrevJoystickStates[whichJoy].m_Buttons[button]) {
 				return button;
@@ -688,7 +715,7 @@ int UInputMan::WhichJoyButtonHeld(int whichJoy) const {
 }
 
 int UInputMan::WhichJoyButtonPressed(int whichJoy) const {
-	if (whichJoy >= 0 && whichJoy < s_PrevJoystickStates.size()) {
+	if (!RawInputVirtualized() && whichJoy >= 0 && whichJoy < s_PrevJoystickStates.size()) {
 		for (int button = 0; button < s_PrevJoystickStates[whichJoy].m_Buttons.size(); ++button) {
 			if (s_PrevJoystickStates[whichJoy].m_Buttons[button] && s_ChangedJoystickStates[whichJoy].m_Buttons[button]) {
 				return button;
@@ -699,7 +726,7 @@ int UInputMan::WhichJoyButtonPressed(int whichJoy) const {
 }
 
 float UInputMan::AnalogAxisValue(int whichJoy, int whichAxis) const {
-	if (whichJoy < s_PrevJoystickStates.size() && whichAxis < s_PrevJoystickStates[whichJoy].m_Axis.size()) {
+	if (!RawInputVirtualized() && whichJoy < s_PrevJoystickStates.size() && whichAxis < s_PrevJoystickStates[whichJoy].m_Axis.size()) {
 		if (s_PrevJoystickStates[whichJoy].m_JoystickID != -1) {
 			float analogValue = static_cast<float>(s_PrevJoystickStates[whichJoy].m_Axis[whichAxis]) / 32767.0F;
 			return analogValue;
@@ -709,6 +736,9 @@ float UInputMan::AnalogAxisValue(int whichJoy, int whichAxis) const {
 }
 
 bool UInputMan::AnyJoyInput(bool checkForPresses) const {
+	if (RawInputVirtualized()) {
+		return false;
+	}
 	int gamepadIndex = 0;
 	for (const Gamepad& gamepad: s_PrevJoystickStates) {
 		for (int button = 0; button < gamepad.m_Buttons.size(); ++button) {
@@ -806,12 +836,15 @@ bool UInputMan::GetMenuButtonState(int whichButton, InputState whichState) {
 }
 
 bool UInputMan::GetKeyboardButtonState(SDL_Scancode scancodeToTest, InputState whichState, int whichPlayer, SDL_KeyboardID keyboardID) const {
-	if (m_DisableKeyboard && (scancodeToTest >= SDL_SCANCODE_0 && scancodeToTest < SDL_SCANCODE_ESCAPE)) {
-		return false;
+	if (RawInputVirtualized()) {
+		// Every peer answers from the same synced key states. Without a player, "any key on this machine" becomes "any player's key".
+		if (whichPlayer >= Players::PlayerOne && whichPlayer < Players::MaxPlayerCount) {
+			return m_IsVirtualPlayer[whichPlayer] && GetVirtualKeyState(whichPlayer, scancodeToTest, whichState);
+		}
+		return GetAnyVirtualKeyState(scancodeToTest, whichState);
 	}
 
-	// Individual keys aren't part of virtual input frames, only the input elements they map to.
-	if (IsVirtualPlayer(whichPlayer)) {
+	if (m_DisableKeyboard && (scancodeToTest >= SDL_SCANCODE_0 && scancodeToTest < SDL_SCANCODE_ESCAPE)) {
 		return false;
 	}
 
@@ -883,6 +916,18 @@ bool UInputMan::GetMouseButtonState(int whichPlayer, int whichButton, InputState
 		}
 	}
 
+	if (RawInputVirtualized()) {
+		// "This machine's mouse" becomes "any player's mouse".
+		if (whichPlayer == Players::NoPlayer) {
+			for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+				if (IsVirtualPlayer(player) && GetMouseButtonState(player, whichButton, whichState)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	if (whichPlayer != NoPlayer && playerDevice != InputDevice::DEVICE_MOUSE_KEYB) {
 		return false;
 	}
@@ -913,7 +958,8 @@ bool UInputMan::GetMouseButtonState(int whichPlayer, int whichButton, InputState
 }
 
 bool UInputMan::GetJoystickButtonState(int whichJoy, int whichButton, InputState whichState) const {
-	if (whichJoy < 0 || whichJoy >= s_PrevJoystickStates.size() || whichButton < 0 || whichButton >= s_PrevJoystickStates[whichJoy].m_Buttons.size()) {
+	// Gamepads only reach the simulation through players' input elements and analog values.
+	if (RawInputVirtualized() || whichJoy < 0 || whichJoy >= s_PrevJoystickStates.size() || whichButton < 0 || whichButton >= s_PrevJoystickStates[whichJoy].m_Buttons.size()) {
 		return false;
 	}
 
@@ -935,7 +981,7 @@ bool UInputMan::GetJoystickButtonState(int whichJoy, int whichButton, InputState
 }
 
 bool UInputMan::GetJoystickDirectionState(int whichJoy, int whichAxis, int whichDir, InputState whichState) const {
-	if (whichJoy < 0 || whichJoy >= s_PrevJoystickStates.size() || whichAxis < 0 || whichAxis >= s_PrevJoystickStates[whichJoy].m_DigitalAxis.size()) {
+	if (RawInputVirtualized() || whichJoy < 0 || whichJoy >= s_PrevJoystickStates.size() || whichAxis < 0 || whichAxis >= s_PrevJoystickStates[whichJoy].m_DigitalAxis.size()) {
 		return false;
 	}
 	int axisState = s_PrevJoystickStates[whichJoy].m_DigitalAxis[whichAxis];
@@ -1190,6 +1236,7 @@ void UInputMan::HandleSpecialInput() {
 	}
 
 	if (m_VirtualInputActive) {
+		RawInputScope localShortcuts;
 		// In a lockstep session only purely local shortcuts are allowed. Anything that pauses, restarts, reloads or retimes the simulation on this
 		// machine alone would desync it from the other peers.
 		if (g_ActivityMan.IsInActivity() && KeyPressed(SDLK_ESCAPE)) {
@@ -1489,7 +1536,7 @@ void UInputMan::HandleGamepadHotPlug(SDL_JoystickID joystickID) {
 	}
 }
 
-void UInputMan::BeginVirtualInput(int localPlayer, const std::array<bool, Players::MaxPlayerCount>& virtualPlayers, const std::array<InputDevice, Players::MaxPlayerCount>& devices) {
+void UInputMan::BeginVirtualInput(int localPlayer, const std::array<InputDevice, Players::MaxPlayerCount>& devices, const std::array<float, Players::MaxPlayerCount>& digitalAimSpeeds) {
 	if (m_VirtualInputActive) {
 		EndVirtualInput();
 	}
@@ -1498,19 +1545,17 @@ void UInputMan::BeginVirtualInput(int localPlayer, const std::array<bool, Player
 	m_EnableMultiMouseKeyboard = false;
 
 	m_LocalVirtualPlayer = localPlayer;
-	m_IsVirtualPlayer = virtualPlayers;
+	m_IsVirtualPlayer.fill(true);
 	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
 		m_VirtualInput[player] = VirtualPlayerInput();
-		if (!m_IsVirtualPlayer[player]) {
-			continue;
-		}
 		if (player == localPlayer) {
-			// Whatever player slot this machine ends up controlling, it's driven by this machine's own player one setup.
+			// Whatever player slot this machine ends up controlling, it's driven by this machine's own player one key mappings.
 			m_ControlScheme[player] = m_SavedControlSchemes[Players::PlayerOne];
-		} else {
-			// Remote players' key mappings don't matter (their input arrives already mapped), but how their input is interpreted depends on their device.
-			m_ControlScheme[player].SetDevice(devices[player]);
 		}
+		// Remote players' key mappings don't matter (their input arrives already mapped), but how input is interpreted depends on the device and
+		// the aim speed setting, which every peer must agree on. For the local player too, in case its settings changed after the host recorded them.
+		m_ControlScheme[player].SetDevice(devices[player]);
+		m_ControlScheme[player].SetDigitalAimSpeed(digitalAimSpeeds[player]);
 		m_VirtualInput[player].MousePosition.SetXY(static_cast<float>(g_WindowMan.GetResX() / 2), static_cast<float>(g_WindowMan.GetResY() / 2));
 	}
 	m_VirtualInputActive = true;
@@ -1525,6 +1570,65 @@ void UInputMan::EndVirtualInput() {
 	m_EnableMultiMouseKeyboard = m_SavedEnableMultiMouseKeyboard;
 	m_LocalVirtualPlayer = Players::NoPlayer;
 	m_IsVirtualPlayer.fill(false);
+}
+
+UInputMan::RawInputScope::RawInputScope() {
+	++g_UInputMan.m_RawInputScopeDepth;
+}
+
+UInputMan::RawInputScope::~RawInputScope() {
+	--g_UInputMan.m_RawInputScopeDepth;
+}
+
+bool UInputMan::GetVirtualKeyState(int whichPlayer, int scancode, InputState whichState) const {
+	if (scancode < 0 || scancode >= 256) {
+		return false;
+	}
+	const VirtualPlayerInput& virtualInput = m_VirtualInput[whichPlayer];
+	const uint64_t bit = 1ULL << (scancode % 64);
+	const bool held = virtualInput.Frame.KeysHeld[scancode / 64] & bit;
+	const bool wasHeld = virtualInput.PreviousKeysHeld[scancode / 64] & bit;
+	switch (whichState) {
+		case InputState::Held:
+			return held;
+		case InputState::Pressed:
+			return held && !wasHeld;
+		case InputState::Released:
+			return !held && wasHeld;
+		default:
+			return false;
+	}
+}
+
+bool UInputMan::GetAnyVirtualKeyState(int scancode, InputState whichState) const {
+	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+		if (m_IsVirtualPlayer[player] && GetVirtualKeyState(player, scancode, whichState)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+namespace {
+	bool ModifierHeld(SDL_Keymod modifierMask) { return (SDL_GetModState() & modifierMask) != 0; }
+} // namespace
+
+bool UInputMan::FlagLCtrlState() const { return RawInputVirtualized() ? GetAnyVirtualKeyState(SDL_SCANCODE_LCTRL, InputState::Held) : ModifierHeld(SDL_KMOD_LCTRL); }
+bool UInputMan::FlagRCtrlState() const { return RawInputVirtualized() ? GetAnyVirtualKeyState(SDL_SCANCODE_RCTRL, InputState::Held) : ModifierHeld(SDL_KMOD_RCTRL); }
+bool UInputMan::FlagCtrlState() const { return FlagLCtrlState() || FlagRCtrlState(); }
+bool UInputMan::FlagLAltState() const { return RawInputVirtualized() ? GetAnyVirtualKeyState(SDL_SCANCODE_LALT, InputState::Held) : ModifierHeld(SDL_KMOD_LALT); }
+bool UInputMan::FlagRAltState() const { return RawInputVirtualized() ? GetAnyVirtualKeyState(SDL_SCANCODE_RALT, InputState::Held) : ModifierHeld(SDL_KMOD_RALT | SDL_KMOD_MODE); }
+bool UInputMan::FlagAltState() const { return FlagLAltState() || FlagRAltState(); }
+bool UInputMan::FlagLShiftState() const { return RawInputVirtualized() ? GetAnyVirtualKeyState(SDL_SCANCODE_LSHIFT, InputState::Held) : ModifierHeld(SDL_KMOD_LSHIFT); }
+bool UInputMan::FlagRShiftState() const { return RawInputVirtualized() ? GetAnyVirtualKeyState(SDL_SCANCODE_RSHIFT, InputState::Held) : ModifierHeld(SDL_KMOD_RSHIFT); }
+bool UInputMan::FlagShiftState() const { return FlagLShiftState() || FlagRShiftState(); }
+
+bool UInputMan::FlagShiftStateOfPlayer(int whichPlayer) const {
+	if (RawInputVirtualized()) {
+		return whichPlayer >= Players::PlayerOne && whichPlayer < Players::MaxPlayerCount && m_IsVirtualPlayer[whichPlayer] &&
+		       (GetVirtualKeyState(whichPlayer, SDL_SCANCODE_LSHIFT, InputState::Held) || GetVirtualKeyState(whichPlayer, SDL_SCANCODE_RSHIFT, InputState::Held));
+	}
+	return FlagShiftState();
 }
 
 VirtualInputFrame UInputMan::CaptureLocalInputFrame() {
@@ -1582,6 +1686,14 @@ VirtualInputFrame UInputMan::CaptureLocalInputFrame() {
 		frame.MouseWheel = static_cast<int8_t>(std::clamp(MouseWheelMovedByPlayer(player), -127, 127));
 	}
 
+	if (auto keyboard = m_KeyboardStates.find(0); keyboard != m_KeyboardStates.end()) {
+		for (int scancode = 0; scancode < 256 && scancode < SDL_SCANCODE_COUNT; ++scancode) {
+			if (keyboard->second.keyStates[scancode]) {
+				frame.KeysHeld[scancode / 64] |= 1ULL << (scancode % 64);
+			}
+		}
+	}
+
 	const Vector mousePosition = GetAbsoluteMousePosition(player) / g_WindowMan.GetResMultiplier();
 	frame.MousePosition[0] = std::clamp(mousePosition.m_X, 0.0F, static_cast<float>(g_WindowMan.GetResX() - 1));
 	frame.MousePosition[1] = std::clamp(mousePosition.m_Y, 0.0F, static_cast<float>(g_WindowMan.GetResY() - 1));
@@ -1595,6 +1707,7 @@ void UInputMan::ApplyVirtualInputFrame(int player, const VirtualInputFrame& fram
 		return;
 	}
 	VirtualPlayerInput& virtualInput = m_VirtualInput[player];
+	std::copy(std::begin(virtualInput.Frame.KeysHeld), std::end(virtualInput.Frame.KeysHeld), std::begin(virtualInput.PreviousKeysHeld));
 	virtualInput.Frame = frame;
 	for (int button = MouseButtons::MOUSE_LEFT; button < MouseButtons::MAX_MOUSE_BUTTONS; ++button) {
 		const uint8_t buttonBit = static_cast<uint8_t>(1 << button);
