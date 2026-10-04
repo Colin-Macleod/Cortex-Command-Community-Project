@@ -43,9 +43,12 @@ lj_defines = [
     '-U_FORTIFY_SOURCE',
     '-DLUA_MULTILIB="lib"',
     '-DLUA_ROOT="' + get_option('prefix') + '"',
-    # Fixed PRNG seed and no randomised string hashing, so table iteration order (pairs) over string keys is identical between runs and machines.
+    # Fixed PRNG seed, no randomised string hashing, and string IDs (which tables hash string keys by) taken from the string's content rather than
+    # the order strings were created in, so table iteration order (pairs) over string keys is identical between runs and machines.
     '-DLUAJIT_SECURITY_PRNG=0',
-    '-DLUAJIT_SECURITY_STRHASH=0'
+    '-DLUAJIT_SECURITY_STRHASH=0',
+    '-DLUAJIT_SECURITY_STRID=0',
+    '-DLUAJIT_STRID_FROM_CONTENT'
 ]
 
 if host_machine.system() == 'darwin'

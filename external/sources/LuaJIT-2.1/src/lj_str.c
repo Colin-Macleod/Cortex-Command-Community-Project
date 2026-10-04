@@ -271,6 +271,25 @@ static LJ_NOINLINE GCstr *lj_str_rehash_chain(lua_State *L, StrHash hashc,
 #define STRID_RESEED_INTERVAL	0
 #endif
 
+#ifdef LUAJIT_STRID_FROM_CONTENT
+/* Cortex Command: string IDs (which tables hash string keys by) derived from
+** the string's content alone, instead of from the order strings were interned
+** in. That order differs between processes (it depends on everything the Lua
+** state ever did), so pairs() over string keys would too, breaking lockstep
+** multiplayer. FNV-1a over the whole string.
+*/
+static StrID strid_from_content(const char *str, MSize len)
+{
+  uint32_t h = 2166136261u;
+  MSize i;
+  for (i = 0; i < len; i++) {
+    h ^= (uint8_t)str[i];
+    h *= 16777619u;
+  }
+  return (StrID)h;
+}
+#endif
+
 /* Allocate a new string and add to string interning table. */
 static GCstr *lj_str_alloc(lua_State *L, const char *str, MSize len,
 			   StrHash hash, int hashalg)
@@ -282,7 +301,9 @@ static GCstr *lj_str_alloc(lua_State *L, const char *str, MSize len,
   s->gct = ~LJ_TSTR;
   s->len = len;
   s->hash = hash;
-#ifndef STRID_RESEED_INTERVAL
+#if defined(LUAJIT_STRID_FROM_CONTENT)
+  s->sid = strid_from_content(str, len);
+#elif !defined(STRID_RESEED_INTERVAL)
   s->sid = g->str.id++;
 #elif STRID_RESEED_INTERVAL
   if (!g->str.idreseed--) {
