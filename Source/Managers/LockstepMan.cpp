@@ -475,7 +475,26 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			if (!reader.Ok() || protocol != c_ProtocolVersion) {
 				rejectReason = "Incompatible co-op protocol version.";
 			} else if (compatibility != GetCompatibilityString()) {
-				rejectReason = "Game version, loaded mods or settings don't match the host's.";
+				// Name the first part that differs, so players know what to fix.
+				std::string mismatch = "?";
+				std::istringstream ours(GetCompatibilityString());
+				std::istringstream theirs(compatibility);
+				std::string ourField;
+				std::string theirField;
+				while (true) {
+					const bool haveOurs = static_cast<bool>(std::getline(ours, ourField, '|'));
+					const bool haveTheirs = static_cast<bool>(std::getline(theirs, theirField, '|'));
+					if (!haveOurs && !haveTheirs) {
+						break;
+					}
+					if (ourField != theirField || haveOurs != haveTheirs) {
+						mismatch = haveOurs ? ourField.substr(0, ourField.find('=')) : theirField.substr(0, theirField.find('='));
+						break;
+					}
+				}
+				rejectReason = "Game version, loaded mods or settings don't match the host's (" + mismatch + ").";
+				g_ConsoleMan.PrintString("CO-OP: Host: " + GetCompatibilityString());
+				g_ConsoleMan.PrintString("CO-OP: Client: " + compatibility);
 			} else if (resX != g_WindowMan.GetResX() || resY != g_WindowMan.GetResY()) {
 				rejectReason = "Game resolution must match the host's (" + std::to_string(g_WindowMan.GetResX()) + "x" + std::to_string(g_WindowMan.GetResY()) + ").";
 			}

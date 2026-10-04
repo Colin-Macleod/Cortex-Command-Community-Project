@@ -776,12 +776,13 @@ FMOD_RESULT AudioMan::UpdatePositionalEffectsForSoundChannel(FMOD::Channel* soun
 		result = (result == FMOD_OK) ? soundChannel->setPan(channelSoundContainer->GetCustomPanValue()) : result;
 	}
 
-	float minimumAudibleDistance = m_SoundChannelMinimumAudibleDistances.at(soundChannelIndex);
+	// Looked up with find, not at: the channel may not have an entry (at would throw and crash the game; seen under heavy sound load).
+	auto minimumAudibleDistance = m_SoundChannelMinimumAudibleDistances.find(soundChannelIndex);
 	if (shortestDistance >= soundMaxDistance) {
 		attenuatedVolume = 0.0F;
-	} else if (m_SoundChannelMinimumAudibleDistances.find(soundChannelIndex) == m_SoundChannelMinimumAudibleDistances.end()) {
+	} else if (minimumAudibleDistance == m_SoundChannelMinimumAudibleDistances.end()) {
 		g_ConsoleMan.PrintString("ERROR: An error occurred when checking to see if the sound at channel " + std::to_string(soundChannelIndex) + " was less than its minimum audible distance away from the farthest listener.");
-	} else if (sqrLongestDistance < (minimumAudibleDistance * minimumAudibleDistance)) {
+	} else if (sqrLongestDistance < (minimumAudibleDistance->second * minimumAudibleDistance->second)) {
 		attenuatedVolume = 0.0F;
 	}
 
