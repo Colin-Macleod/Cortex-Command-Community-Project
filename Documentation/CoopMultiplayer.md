@@ -95,7 +95,7 @@ Always on:
 - Per-state RNGs and unique ID ranges.
 - Ordered script registration.
 - Terrain cleaning and fog-of-war reveal processing done in the sim update instead of when drawing.
-- LuaJIT built without randomised string hashing.
+- LuaJIT built without randomised string hashing, and with string IDs (which Lua tables hash string keys by) computed from the string's content instead of the order strings were created in. Otherwise `pairs()` over string keys would depend on everything a Lua state had ever done, which differs between computers.
 - Folder scans (module `.ini` files, Lua's `GetDirectoryList`/`GetFileList`) sorted by name, instead of file system order.
 - Uninitialised fields that could carry leftover memory from a previous object (path nodes, atoms, actors' movement state) are initialised.
 - Shipped scripts that looped over tables keyed by objects (`pairs()` order follows memory addresses, which differ between computers) now use `SortedPairs` from `Base.rte/Utilities.lua`, ordered arrays, or tie-breaks on `UniqueID`.
