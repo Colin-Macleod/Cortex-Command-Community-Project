@@ -38,6 +38,8 @@ namespace {
 	constexpr int c_WaitingOverlayDelayMS = 250; //!< How long to wait for input before showing "waiting for players".
 	constexpr int c_LeaveConfirmMS = 3000; //!< How long a first Esc press stays armed.
 	constexpr int c_ReconnectIntervalMS = 2000; //!< How often a client retries connecting to a host that isn't up yet.
+	constexpr int c_MinAutoInputDelay = 3; //!< Smallest input delay (in sim updates) the host picks automatically.
+	constexpr int c_MaxAutoInputDelay = 20; //!< Largest input delay (in sim updates) the host picks automatically.
 
 	/// Builds a network message: a message type byte followed by plain data.
 	class MessageWriter {
@@ -198,12 +200,19 @@ void LockstepMan::HandleCommandLine(int argCount, char** argValue) {
 			++i;
 		} else if (arg == "-coop-delay" && hasNext) {
 			m_InputDelay = std::clamp(std::atoi(next.c_str()), 1, 60);
+			m_Options.InputDelayFixed = true;
 			++i;
 		} else if (arg == "-coop-bot" && hasNext) {
 			m_Options.BotSeed = std::atoi(next.c_str());
 			++i;
 		} else if (arg == "-coop-inject-desync" && hasNext) {
 			m_Options.DesyncInjectTick = std::atoi(next.c_str());
+			++i;
+		} else if (arg == "-coop-sim-latency" && hasNext) {
+			m_Options.SimulatedLatencyMS = std::max(0, std::atoi(next.c_str()));
+			++i;
+		} else if (arg == "-coop-sim-jitter" && hasNext) {
+			m_Options.SimulatedJitterMS = std::max(0, std::atoi(next.c_str()));
 			++i;
 		}
 	}
@@ -263,9 +272,33 @@ bool LockstepMan::StartJoining(const std::string& address, unsigned short port) 
 #pragma region Networking
 
 void LockstepMan::Send(const std::vector<uint8_t>& message, uint64_t guid) {
+	if (m_Options.SimulatedLatencyMS <= 0 && m_Options.SimulatedJitterMS <= 0) {
+		SendNow(message, guid);
+		return;
+	}
+	// Testing aid: hold the message back. Keep send order, as a reliable ordered stream would deliver it.
+	int delayMS = m_Options.SimulatedLatencyMS + (m_Options.SimulatedJitterMS > 0 ? static_cast<int>(m_NetworkSimulationRNG() % (m_Options.SimulatedJitterMS + 1)) : 0);
+	std::chrono::steady_clock::time_point sendTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMS);
+	if (!m_DelayedMessages.empty() && m_DelayedMessages.back().SendTime > sendTime) {
+		sendTime = m_DelayedMessages.back().SendTime;
+	}
+	m_DelayedMessages.push_back({sendTime, guid, message});
+}
+
+void LockstepMan::SendNow(const std::vector<uint8_t>& message, uint64_t guid) {
 	if (m_Peer) {
 		m_Peer->Send(reinterpret_cast<const char*>(message.data()), static_cast<int>(message.size()), HIGH_PRIORITY, RELIABLE_ORDERED, 0, RakNet::AddressOrGUID(RakNet::RakNetGUID(guid)), false);
 	}
+}
+
+void LockstepMan::FlushDelayedMessages() {
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	size_t sent = 0;
+	while (sent < m_DelayedMessages.size() && m_DelayedMessages[sent].SendTime <= now) {
+		SendNow(m_DelayedMessages[sent].Data, m_DelayedMessages[sent].Guid);
+		++sent;
+	}
+	m_DelayedMessages.erase(m_DelayedMessages.begin(), m_DelayedMessages.begin() + sent);
 }
 
 void LockstepMan::Broadcast(const std::vector<uint8_t>& message) {
@@ -420,8 +453,22 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			m_PlayerHasSentInput[peer.Player] = true;
 			if (simUpdate >= m_NextBundleUpdate) {
 				m_PendingPlayerInputs[peer.Player][simUpdate] = frame;
+				if (m_PlayerLagging[peer.Player]) {
+					m_PlayerLagging[peer.Player] = false;
+					g_ConsoleMan.PrintString("CO-OP: Player " + std::to_string(peer.Player + 1) + " caught up.");
+				}
 			}
 			HostBuildBundles();
+			return;
+		}
+		case MsgPong: {
+			int64_t sentNanoseconds = 0;
+			if (reader.Read(sentNanoseconds)) {
+				const int64_t nowNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+				const float roundTripMS = static_cast<float>(nowNanoseconds - sentNanoseconds) / 1.0e6F;
+				peer.RoundTripMS = peer.RoundTripSamples == 0 ? roundTripMS : peer.RoundTripMS * 0.8F + roundTripMS * 0.2F;
+				++peer.RoundTripSamples;
+			}
 			return;
 		}
 		case MsgChecksum: {
@@ -520,6 +567,15 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			reader.ReadString(description);
 			if (reader.Ok() && m_MatchRunning) {
 				ReportDesync(simUpdate, description);
+			}
+			return;
+		}
+		case MsgPing: {
+			int64_t sentNanoseconds = 0;
+			if (reader.Read(sentNanoseconds)) {
+				MessageWriter pong(MsgPong);
+				pong.Write(sentNanoseconds);
+				Send(pong.Data(), m_HostGuid);
 			}
 			return;
 		}
@@ -862,6 +918,20 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 			}
 		}
 
+		if (!m_Options.InputDelayFixed) {
+			// Input for a sim update has to make the round trip to the host and back before that update runs, so the input delay needs to cover the
+			// slowest player's round trip time, plus some margin for jitter.
+			float slowestRoundTripMS = 0;
+			for (const Peer& peer: m_Peers) {
+				if (peer.Accepted && peer.Connected && peer.Player != Players::NoPlayer) {
+					slowestRoundTripMS = std::max(slowestRoundTripMS, peer.RoundTripMS);
+				}
+			}
+			const float simUpdateMS = g_TimerMan.GetDeltaTimeMS();
+			m_InputDelay = std::clamp(static_cast<int>(std::ceil((slowestRoundTripMS * 1.25F + simUpdateMS) / simUpdateMS)), c_MinAutoInputDelay, c_MaxAutoInputDelay);
+			g_ConsoleMan.PrintString("CO-OP: Slowest round trip " + std::to_string(static_cast<int>(slowestRoundTripMS)) + " ms, using an input delay of " + std::to_string(m_InputDelay) + " sim updates.");
+		}
+
 		m_MatchId = static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 		m_MatchConfig = SerializeMatchConfig(activity);
 		for (const Peer& peer: m_Peers) {
@@ -879,6 +949,7 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 		}
 		m_LastPlayerInputs.fill(VirtualInputFrame());
 		m_PlayerHasSentInput.fill(false);
+		m_PlayerLagging.fill(false);
 		m_NextBundleUpdate = m_InputDelay;
 		m_HostChecksums.clear();
 		m_ClientChecksums.clear();
@@ -974,6 +1045,7 @@ void LockstepMan::Update() {
 	if (!m_Peer) {
 		return;
 	}
+	FlushDelayedMessages();
 	for (RakNet::Packet* packet = m_Peer->Receive(); packet; m_Peer->DeallocatePacket(packet), packet = m_Peer->Receive()) {
 		if (packet->length > 0) {
 			HandlePacket(packet);
@@ -988,12 +1060,23 @@ void LockstepMan::Update() {
 	}
 
 	if (m_Role == Role::Host) {
+		if (ElapsedMS(m_LastPingTime) > 500) {
+			m_LastPingTime = std::chrono::steady_clock::now();
+			MessageWriter ping(MsgPing);
+			ping.Write(static_cast<int64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()));
+			Broadcast(ping.Data());
+		}
+
 		if (!m_AutoStartDone && !m_Options.AutoActivity.empty() && !m_MatchRunning && !g_ActivityMan.ActivitySetToRestart()) {
 			int players = 1;
+			bool roundTripsMeasured = true;
 			for (const Peer& peer: m_Peers) {
-				players += (peer.Accepted && peer.Connected) ? 1 : 0;
+				if (peer.Accepted && peer.Connected) {
+					++players;
+					roundTripsMeasured = roundTripsMeasured && peer.RoundTripSamples >= 3;
+				}
 			}
-			if (players >= m_Options.ExpectedPlayers) {
+			if (players >= m_Options.ExpectedPlayers && roundTripsMeasured) {
 				m_AutoStartDone = true;
 				if (GameActivity* activity = BuildAutoActivity()) {
 					g_ActivityMan.SetStartActivity(activity);
@@ -1063,7 +1146,9 @@ void LockstepMan::HostBuildBundles() {
 				if (!m_PlayerHasSentInput[player]) {
 					return; // Still loading the match. Wait for them however long it takes (a dropped connection ends the wait).
 				}
-				missing = true;
+				if (!m_PlayerLagging[player]) {
+					missing = true;
+				}
 			}
 		}
 
@@ -1088,8 +1173,9 @@ void LockstepMan::HostBuildBundles() {
 				const int owner = m_PlayerOwnerPeer[player];
 				const bool ownerGone = owner == -2 || (owner >= 0 && (owner >= static_cast<int>(m_Peers.size()) || !m_Peers[owner].Connected));
 				frames[player] = ownerGone ? VirtualInputFrame() : RepeatFrame(m_LastPlayerInputs[player]);
-				if (!ownerGone && player != m_LocalPlayer) {
-					g_ConsoleMan.PrintString("CO-OP: Input from player " + std::to_string(player + 1) + " is late, repeating their previous input.");
+				if (!ownerGone && player != m_LocalPlayer && !m_PlayerLagging[player]) {
+					m_PlayerLagging[player] = true;
+					g_ConsoleMan.PrintString("CO-OP: Input from player " + std::to_string(player + 1) + " is late, repeating their previous input until they catch up.");
 				}
 			}
 			m_LastPlayerInputs[player] = frames[player];
@@ -1125,6 +1211,7 @@ bool LockstepMan::CanSimulateNextUpdate() {
 			m_WaitingSince = std::chrono::steady_clock::now();
 		}
 		HostBuildBundles();
+		FlushDelayedMessages();
 		if (m_UpdateInputs.find(m_NextSimUpdate) == m_UpdateInputs.end()) {
 			return false;
 		}
@@ -1203,7 +1290,7 @@ void LockstepMan::DrawOverlay(BITMAP* targetBitmap) {
 
 	std::string topLine;
 	if (m_MatchRunning) {
-		topLine = std::string("CO-OP ") + (m_Role == Role::Host ? "HOST" : "CLIENT") + " | Player " + std::to_string(m_LocalPlayer + 1) + " | Sim update " + std::to_string(m_NextSimUpdate);
+		topLine = std::string("CO-OP ") + (m_Role == Role::Host ? "HOST" : "CLIENT") + " | Player " + std::to_string(m_LocalPlayer + 1) + " | Sim update " + std::to_string(m_NextSimUpdate) + " | Input delay " + std::to_string(m_InputDelay);
 		if (m_Role == Role::Host && m_ChecksumsCompared > 0) {
 			topLine += " | In sync (" + std::to_string(m_ChecksumsCompared) + " checks)";
 		}

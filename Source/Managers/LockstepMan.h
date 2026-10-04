@@ -142,7 +142,9 @@ namespace RTE {
 			MsgTick, //!< Host -> clients: everyone's input for a sim update.
 			MsgChecksum, //!< Client -> host: hash of the client's sim state at a sim update.
 			MsgDesync, //!< Host -> clients: a desync was detected.
-			MsgEndMatch //!< Host -> clients: the host left the match.
+			MsgEndMatch, //!< Host -> clients: the host left the match.
+			MsgPing, //!< Host -> client: round trip time measurement.
+			MsgPong //!< Client -> host: reply to MsgPing.
 		};
 
 		/// A connected client, as seen by the host.
@@ -153,6 +155,8 @@ namespace RTE {
 			InputDevice Device = InputDevice::DEVICE_KEYB_ONLY; //!< The input device the client plays with.
 			int Player = Players::NoPlayer; //!< The player the client controls in the current match.
 			bool Connected = true; //!< Whether the client is still connected.
+			float RoundTripMS = 0; //!< Smoothed round trip time to this client, as seen by the game loop (includes waiting for the next frame to process messages).
+			int RoundTripSamples = 0; //!< How many round trip measurements have been made.
 		};
 
 		/// Configuration from the command line.
@@ -166,6 +170,9 @@ namespace RTE {
 			bool AutoDeployUnits = true; //!< Whether to deploy the scene's units for AutoActivity.
 			int BotSeed = -1; //!< If not negative, the local player is driven by a pseudo-random input bot (for automated testing).
 			int DesyncInjectTick = -1; //!< If not negative, deliberately perturb this machine's simulation at this sim update (for testing desync detection).
+			bool InputDelayFixed = false; //!< Whether the input delay was set on the command line. Otherwise the host picks it from the measured round trip times.
+			int SimulatedLatencyMS = 0; //!< Testing: artificial delay added to every outgoing message.
+			int SimulatedJitterMS = 0; //!< Testing: additional random delay (0 to this) added to every outgoing message. Message order is preserved.
 		};
 
 		Role m_Role = Role::None; //!< What this machine is doing in a session.
@@ -180,6 +187,7 @@ namespace RTE {
 		int m_LobbyPeerCount = 0; //!< Client: number of peers in the session, as last reported by the host.
 		LaunchOptions m_Options; //!< Configuration from the command line.
 		bool m_AutoStartDone = false; //!< Host: whether the automatic Activity start has happened.
+		std::chrono::steady_clock::time_point m_LastPingTime; //!< Host: when round trip measurements were last sent.
 
 		// Match state
 		bool m_MatchRunning = false; //!< Whether a lockstep match is running.
@@ -201,6 +209,7 @@ namespace RTE {
 		std::array<std::map<long long, VirtualInputFrame>, Players::MaxPlayerCount> m_PendingPlayerInputs; //!< Host: inputs received but not yet bundled, per player.
 		std::array<VirtualInputFrame, Players::MaxPlayerCount> m_LastPlayerInputs; //!< Host: the last input bundled for each player, repeated if a player's input is late.
 		std::array<bool, Players::MaxPlayerCount> m_PlayerHasSentInput{}; //!< Host: whether each player has sent any input this match (i.e. has finished loading).
+		std::array<bool, Players::MaxPlayerCount> m_PlayerLagging{}; //!< Host: whether each player's input timed out and hasn't caught up since. Their missing input is repeated without waiting.
 		long long m_NextBundleUpdate = 0; //!< Host: the next sim update to build a bundle for.
 
 		// Desync detection
@@ -220,6 +229,13 @@ namespace RTE {
 		std::map<std::string, std::string> m_SavedSettings; //!< Local values of the settings the host dictates during a match.
 
 		// Testing aids
+		struct DelayedMessage {
+			std::chrono::steady_clock::time_point SendTime; //!< When to actually send the message.
+			uint64_t Guid; //!< Who to send it to.
+			std::vector<uint8_t> Data; //!< The message.
+		};
+		std::vector<DelayedMessage> m_DelayedMessages; //!< Outgoing messages held back to simulate latency, in send order.
+		std::minstd_rand m_NetworkSimulationRNG; //!< Generator for simulated jitter.
 		std::minstd_rand m_BotRNG; //!< Generator for the input bot.
 		VirtualInputFrame m_BotHeld; //!< The bot's currently held input.
 		int m_BotHoldUpdates = 0; //!< How many more sim updates the bot holds its current input.
@@ -227,6 +243,12 @@ namespace RTE {
 #pragma region Networking
 		/// Sends a message to one connection.
 		void Send(const std::vector<uint8_t>& message, uint64_t guid);
+
+		/// Actually hands a message to RakNet.
+		void SendNow(const std::vector<uint8_t>& message, uint64_t guid);
+
+		/// Sends any messages held back for simulated latency whose time has come.
+		void FlushDelayedMessages();
 
 		/// Sends a message to every accepted, connected client.
 		void Broadcast(const std::vector<uint8_t>& message);
