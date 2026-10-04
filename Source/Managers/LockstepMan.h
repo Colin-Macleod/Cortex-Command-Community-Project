@@ -290,6 +290,9 @@ namespace RTE {
 		/// Gets a string describing this build and its data, which must match between peers.
 		std::string GetCompatibilityString() const;
 
+		/// Gets a hash of the order pairs() visits string keys in, in Lua. See the definition.
+		static long long GetLuaStringOrderFingerprint();
+
 		/// Gets the local player's input for a sim update, from devices or from the input bot.
 		VirtualInputFrame CaptureLocalInput();
 

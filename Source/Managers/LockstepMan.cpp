@@ -1,5 +1,6 @@
 #include "LockstepMan.h"
 #include "MathConsistency.h"
+#include "lua.hpp"
 
 #include "ActivityMan.h"
 #include "AudioMan.h"
@@ -681,11 +682,35 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 
 #pragma region Match Helpers
 
+long long LockstepMan::GetLuaStringOrderFingerprint() {
+	// pairs() over string keys is only the same from one process to the next with LuaJIT's string hash randomization off (as our build of it
+	// does). A LuaJIT built otherwise (e.g. a system library picked up by a cross build) gives a different order in every process, so this
+	// also differs and the host refuses the connection instead of desyncing.
+	static const long long fingerprint = []() {
+		LuaStateWrapper& luaState = g_LuaMan.GetMasterScriptState();
+		std::lock_guard<std::recursive_mutex> lock(luaState.GetMutex());
+		lua_State* state = luaState.GetLuaState();
+		const int stackTop = lua_gettop(state);
+		long long result = -1;
+		if (luaL_dostring(state, "local t = {} for i = 1, 64 do t['k' .. i] = i end local h = 0 for _, v in pairs(t) do h = (h * 31 + v) % 2147483647 end return h") == 0) {
+			result = static_cast<long long>(lua_tonumber(state, -1));
+		}
+		lua_settop(state, stackTop);
+		return result;
+	}();
+	return fingerprint;
+}
+
 std::string LockstepMan::GetCompatibilityString() const {
 	// Everything that has to be identical for two machines to simulate identically, apart from the per-match settings the host sends.
 	std::ostringstream stream;
 	stream << c_VersionString << "|luaStates=" << g_LuaMan.GetThreadedScriptStates().size() << "|audio=" << g_AudioMan.IsAudioEnabled();
-	stream << "|math=" << std::hex << MathConsistency::GetFingerprint() << std::dec << "|modules=";
+	stream << "|math=" << std::hex << MathConsistency::GetFingerprint() << std::dec;
+	// These change which scripts load or how: a script path with the wrong case loads on one machine and not the other, and the JIT changes what
+	// scripts can see through the jit library.
+	stream << "|caseSensitivePaths=" << System::FilePathsCaseSensitive() << "|luaJIT=" << !g_SettingsMan.DisableLuaJIT();
+	stream << "|luaStringOrder=" << GetLuaStringOrderFingerprint();
+	stream << "|modules=";
 	for (int module = 0; module < g_PresetMan.GetTotalModuleCount(); ++module) {
 		if (const DataModule* dataModule = g_PresetMan.GetDataModule(module)) {
 			stream << dataModule->GetFileName() << ":" << dataModule->GetVersionNumber() << ";";
@@ -745,6 +770,12 @@ std::string LockstepMan::SerializeMatchConfig(const GameActivity* activity) cons
 		}
 	}
 	config << "set.EnabledGlobalScripts=" << enabledGlobalScripts << "\n";
+	// Which groups the editors' object pickers show, so the same clicks pick the same objects (e.g. in Wave Defense's build phase).
+	std::string visibleAssemblyGroups;
+	for (const std::string& group: g_SettingsMan.GetVisibleAssemblyGroupsList()) {
+		visibleAssemblyGroups += group + ";";
+	}
+	config << "set.VisibleAssemblyGroups=" << visibleAssemblyGroups << "\n";
 	return config.str();
 }
 
@@ -853,6 +884,11 @@ void LockstepMan::ApplySessionSettings(const std::map<std::string, std::string>&
 			}
 		}
 		m_SavedSettings["EnabledGlobalScripts"] = enabledGlobalScripts;
+		std::string visibleAssemblyGroups;
+		for (const std::string& group: g_SettingsMan.GetVisibleAssemblyGroupsList()) {
+			visibleAssemblyGroups += group + ";";
+		}
+		m_SavedSettings["VisibleAssemblyGroups"] = visibleAssemblyGroups;
 	}
 
 	auto intValue = [&values](const std::string& key, int& out) {
@@ -887,6 +923,16 @@ void LockstepMan::ApplySessionSettings(const std::map<std::string, std::string>&
 		while (std::getline(stream, scriptName, ';')) {
 			if (!scriptName.empty()) {
 				globalScripts[scriptName] = true;
+			}
+		}
+	}
+	if (auto itr = values.find("VisibleAssemblyGroups"); itr != values.end()) {
+		g_SettingsMan.m_VisibleAssemblyGroupsList.clear();
+		std::istringstream stream(itr->second);
+		std::string group;
+		while (std::getline(stream, group, ';')) {
+			if (!group.empty()) {
+				g_SettingsMan.m_VisibleAssemblyGroupsList.push_back(group);
 			}
 		}
 	}
