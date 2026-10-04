@@ -24,6 +24,13 @@ using namespace RTE;
 AbstractClassInfo(MovableObject, SceneObject);
 
 std::atomic<long> MovableObject::m_UniqueIDCounter = 1;
+
+long MovableObject::GetNextUniqueID() {
+	if (LuaStateWrapper* luaState = g_LuaMan.GetThreadLuaStateOverride(); luaState && luaState != &g_LuaMan.GetMasterScriptState()) {
+		return luaState->GetNextUniqueID();
+	}
+	return ++m_UniqueIDCounter;
+}
 std::string MovableObject::ms_EmptyString = "";
 
 MovableObject::MovableObject() {

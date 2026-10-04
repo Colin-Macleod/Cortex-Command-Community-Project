@@ -51,6 +51,20 @@ namespace RTE {
 		/// Overrides the real-time accumulator so that exactly one sim update happens before the next draw. Used for fixed-step (lockstep-style) simulation.
 		void SetAccumulatorForSingleSimUpdate() { m_SimAccumulator = m_DeltaTime; }
 
+		/// Overrides the real-time accumulator so that exactly the given number of sim updates happen before the next draw.
+		/// @param simUpdates How many sim updates to run before the next draw. 0 means draw again without updating the sim.
+		void SetAccumulatorForSimUpdates(int simUpdates) { m_SimAccumulator = m_DeltaTime * simUpdates; }
+
+		/// Gets whether deterministic mode is enabled. See SetDeterministicMode.
+		/// @return Whether deterministic mode is enabled.
+		bool IsInDeterministicMode() const { return m_DeterministicMode; }
+
+		/// Sets deterministic mode, used for lockstep multiplayer and determinism testing. While enabled:
+		/// - "Real time" as seen by Timers is sim time, so gameplay code (C++ and Lua) that uses real-time timers produces the same results on every machine.
+		/// - Every sim update counts as a drawn sim update, so no sim-side work depends on the local frame rate.
+		/// @param deterministic Whether to enable deterministic mode.
+		void SetDeterministicMode(bool deterministic) { m_DeterministicMode = deterministic; }
+
 		/// Tells whether the current simulation update will be drawn in a frame. Use this to check if it is necessary to draw purely graphical things during the sim update.
 		/// @return Whether this is the last sim update before a frame with its results will appear.
 		bool DrawnSimUpdate() const { return m_DrawnSimUpdate; }
@@ -82,7 +96,7 @@ namespace RTE {
 
 		/// Gets a current global real time measured in ticks from the start of the simulation up to the last Update of this TimerMan. Use TickFrequency to determine how many ticks go in a second.
 		/// @return The number of ticks passed since the simulation started.
-		long long GetRealTickCount() const { return m_RealTimeTicks; }
+		long long GetRealTickCount() const { return m_DeterministicMode ? m_SimTimeTicks : m_RealTimeTicks; }
 
 		/// Gets a current global simulation time measured in ticks from the start of the simulation up to the last Update of this TimerMan. Use TickFrequency to determine how many ticks go in a second.
 		/// @return The number of ticks passed since the simulation started.
@@ -167,6 +181,7 @@ namespace RTE {
 		float m_TimeScale; //!< The relationship between the real world actual time and the simulation time. A value of 2.0 means simulation runs twice as fast as normal, as perceived by a player.
 
 		bool m_SimPaused; //!< Simulation paused; no real time ticks will go to the sim accumulator.
+		bool m_DeterministicMode = false; //!< Whether deterministic mode is enabled. See SetDeterministicMode.
 
 	private:
 		/// Clears all the member variables of this TimerMan, effectively resetting the members of this abstraction level only.

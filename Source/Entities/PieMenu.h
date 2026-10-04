@@ -4,7 +4,10 @@
 #include "Controller.h"
 #include "Matrix.h"
 
+#include <algorithm>
 #include <array>
+#include <functional>
+#include <vector>
 
 namespace RTE {
 
@@ -277,15 +280,21 @@ namespace RTE {
 		/// @param listeningObject The MovableObject listening.
 		/// @param listenerFunction The function to be run on the MovableObject.
 		void AddWhilePieMenuOpenListener(const MovableObject* listeningObject, const std::function<void()>& listenerFunction) {
-			if (listeningObject) {
-				m_WhilePieMenuOpenListeners.try_emplace(listeningObject, listenerFunction);
+			if (listeningObject && FindWhilePieMenuOpenListener(listeningObject) == m_WhilePieMenuOpenListeners.end()) {
+				m_WhilePieMenuOpenListeners.emplace_back(listeningObject, listenerFunction);
 			}
 		}
 
 		/// Removes the passed in MovableObject and its listening function as a listener for when this PieMenu is opened.
 		/// @param objectToRemove The MovableObject whose listening function should be removed.
 		/// @return Whether or not the MovableObject was found and removed as a listener.
-		bool RemoveWhilePieMenuOpenListener(const MovableObject* objectToRemove) { return m_WhilePieMenuOpenListeners.erase(objectToRemove) == 1; }
+		bool RemoveWhilePieMenuOpenListener(const MovableObject* objectToRemove) {
+			if (auto listener = FindWhilePieMenuOpenListener(objectToRemove); listener != m_WhilePieMenuOpenListeners.end()) {
+				m_WhilePieMenuOpenListeners.erase(listener);
+				return true;
+			}
+			return false;
+		}
 #pragma endregion
 
 	private:
@@ -362,7 +371,14 @@ namespace RTE {
 
 		PieMenu* m_ActiveSubPieMenu; //!< The currently active sub-PieMenu, if any.
 
-		std::unordered_map<const MovableObject*, std::function<void()>> m_WhilePieMenuOpenListeners; //!< Unordered map of MovableObject pointers to functions to be called while the PieMenu is open. Pointers are NOT owned.
+		std::vector<std::pair<const MovableObject*, std::function<void()>>> m_WhilePieMenuOpenListeners; //!< MovableObject pointers and the functions to be called while the PieMenu is open, in the order they were added (so call order doesn't depend on memory addresses). Pointers are NOT owned.
+
+		/// Finds the listener entry for the given MovableObject.
+		/// @param listeningObject The MovableObject to find the listener entry of.
+		/// @return An iterator to the listener entry, or the end iterator if there is none.
+		std::vector<std::pair<const MovableObject*, std::function<void()>>>::iterator FindWhilePieMenuOpenListener(const MovableObject* listeningObject) {
+			return std::find_if(m_WhilePieMenuOpenListeners.begin(), m_WhilePieMenuOpenListeners.end(), [listeningObject](const auto& listener) { return listener.first == listeningObject; });
+		}
 
 		int m_CurrentInnerRadius; //!< The current radius of the innermost circle of the pie menu, in pixels.
 		bool m_CursorInVisiblePosition; //!< Whether or not this PieMenu's cursor is in a visible position and should be shown.

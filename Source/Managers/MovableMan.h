@@ -15,6 +15,7 @@
 #include <map>
 #include <future>
 #include <unordered_set>
+#include <array>
 
 #define g_MovableMan MovableMan::Instance()
 
@@ -658,6 +659,17 @@ namespace RTE {
 		/// This is needed because of a very awkward and ugly old code path where controllers were updated in the middle of update, and various mods relied of this behaviour for actions that were therefore delayed by a frame
 		/// Ideally we wouldn't need this, but this is all very fragile code and I'd prefer to avoid breaking things.
 		void PreControllerUpdate();
+
+		/// The sizes of the added actor, item and particle lists, used to tell whether threaded scripts added any MOs.
+		using AddedMOCounts = std::array<size_t, 3>;
+
+		/// Gets the current sizes of the added actor, item and particle lists.
+		/// @return The sizes of the added MO lists.
+		AddedMOCounts GetAddedMOCounts() const;
+
+		/// Sorts the added MO lists by unique ID if they changed since the given counts were taken, so MOs added by threaded scripts enter the simulation in a deterministic order.
+		/// @param countsBefore The added MO list sizes from before the threaded scripts ran.
+		void SortAddedMOsIfChanged(const AddedMOCounts& countsBefore);
 
 		// Disallow the use of some implicit methods.
 		MovableMan(const MovableMan& reference) = delete;

@@ -4,13 +4,21 @@
 #include "Scene.h"
 #include "SceneMan.h"
 #include "ThreadMan.h"
+#include "TimerMan.h"
+#include "LuaMan.h"
 
 #include "tracy/Tracy.hpp"
 
+#include <algorithm>
 #include <array>
 #include <execution>
+#include <thread>
 
 using namespace RTE;
+
+std::mutex PathFinder::s_DeterministicResultsMutex;
+std::vector<PathFinder::DeterministicPathResult> PathFinder::s_DeterministicResults;
+std::atomic<int> PathFinder::s_PendingDeterministicRequests = 0;
 
 // One pathfinder per thread, lazily initialized. Shouldn't access this directly, use GetPather() instead.
 struct MicroPatherWrapper {
@@ -233,6 +241,25 @@ std::shared_ptr<volatile PathRequest> PathFinder::CalculatePathAsync(Vector star
 	const_cast<Vector&>(pathRequest->startPos) = start;
 	const_cast<Vector&>(pathRequest->targetPos) = end;
 
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Calculate in the background as usual, but hold the result back until PublishDeterministicResults, so when it becomes visible doesn't depend on thread timing.
+		uint64_t order = g_LuaMan.GetNextDeterministicOrderKey();
+		++s_PendingDeterministicRequests;
+		g_ThreadMan.GetBackgroundThreadPool().push_task(
+		    [this, start, end, jumpHeight, digStrength, callback, order](std::shared_ptr<volatile PathRequest> volRequest) {
+			    PathRequest& request = const_cast<PathRequest&>(*volRequest);
+			    request.status = this->CalculatePath(start, end, request.path, request.totalCost, jumpHeight, digStrength);
+			    request.pathLength = request.path.size();
+			    {
+				    std::scoped_lock lock(s_DeterministicResultsMutex);
+				    s_DeterministicResults.push_back({order, volRequest, callback});
+			    }
+			    --s_PendingDeterministicRequests;
+		    },
+		    pathRequest);
+		return pathRequest;
+	}
+
 	g_ThreadMan.GetBackgroundThreadPool().push_task(
 	    [this, start, end, jumpHeight, digStrength, callback](std::shared_ptr<volatile PathRequest> volRequest) {
 		    // Cast away the volatile-ness - only matters outside (and complicates the API otherwise)
@@ -254,6 +281,36 @@ std::shared_ptr<volatile PathRequest> PathFinder::CalculatePathAsync(Vector star
 	    pathRequest);
 
 	return pathRequest;
+}
+
+void PathFinder::WaitForDeterministicRequests() {
+	while (s_PendingDeterministicRequests.load() != 0) {
+		std::this_thread::yield();
+	}
+}
+
+void PathFinder::PublishDeterministicResults() {
+	WaitForDeterministicRequests();
+
+	std::vector<DeterministicPathResult> results;
+	{
+		std::scoped_lock lock(s_DeterministicResultsMutex);
+		results.swap(s_DeterministicResults);
+	}
+	std::sort(results.begin(), results.end(), [](const DeterministicPathResult& lhs, const DeterministicPathResult& rhs) { return lhs.order < rhs.order; });
+
+	for (DeterministicPathResult& result: results) {
+		if (result.callback) {
+			result.callback(result.request);
+		}
+		const_cast<PathRequest&>(*result.request).complete = true;
+	}
+}
+
+void PathFinder::ClearDeterministicResults() {
+	WaitForDeterministicRequests();
+	std::scoped_lock lock(s_DeterministicResultsMutex);
+	s_DeterministicResults.clear();
 }
 
 void PathFinder::RecalculateAllCosts() {

@@ -1307,8 +1307,11 @@ void MovableMan::Update() {
 	// Travel MOs
 	Travel();
 
-	// If our debug settings switch is forcing all pathing requests to immediately complete, make sure they're done here
-	if (g_SettingsMan.GetForceImmediatePathingRequestCompletion() && g_SceneMan.GetScene()) {
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Deliver async pathing results at this fixed point, in a fixed order.
+		PathFinder::PublishDeterministicResults();
+	} else if (g_SettingsMan.GetForceImmediatePathingRequestCompletion() && g_SceneMan.GetScene()) {
+		// If our debug settings switch is forcing all pathing requests to immediately complete, make sure they're done here
 		g_SceneMan.GetScene()->BlockUntilAllPathingRequestsComplete();
 	}
 
@@ -1350,6 +1353,7 @@ void MovableMan::Update() {
 		g_LuaMan.SetThreadLuaStateOverride(nullptr);
 
 		LuaStatesArray& luaStates = g_LuaMan.GetThreadedScriptStates();
+		const AddedMOCounts addedMOCountsBeforeThreadedUpdate = GetAddedMOCounts();
 		g_ThreadMan.GetPriorityThreadPool().parallelize_loop(luaStates.size(),
 		                                                     [&](int start, int end) {
 			                                                     RTEAssert(start + 1 == end, "Threaded script state being updated across multiple threads!");
@@ -1363,8 +1367,10 @@ void MovableMan::Update() {
 			                                                     }
 
 			                                                     g_LuaMan.SetThreadLuaStateOverride(nullptr);
-		                                                     })
+		                                                     },
+		                                                     luaStates.size())
 		    .wait();
+		SortAddedMOsIfChanged(addedMOCountsBeforeThreadedUpdate);
 	}
 
 	{
@@ -1774,6 +1780,7 @@ void MovableMan::UpdateControllers() {
 		g_LuaMan.SetThreadLuaStateOverride(nullptr);
 
 		LuaStatesArray& luaStates = g_LuaMan.GetThreadedScriptStates();
+		const AddedMOCounts addedMOCountsBeforeThreadedAI = GetAddedMOCounts();
 		g_ThreadMan.GetPriorityThreadPool().parallelize_loop(luaStates.size(),
 		                                                     [&](int start, int end) {
 			                                                     RTEAssert(start + 1 == end, "Threaded script state being updated across multiple threads!");
@@ -1785,8 +1792,10 @@ void MovableMan::UpdateControllers() {
 				                                                     }
 			                                                     }
 			                                                     g_LuaMan.SetThreadLuaStateOverride(nullptr);
-		                                                     })
+		                                                     },
+		                                                     luaStates.size())
 		    .wait();
+		SortAddedMOsIfChanged(addedMOCountsBeforeThreadedAI);
 
 		for (Actor* actor: m_Actors) {
 			if (actor->GetController()->ShouldUpdateAIThisFrame()) {
@@ -1795,6 +1804,21 @@ void MovableMan::UpdateControllers() {
 		}
 	}
 	g_PerformanceMan.StopPerformanceMeasurement(PerformanceMan::ActorsAI);
+}
+
+MovableMan::AddedMOCounts MovableMan::GetAddedMOCounts() const {
+	return {m_AddedActors.size(), m_AddedItems.size(), m_AddedParticles.size()};
+}
+
+void MovableMan::SortAddedMOsIfChanged(const AddedMOCounts& countsBefore) {
+	// Scripts running on worker threads add MOs in whatever order the threads happen to finish. Their unique IDs are deterministic (see MovableObject::GetNextUniqueID),
+	// so sorting by ID makes the order in which they enter the simulation deterministic too.
+	auto byUniqueID = [](const MovableObject* lhs, const MovableObject* rhs) { return lhs->GetUniqueID() < rhs->GetUniqueID(); };
+	if (g_TimerMan.IsInDeterministicMode() || countsBefore != GetAddedMOCounts()) {
+		std::stable_sort(m_AddedActors.begin(), m_AddedActors.end(), byUniqueID);
+		std::stable_sort(m_AddedItems.begin(), m_AddedItems.end(), byUniqueID);
+		std::stable_sort(m_AddedParticles.begin(), m_AddedParticles.end(), byUniqueID);
+	}
 }
 
 void MovableMan::PreControllerUpdate() {

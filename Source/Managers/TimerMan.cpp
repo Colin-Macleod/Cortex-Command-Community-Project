@@ -70,7 +70,11 @@ void TimerMan::UpdateSim() {
 		++m_SimUpdatesSinceDrawn;
 
 		// If after deducting the DeltaTime from the accumulator, there is not enough time for another DeltaTime, then flag this as the last sim update before the frame is drawn.
-		m_DrawnSimUpdate = !TimeForSimUpdate();
+		// In deterministic mode every update is treated as drawn so nothing in the sim depends on the local frame rate.
+		m_DrawnSimUpdate = m_DeterministicMode || !TimeForSimUpdate();
+		if (m_DeterministicMode) {
+			m_SimUpdatesSinceDrawn = 0;
+		}
 	} else {
 		m_DrawnSimUpdate = true;
 	}

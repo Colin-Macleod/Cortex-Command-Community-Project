@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <random>
 #include <set>
 #include <string>
 
@@ -24,6 +25,10 @@ namespace RTE {
 	///   CCCP_DT_FOG         1 to enable fog of war, 0 to disable (default 1).
 	///   CCCP_DT_DUMP_TICKS  Comma-separated list of ticks at which to write a full per-MO dump to "<log>.dump<tick>".
 	///   CCCP_DT_TERRAIN_EVERY  Hash the terrain material layer every N ticks (default 10, 0 disables).
+	///   CCCP_DT_OBSERVE     1 to only log hashes: don't launch an Activity or control sim stepping (e.g. to log a co-op session on each peer).
+	///   CCCP_DT_DETERMINISTIC  0 to run without TimerMan deterministic mode (default 1, as in lockstep sessions). Ignored in observe mode.
+	///   CCCP_DT_TICKS_PER_FRAME  "random" to run a random 0-3 sim updates per frame instead of exactly one, to check the sim doesn't depend on frame rate.
+	///   CCCP_DT_FRAME_SEED  Seed for the random ticks-per-frame sequence.
 	///   CCCP_DT_SYNC_TERRAIN_HASH  1 to wait for all thread pool tasks before hashing terrain (rules out read races in the harness itself).
 	///   CCCP_DT_TRACE_TICKS Only in builds compiled with -DRTE_RNG_TRACE: log the call stack of every global RNG draw
 	///                       during the first N ticks to "<log>.rngtrace" (resolve with Tools/Determinism/symbolize_trace.py).
@@ -39,12 +44,42 @@ namespace RTE {
 		/// The number of sim ticks completed since the test Activity started.
 		static long long GetTick() { return s_Tick; }
 
+		/// Whether the harness only logs hashes, without launching an Activity or controlling sim stepping.
+		static bool IsObserveOnly() { return s_ObserveOnly; }
+
 		/// Configures and queues the test Activity to be started by the game loop.
 		/// @return Whether the Activity was set up successfully.
 		static bool SetupActivity();
 
 		/// Called once at the end of every sim update. Hashes and logs sim state, and requests quit when done.
 		static void EndOfSimUpdate();
+
+		/// Gets how many sim updates the harness wants to run before the next frame is drawn.
+		/// @return The number of sim updates to run this frame, or -1 if the harness isn't controlling sim stepping.
+		static int GetSimUpdatesForThisFrame();
+
+		/// Hashes of the simulation state. Any difference in object state, RNG state or (optionally) terrain shows up as a different hash.
+		struct SimStateHashes {
+			uint64_t RNG = 0; //!< The global random generator.
+			uint64_t LuaRNG = 0; //!< All the Lua states' random generators.
+			uint64_t Actors = 0; //!< All actors.
+			uint64_t Items = 0; //!< All items.
+			uint64_t Particles = 0; //!< All particles.
+			uint64_t Terrain = 0; //!< The terrain material layer, if requested.
+			uint64_t Combined = 0; //!< All of the above combined.
+			size_t ActorCount = 0; //!< Number of actors.
+			size_t ItemCount = 0; //!< Number of items.
+			size_t ParticleCount = 0; //!< Number of particles.
+		};
+
+		/// Hashes the current simulation state. Usable whether or not the harness is enabled (e.g. for lockstep desync detection).
+		/// @param hashTerrain Whether to also hash the terrain material layer, which is comparatively expensive.
+		/// @return The hashes.
+		static SimStateHashes HashSimState(bool hashTerrain);
+
+		/// Writes every MovableObject's state, and the raw terrain material layer to "<path>.terrain", for diffing between machines or runs.
+		/// @param path The file to write the dump to.
+		static void WriteStateDump(const std::string& path);
 
 	private:
 		static bool s_Enabled; //!< Whether the harness is active.
@@ -59,8 +94,8 @@ namespace RTE {
 		static std::string s_SceneName; //!< The Scene preset to launch.
 		static std::set<long long> s_DumpTicks; //!< Ticks at which to write a full per-MO dump.
 		static uint64_t s_LastTerrainHash; //!< Most recently computed terrain hash.
-
-		/// Writes a full per-MO state dump for the current tick.
-		static void WriteDump();
+		static bool s_ObserveOnly; //!< Whether the harness only logs hashes, without launching an Activity or controlling stepping.
+		static bool s_RandomTicksPerFrame; //!< Whether to run a random number of sim updates per frame.
+		static std::minstd_rand s_FrameRNG; //!< Generator for the random ticks-per-frame sequence. Separate from all sim generators.
 	};
 } // namespace RTE

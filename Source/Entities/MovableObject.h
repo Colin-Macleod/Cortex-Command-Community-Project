@@ -982,9 +982,17 @@ namespace RTE {
 		/// @param newRestThreshold New rest threshold value
 		void SetRestThreshold(int newRestThreshold) { m_RestThreshold = newRestThreshold; }
 
-		/// Returns the next unique id for MO's and increments unique ID counter
+		/// Returns the next unique id for MO's and increments unique ID counter.
+		/// MOs created by scripts running in a threaded Lua state get their ID from that state's own range instead, so IDs don't depend on thread timing.
 		/// @return Returns the next unique id.
-		static long GetNextUniqueID() { return ++m_UniqueIDCounter; }
+		static long GetNextUniqueID();
+
+		/// Resets the unique ID counter to a fixed starting value, so the IDs handed out during an Activity are the same every time it is played.
+		/// The starting value is well above any ID given to presets while loading data.
+		static void ResetUniqueIDCounter() { m_UniqueIDCounter = c_FirstActivityUniqueID; }
+
+		static constexpr long c_FirstActivityUniqueID = 1L << 24; //!< The first unique ID handed out to MOs created on the main thread in an Activity.
+		static constexpr long c_FirstThreadedUniqueID = 1L << 30; //!< The start of the ID ranges reserved for MOs created by threaded Lua states. Fits in a 32-bit long.
 
 		/// Returns this MO's unique persistent ID
 		/// @return Returns this MO's unique persistent ID

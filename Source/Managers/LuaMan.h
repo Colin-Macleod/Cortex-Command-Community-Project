@@ -8,6 +8,7 @@
 #include "BS_thread_pool.hpp"
 
 #include <array>
+#include <atomic>
 #include <map>
 #include <unordered_map>
 
@@ -90,6 +91,10 @@ namespace RTE {
 			}
 			m_AddedRegisteredMOs.erase(moToUnregister);
 		}
+
+		/// Gets the next unique ID for an MO created while this state is running on a thread. Each threaded state has its own ID range, see LuaMan::ResetStatesForNewActivity.
+		/// @return The next unique ID from this state's range.
+		long GetNextUniqueID() { return ++m_LastUniqueID; }
 
 		/// Gets the MOs registered as using us, keyed and ordered by registration order so iteration order doesn't depend on memory addresses.
 		/// @return The MOs registered as using us.
@@ -260,6 +265,8 @@ namespace RTE {
 		std::unordered_map<MovableObject*, uint64_t> m_RegisteredMOOrder; //!< Reverse lookup of each registered object's registration order.
 		std::unordered_map<MovableObject*, uint64_t> m_AddedRegisteredMOs; //!< The objects using our lua state that were recently added, with their registration order.
 		uint64_t m_NextRegistrationOrder = 0; //!< Registration order counter. Deterministic because registration into a given state only ever happens from one thread at a time.
+		long m_LastUniqueID = 0; //!< The last unique ID handed out to an MO created while this state was running on a thread.
+		uint64_t m_OrderKeyCounter = 0; //!< Counter for LuaMan::GetNextDeterministicOrderKey, for things done while this state is running.
 
 		lua_State* m_State;
 		Entity* m_TempEntity; //!< Temporary holder for an Entity object that we want to pass into the Lua state without fuss. Lets you export objects to lua easily.
@@ -282,6 +289,8 @@ namespace RTE {
 	};
 
 	typedef std::vector<LuaStateWrapper> LuaStatesArray;
+
+	static constexpr int c_DefaultThreadedLuaStateCount = 8; //!< The number of threaded Lua states used unless overridden in settings. Fixed (not based on core count) for determinism.
 
 	/// The singleton manager of each Lua state.
 	class LuaMan : public Singleton<LuaMan> {
@@ -314,8 +323,14 @@ namespace RTE {
 		/// @return A list of threaded script states.
 		LuaStatesArray& GetThreadedScriptStates();
 
-		/// Reseeds every Lua state's random generator with fixed seeds and restarts round-robin state assignment, so each Activity starts from the same state.
-		void ResetRandomGeneratorsAndStateAssignment();
+		/// Gets a key describing when something happened, which sorts the same way on every machine even when it happened on a worker thread.
+		/// Things done by a threaded Lua state are ordered by that state's index and then by the order the state did them in; things done on the main thread come first, in order.
+		/// @return The next deterministic order key for the calling thread.
+		uint64_t GetNextDeterministicOrderKey();
+
+		/// Resets everything about the Lua states that affects the simulation, so each Activity starts from the same state: reseeds every state's random generator
+		/// with a fixed seed, restarts round-robin state assignment, and gives each threaded state its own fresh range of MO unique IDs.
+		void ResetStatesForNewActivity();
 
 		/// Gets the current thread lua state override that new objects created will be assigned to.
 		/// @return The current lua state to force objects to be assigned to.
@@ -463,6 +478,7 @@ namespace RTE {
 		std::mutex m_ScriptCallbacksMutex; //!< Mutex to ensure multiple threads aren't modifying the script callback vector at the same time.
 
 		int m_LastAssignedLuaState = 0;
+		std::atomic<uint64_t> m_MainThreadOrderKeyCounter = 0; //!< Order key counter for things done on the main thread outside of threaded Lua states.
 
 		BS::multi_future<void> m_GarbageCollectionTask;
 

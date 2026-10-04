@@ -8,6 +8,7 @@
 #include <list>
 #include <memory>
 #include <functional>
+#include <mutex>
 #include <vector>
 
 using namespace micropather;
@@ -120,6 +121,16 @@ namespace RTE {
 		/// @return How many pathfinding requests are currently active.
 		int GetCurrentPathingRequests() const { return m_CurrentPathingRequests.load(); }
 
+		/// In deterministic mode (see TimerMan::SetDeterministicMode), async pathing requests still run on background threads, but their results only become visible
+		/// (completion flag set and callbacks run) when this is called from the main thread, in the order the requests were made. Call once per sim update at a fixed point.
+		static void PublishDeterministicResults();
+
+		/// Blocks until every async pathing request made in deterministic mode has finished calculating. Results are not published.
+		static void WaitForDeterministicRequests();
+
+		/// Waits for and then discards any unpublished deterministic-mode results, e.g. when an Activity is restarted.
+		static void ClearDeterministicResults();
+
 		/// Recalculates all the costs between all the PathNodes by tracing lines in the material layer and summing all the material strengths for each encountered pixel. Also resets the pather itself.
 		void RecalculateAllCosts();
 
@@ -189,6 +200,16 @@ namespace RTE {
 		bool m_WrapsX; //!< Whether the pathing grid wraps on the X axis.
 		bool m_WrapsY; //!< Whether the pathing grid wraps on the Y axis.
 		std::atomic<int> m_CurrentPathingRequests; //!< The number of active async pathing requests.
+
+		/// A finished deterministic-mode pathing request, waiting to be published.
+		struct DeterministicPathResult {
+			uint64_t order; //!< When the request was made, see LuaMan::GetNextDeterministicOrderKey.
+			std::shared_ptr<volatile PathRequest> request; //!< The finished request.
+			PathCompleteCallback callback; //!< The callback to run when publishing the result.
+		};
+		static std::mutex s_DeterministicResultsMutex; //!< Guards s_DeterministicResults.
+		static std::vector<DeterministicPathResult> s_DeterministicResults; //!< Finished deterministic-mode requests waiting to be published.
+		static std::atomic<int> s_PendingDeterministicRequests; //!< The number of deterministic-mode requests still being calculated.
 
 		/// Gets the pather for this thread. Lazily-initialized for each new thread that needs a pather.
 		/// @return The pather for this thread.

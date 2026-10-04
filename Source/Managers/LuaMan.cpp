@@ -323,7 +323,9 @@ void LuaMan::Clear() {
 void LuaMan::Initialize() {
 	m_MasterScriptState.Initialize();
 
-	int luaStateCount = std::thread::hardware_concurrency();
+	// Use a fixed number of threaded states regardless of the machine's core count. Each state has its own random generator and objects are
+	// assigned to states round-robin, so the state count is part of the simulation and must be the same everywhere for results to be deterministic.
+	int luaStateCount = c_DefaultThreadedLuaStateCount;
 	if (g_SettingsMan.EnableLuaDebugging()) {
 		luaStateCount = 0;
 	} else if (g_SettingsMan.GetNumberOfLuaStatesOverride() != -1) {
@@ -344,10 +346,22 @@ LuaStatesArray& LuaMan::GetThreadedScriptStates() {
 	return m_ScriptStates;
 }
 
-void LuaMan::ResetRandomGeneratorsAndStateAssignment() {
+uint64_t LuaMan::GetNextDeterministicOrderKey() {
+	if (LuaStateWrapper* luaState = GetThreadLuaStateOverride(); luaState && luaState != &m_MasterScriptState) {
+		uint64_t stateIndex = static_cast<uint64_t>(luaState - m_ScriptStates.data());
+		return ((stateIndex + 1) << 48) | luaState->m_OrderKeyCounter++;
+	}
+	return m_MainThreadOrderKeyCounter++;
+}
+
+void LuaMan::ResetStatesForNewActivity() {
 	m_MasterScriptState.m_RandomGenerator.Seed(0x9E3779B97F4A7C15ULL);
+	m_MainThreadOrderKeyCounter = 0;
+	const long long uniqueIDRangeSize = (static_cast<long long>(std::numeric_limits<int32_t>::max()) - MovableObject::c_FirstThreadedUniqueID) / std::max<long long>(1, m_ScriptStates.size());
 	for (size_t i = 0; i < m_ScriptStates.size(); ++i) {
 		m_ScriptStates[i].m_RandomGenerator.Seed(0x9E3779B97F4A7C15ULL + i + 1);
+		m_ScriptStates[i].m_LastUniqueID = static_cast<long>(MovableObject::c_FirstThreadedUniqueID + static_cast<long long>(i) * uniqueIDRangeSize);
+		m_ScriptStates[i].m_OrderKeyCounter = 0;
 	}
 	m_LastAssignedLuaState = 0;
 }

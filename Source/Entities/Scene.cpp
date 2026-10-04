@@ -2454,6 +2454,12 @@ void Scene::Update() {
 
 	m_PathfindingUpdated = false;
 
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Pathing requests from the previous update may still be calculating in the background. Let them finish so the path node cost update below
+		// never runs concurrently with them, and isn't skipped or not depending on thread timing.
+		PathFinder::WaitForDeterministicRequests();
+	}
+
 	if (g_SettingsMan.BlipOnRevealUnseen()) {
 		// Highlight the pixels that have been revealed on the unseen maps
 		for (int team = Activity::TeamOne; team < Activity::MaxTeamCount; ++team) {

@@ -324,9 +324,9 @@ void RunGameLoop() {
 
 		g_TimerMan.Update();
 
-		if (DeterminismHarness::IsEnabled()) {
-			// Decouple the sim from wall-clock time: exactly one fixed-length sim update per frame.
-			g_TimerMan.SetAccumulatorForSingleSimUpdate();
+		if (int harnessSimUpdates = DeterminismHarness::GetSimUpdatesForThisFrame(); harnessSimUpdates >= 0) {
+			// Decouple the sim from wall-clock time: a fixed number of fixed-length sim updates per frame.
+			g_TimerMan.SetAccumulatorForSimUpdates(harnessSimUpdates);
 		}
 
 		// Simulation update, as many times as the fixed update step allows in the span since last frame draw.
@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
 			}
 		}
 
-		if (DeterminismHarness::IsEnabled()) {
+		if (DeterminismHarness::IsEnabled() && !DeterminismHarness::IsObserveOnly()) {
 			if (!DeterminismHarness::SetupActivity()) {
 				System::SetQuit(true);
 			}
