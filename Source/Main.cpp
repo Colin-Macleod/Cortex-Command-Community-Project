@@ -52,6 +52,7 @@
 #include "LuaMan.h"
 #include "MusicMan.h"
 #include "System.h"
+#include "DeterminismHarness.h"
 
 #include "RenderTarget.h"
 #include "tracy/Tracy.hpp"
@@ -323,6 +324,11 @@ void RunGameLoop() {
 
 		g_TimerMan.Update();
 
+		if (DeterminismHarness::IsEnabled()) {
+			// Decouple the sim from wall-clock time: exactly one fixed-length sim update per frame.
+			g_TimerMan.SetAccumulatorForSingleSimUpdate();
+		}
+
 		// Simulation update, as many times as the fixed update step allows in the span since last frame draw.
 		while (g_TimerMan.TimeForSimUpdate()) {
 			ZoneScopedN("Simulation Update");
@@ -365,6 +371,8 @@ void RunGameLoop() {
 
 			g_PerformanceMan.StopPerformanceMeasurement(PerformanceMan::SimTotal);
 			g_UInputMan.EndFrame();
+
+			DeterminismHarness::EndOfSimUpdate();
 
 			if (!g_ActivityMan.IsInActivity()) {
 				g_TimerMan.PauseSim(true);
@@ -442,6 +450,7 @@ int main(int argc, char** argv) {
 	InitializeManagers();
 
 	HandleMainArgs(argc, argv);
+	DeterminismHarness::Initialize();
 
 	g_PresetMan.LoadAllDataModules();
 
@@ -461,7 +470,11 @@ int main(int argc, char** argv) {
 			}
 		}
 
-		if (!g_ActivityMan.Initialize()) {
+		if (DeterminismHarness::IsEnabled()) {
+			if (!DeterminismHarness::SetupActivity()) {
+				System::SetQuit(true);
+			}
+		} else if (!g_ActivityMan.Initialize()) {
 			RunMenuLoop();
 		}
 

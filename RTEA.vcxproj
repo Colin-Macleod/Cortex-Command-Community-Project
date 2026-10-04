@@ -828,6 +828,7 @@
     <ClInclude Include="Source\System\Singleton.h" />
     <ClInclude Include="Source\System\System.h" />
     <ClInclude Include="Source\System\Timer.h" />
+    <ClInclude Include="Source\System\DeterminismHarness.h" />
     <ClInclude Include="Source\System\Vector.h" />
     <ClInclude Include="Source\System\Writer.h" />
     <ClInclude Include="Source\System\MicroPather\micropather.h" />
@@ -1364,6 +1365,7 @@
     <ClCompile Include="Source\System\Reader.cpp" />
     <ClCompile Include="Source\System\System.cpp" />
     <ClCompile Include="Source\System\Timer.cpp" />
+    <ClCompile Include="Source\System\DeterminismHarness.cpp" />
     <ClCompile Include="Source\System\Vector.cpp" />
     <ClCompile Include="Source\System\Writer.cpp" />
     <ClCompile Include="Source\Managers\AchievementMan.cpp" />

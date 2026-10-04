@@ -1,0 +1,299 @@
+#include "DeterminismHarness.h"
+
+#include "ActivityMan.h"
+#include "ConsoleMan.h"
+#include "GameActivity.h"
+#include "LuaMan.h"
+#include "MovableMan.h"
+#include "PresetMan.h"
+#include "SceneMan.h"
+#include "SettingsMan.h"
+#include "ThreadMan.h"
+#include "SLTerrain.h"
+#include "Actor.h"
+#include "MOSprite.h"
+#include "Scene.h"
+#include "System.h"
+#include "RTETools.h"
+
+#include <cinttypes>
+#include <cstdlib>
+#include <cstring>
+#include <sstream>
+
+#ifdef RTE_RNG_TRACE
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <mutex>
+#include <thread>
+#endif
+
+using namespace RTE;
+
+bool DeterminismHarness::s_Enabled = false;
+std::ofstream DeterminismHarness::s_Log;
+std::string DeterminismHarness::s_LogPath;
+long long DeterminismHarness::s_TicksToRun = 3000;
+long long DeterminismHarness::s_Tick = 0;
+int DeterminismHarness::s_TerrainEvery = 10;
+bool DeterminismHarness::s_Fog = true;
+bool DeterminismHarness::s_SyncBeforeTerrainHash = false;
+std::string DeterminismHarness::s_ActivityName = "Bunker Breach";
+std::string DeterminismHarness::s_SceneName = "Zekarra Mining Outpost";
+std::set<long long> DeterminismHarness::s_DumpTicks;
+uint64_t DeterminismHarness::s_LastTerrainHash = 0;
+
+namespace {
+	/// FNV-1a, 64 bit. Hashes the exact bytes so any float bit difference shows up.
+	struct Hasher {
+		uint64_t m_Hash = 14695981039346656037ULL;
+
+		void Bytes(const void* data, size_t size) {
+			const unsigned char* bytes = static_cast<const unsigned char*>(data);
+			for (size_t i = 0; i < size; ++i) {
+				m_Hash ^= bytes[i];
+				m_Hash *= 1099511628211ULL;
+			}
+		}
+		template <typename T> void Add(const T& value) { Bytes(&value, sizeof(T)); }
+		void Add(const std::string& value) { Bytes(value.data(), value.size()); }
+	};
+
+	/// Hashes the identity and physical state of a single MovableObject.
+	void HashMO(Hasher& hasher, const MovableObject* mo) {
+		hasher.Add(mo->GetUniqueID());
+		hasher.Add(mo->GetPresetName());
+		hasher.Add(mo->GetPos().m_X);
+		hasher.Add(mo->GetPos().m_Y);
+		hasher.Add(mo->GetVel().m_X);
+		hasher.Add(mo->GetVel().m_Y);
+		hasher.Add(mo->GetRotAngle());
+		hasher.Add(mo->GetAngularVel());
+		hasher.Add(mo->GetMass());
+		hasher.Add(mo->GetTeam());
+		hasher.Add(mo->IsSetToDelete());
+		if (const Actor* actor = dynamic_cast<const Actor*>(mo)) {
+			hasher.Add(actor->GetHealth());
+			hasher.Add(actor->GetStatus());
+			hasher.Add(actor->GetAIMode());
+		}
+	}
+
+	/// Hashes the state of a RandomGenerator without disturbing it, by sampling from a copy.
+	uint64_t HashRNG(const RandomGenerator& rng) {
+		RandomGenerator copy = rng;
+		Hasher hasher;
+		for (int i = 0; i < 4; ++i) {
+			hasher.Add(copy.RandomNum<int>(0, std::numeric_limits<int>::max()));
+		}
+		return hasher.m_Hash;
+	}
+
+	std::string FormatMO(const MovableObject* mo) {
+		char buffer[512];
+		const Actor* actor = dynamic_cast<const Actor*>(mo);
+		std::snprintf(buffer, sizeof(buffer), "uid=%ld cls=%s preset=\"%s\" team=%d pos=(%.9g,%.9g) vel=(%.9g,%.9g) rot=%.9g angvel=%.9g mass=%.9g health=%.9g",
+		              mo->GetUniqueID(), mo->GetClassName().c_str(), mo->GetPresetName().c_str(), mo->GetTeam(),
+		              mo->GetPos().m_X, mo->GetPos().m_Y, mo->GetVel().m_X, mo->GetVel().m_Y,
+		              mo->GetRotAngle(), mo->GetAngularVel(), mo->GetMass(), actor ? actor->GetHealth() : 0.0F);
+		return buffer;
+	}
+} // namespace
+
+#ifdef RTE_RNG_TRACE
+namespace {
+	std::mutex s_TraceMutex;
+	std::ofstream s_Trace;
+	long long s_TraceTicks = 0;
+	std::thread::id s_MainThread;
+} // namespace
+
+/// Records the call stack of every draw from the global RNG (and which thread made it) during the first CCCP_DT_TRACE_TICKS ticks.
+/// Addresses are written as offsets into the module so they can be resolved with addr2line.
+void RTE::RNGTraceHook(const RandomGenerator* generator) {
+	if (!DeterminismHarness::IsEnabled() || !s_Trace.is_open() || generator != &g_RandomGenerator) {
+		return;
+	}
+	long long tick = DeterminismHarness::GetTick();
+	if (tick >= s_TraceTicks) {
+		return;
+	}
+	void* frames[10];
+	int frameCount = backtrace(frames, 10);
+	std::scoped_lock lock(s_TraceMutex);
+	s_Trace << tick << (std::this_thread::get_id() == s_MainThread ? " M" : " W");
+	for (int i = 2; i < frameCount; ++i) {
+		Dl_info info;
+		if (dladdr(frames[i], &info) && info.dli_fbase) {
+			s_Trace << " 0x" << std::hex << (reinterpret_cast<uintptr_t>(frames[i]) - reinterpret_cast<uintptr_t>(info.dli_fbase)) << std::dec;
+		}
+	}
+	s_Trace << "\n";
+}
+#endif
+
+void DeterminismHarness::Initialize() {
+	const char* logPath = std::getenv("CCCP_DT_LOG");
+	if (!logPath || logPath[0] == '\0') {
+		return;
+	}
+	s_Enabled = true;
+	s_LogPath = logPath;
+	s_Log.open(s_LogPath, std::ios::out | std::ios::trunc);
+
+	if (const char* value = std::getenv("CCCP_DT_TICKS")) {
+		s_TicksToRun = std::atoll(value);
+	}
+	if (const char* value = std::getenv("CCCP_DT_ACTIVITY")) {
+		s_ActivityName = value;
+	}
+	if (const char* value = std::getenv("CCCP_DT_SCENE")) {
+		s_SceneName = value;
+	}
+	if (const char* value = std::getenv("CCCP_DT_FOG")) {
+		s_Fog = std::atoi(value) != 0;
+	}
+	if (const char* value = std::getenv("CCCP_DT_SYNC_TERRAIN_HASH")) {
+		s_SyncBeforeTerrainHash = std::atoi(value) != 0;
+	}
+	if (const char* value = std::getenv("CCCP_DT_TERRAIN_EVERY")) {
+		s_TerrainEvery = std::atoi(value);
+	}
+	if (const char* value = std::getenv("CCCP_DT_DUMP_TICKS")) {
+		std::stringstream stream(value);
+		std::string item;
+		while (std::getline(stream, item, ',')) {
+			if (!item.empty()) {
+				s_DumpTicks.insert(std::atoll(item.c_str()));
+			}
+		}
+	}
+#ifdef RTE_RNG_TRACE
+	if (const char* value = std::getenv("CCCP_DT_TRACE_TICKS")) {
+		s_TraceTicks = std::atoll(value);
+		s_MainThread = std::this_thread::get_id();
+		s_Trace.open(s_LogPath + ".rngtrace", std::ios::out | std::ios::trunc);
+	}
+#endif
+	s_Log << "# CCCP determinism log. activity=\"" << s_ActivityName << "\" scene=\"" << s_SceneName << "\" fog=" << s_Fog << " luaStates=" << g_LuaMan.GetThreadedScriptStates().size() << "\n";
+	s_Log << "# tick actors items particles | rng luaRng actorsHash itemsHash particlesHash terrainHash | combined\n";
+}
+
+bool DeterminismHarness::SetupActivity() {
+	const Entity* activityPreset = g_PresetMan.GetEntityPreset("GAScripted", s_ActivityName);
+	const Scene* scenePreset = dynamic_cast<const Scene*>(g_PresetMan.GetEntityPreset("Scene", s_SceneName));
+	if (!activityPreset || !scenePreset) {
+		s_Log << "# ERROR: could not find activity or scene preset\n";
+		s_Log.flush();
+		return false;
+	}
+	GameActivity* gameActivity = dynamic_cast<GameActivity*>(activityPreset->Clone());
+	gameActivity->SetDifficulty(Activity::DifficultySetting::MediumDifficulty);
+	gameActivity->SetStartingGold(5000);
+	gameActivity->SetRequireClearPathToOrbit(false);
+	gameActivity->SetFogOfWarEnabled(s_Fog);
+	g_SceneMan.SetSceneToLoad(scenePreset, true, true);
+
+	// One idle "human" player (no input arrives, so its brain just sits there) versus a CPU team. All other units on both sides are AI-driven.
+	gameActivity->ClearPlayers(false);
+	gameActivity->AddPlayer(Players::PlayerOne, true, Activity::Teams::TeamOne, 0);
+	gameActivity->SetCPUTeam(Activity::Teams::TeamTwo);
+	gameActivity->SetTeamTech(Activity::Teams::TeamOne, "Coalition.rte");
+	gameActivity->SetTeamTech(Activity::Teams::TeamTwo, "Ronin.rte");
+	for (int team = Activity::Teams::TeamOne; team < Activity::Teams::MaxTeamCount; ++team) {
+		gameActivity->SetTeamAISkill(team, Activity::AISkillSetting::DefaultSkill);
+	}
+	g_ActivityMan.SetStartActivity(gameActivity);
+	g_ActivityMan.SetRestartActivity();
+	return true;
+}
+
+void DeterminismHarness::EndOfSimUpdate() {
+	if (!s_Enabled || !g_ActivityMan.IsInActivity()) {
+		return;
+	}
+	++s_Tick;
+
+	Hasher actorsHash;
+	for (const Actor* actor: g_MovableMan.m_Actors) {
+		HashMO(actorsHash, actor);
+	}
+	Hasher itemsHash;
+	for (const MovableObject* item: g_MovableMan.m_Items) {
+		HashMO(itemsHash, item);
+	}
+	Hasher particlesHash;
+	for (const MovableObject* particle: g_MovableMan.m_Particles) {
+		HashMO(particlesHash, particle);
+	}
+
+	uint64_t rngHash = HashRNG(g_RandomGenerator);
+	Hasher luaRngHash;
+	luaRngHash.Add(HashRNG(g_LuaMan.GetMasterScriptState().m_RandomGenerator));
+	for (const LuaStateWrapper& luaState: g_LuaMan.GetThreadedScriptStates()) {
+		luaRngHash.Add(HashRNG(luaState.m_RandomGenerator));
+	}
+
+	if (s_TerrainEvery > 0 && (s_Tick % s_TerrainEvery) == 0 && g_SceneMan.GetTerrain()) {
+		if (s_SyncBeforeTerrainHash) {
+			// Make sure no in-flight background work can be touching the terrain while we read it.
+			g_ThreadMan.GetPriorityThreadPool().wait_for_tasks();
+			g_ThreadMan.GetBackgroundThreadPool().wait_for_tasks();
+		}
+		const BITMAP* materialBitmap = g_SceneMan.GetTerrain()->GetMaterialBitmap();
+		Hasher terrainHash;
+		for (int y = 0; y < materialBitmap->h; ++y) {
+			terrainHash.Bytes(materialBitmap->line[y], materialBitmap->w);
+		}
+		s_LastTerrainHash = terrainHash.m_Hash;
+	}
+
+	Hasher combined;
+	combined.Add(rngHash);
+	combined.Add(luaRngHash.m_Hash);
+	combined.Add(actorsHash.m_Hash);
+	combined.Add(itemsHash.m_Hash);
+	combined.Add(particlesHash.m_Hash);
+	combined.Add(s_LastTerrainHash);
+
+	char line[512];
+	std::snprintf(line, sizeof(line), "%lld %zu %zu %zu | %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " | %016" PRIx64 "\n",
+	              s_Tick, g_MovableMan.m_Actors.size(), g_MovableMan.m_Items.size(), g_MovableMan.m_Particles.size(),
+	              rngHash, luaRngHash.m_Hash, actorsHash.m_Hash, itemsHash.m_Hash, particlesHash.m_Hash, s_LastTerrainHash, combined.m_Hash);
+	s_Log << line;
+
+	if (s_DumpTicks.count(s_Tick)) {
+		WriteDump();
+	}
+	if (s_Tick >= s_TicksToRun) {
+		s_Log.flush();
+		System::SetQuit(true);
+	}
+}
+
+void DeterminismHarness::WriteDump() {
+	std::ofstream dump(s_LogPath + ".dump" + std::to_string(s_Tick), std::ios::out | std::ios::trunc);
+	dump << "# tick " << s_Tick << "\n# actors\n";
+	for (const Actor* actor: g_MovableMan.m_Actors) {
+		dump << FormatMO(actor) << "\n";
+	}
+	dump << "# items\n";
+	for (const MovableObject* item: g_MovableMan.m_Items) {
+		dump << FormatMO(item) << "\n";
+	}
+	dump << "# particles\n";
+	for (const MovableObject* particle: g_MovableMan.m_Particles) {
+		dump << FormatMO(particle) << "\n";
+	}
+
+	if (g_SceneMan.GetTerrain()) {
+		// Raw 8-bit material layer, row by row, preceded by width and height as 32-bit ints.
+		const BITMAP* materialBitmap = g_SceneMan.GetTerrain()->GetMaterialBitmap();
+		std::ofstream terrainDump(s_LogPath + ".terrain" + std::to_string(s_Tick), std::ios::out | std::ios::trunc | std::ios::binary);
+		int32_t dimensions[2] = {materialBitmap->w, materialBitmap->h};
+		terrainDump.write(reinterpret_cast<const char*>(dimensions), sizeof(dimensions));
+		for (int y = 0; y < materialBitmap->h; ++y) {
+			terrainDump.write(reinterpret_cast<const char*>(materialBitmap->line[y]), materialBitmap->w);
+		}
+	}
+}

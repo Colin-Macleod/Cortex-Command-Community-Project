@@ -20,6 +20,8 @@ namespace RTE {
 
 	/// A single lua state. Multiple of these can exist at once for multithreaded scripting.
 	class LuaStateWrapper {
+		friend class DeterminismHarness;
+
 	public:
 #pragma region Creation
 		/// Constructor method used to instantiate a LuaStateWrapper object in system memory. Initialize() should be called before using the object.

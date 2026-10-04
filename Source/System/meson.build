@@ -9,6 +9,7 @@ sources += files(
 'Atom.cpp',
 'ContentFile.cpp',
 'Controller.cpp',
+'DeterminismHarness.cpp',
 'GenericSavedData.cpp',
 'Writer.cpp',
 'Box.cpp',

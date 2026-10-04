@@ -48,6 +48,9 @@ namespace RTE {
 		/// @return Whether there is enough sim time to do a physics update.
 		bool TimeForSimUpdate() const { return m_SimAccumulator >= m_DeltaTime; }
 
+		/// Overrides the real-time accumulator so that exactly one sim update happens before the next draw. Used for fixed-step (lockstep-style) simulation.
+		void SetAccumulatorForSingleSimUpdate() { m_SimAccumulator = m_DeltaTime; }
+
 		/// Tells whether the current simulation update will be drawn in a frame. Use this to check if it is necessary to draw purely graphical things during the sim update.
 		/// @return Whether this is the last sim update before a frame with its results will appear.
 		bool DrawnSimUpdate() const { return m_DrawnSimUpdate; }

@@ -16,6 +16,12 @@ namespace RTE {
 	class Matrix;
 
 #pragma region Random Numbers
+#ifdef RTE_RNG_TRACE
+	class RandomGenerator;
+	/// Called on every draw from any RandomGenerator in RTE_RNG_TRACE builds. Implemented by DeterminismHarness.
+	void RNGTraceHook(const RandomGenerator* generator);
+#endif
+
 	class RandomGenerator {
 		std::mt19937 m_RNG; //!< The random number generator used for all random functions.
 
@@ -27,28 +33,28 @@ namespace RTE {
 		/// @return Uniformly distributed random number in the range [-1, 1].
 		template <typename floatType = float>
 		typename std::enable_if<std::is_floating_point<floatType>::value, floatType>::type RandomNormalNum() {
-			return std::uniform_real_distribution<floatType>(floatType(-1.0), std::nextafter(floatType(1.0), std::numeric_limits<floatType>::max()))(m_RNG);
+			return std::uniform_real_distribution<floatType>(floatType(-1.0), std::nextafter(floatType(1.0), std::numeric_limits<floatType>::max()))(Engine());
 		}
 
 		/// Function template specialization for int types which returns a uniformly distributed random number in the range [-1, 1].
 		/// @return Uniformly distributed random number in the range [-1, 1].
 		template <typename intType>
 		typename std::enable_if<std::is_integral<intType>::value, intType>::type RandomNormalNum() {
-			return std::uniform_int_distribution<intType>(intType(-1), intType(1))(m_RNG);
+			return std::uniform_int_distribution<intType>(intType(-1), intType(1))(Engine());
 		}
 
 		/// Function template which returns a uniformly distributed random number in the range [0, 1].
 		/// @return Uniformly distributed random number in the range [0, 1].
 		template <typename floatType = float>
 		typename std::enable_if<std::is_floating_point<floatType>::value, floatType>::type RandomNum() {
-			return std::uniform_real_distribution<floatType>(floatType(0.0), std::nextafter(floatType(1.0), std::numeric_limits<floatType>::max()))(m_RNG);
+			return std::uniform_real_distribution<floatType>(floatType(0.0), std::nextafter(floatType(1.0), std::numeric_limits<floatType>::max()))(Engine());
 		}
 
 		/// Function template specialization for int types which returns a uniformly distributed random number in the range [0, 1].
 		/// @return Uniformly distributed random number in the range [0, 1].
 		template <typename intType>
 		typename std::enable_if<std::is_integral<intType>::value, intType>::type RandomNum() {
-			return std::uniform_int_distribution<intType>(intType(0), intType(1))(m_RNG);
+			return std::uniform_int_distribution<intType>(intType(0), intType(1))(Engine());
 		}
 
 		/// Function template which returns a uniformly distributed random number in the range [min, max].
@@ -60,7 +66,7 @@ namespace RTE {
 			if (max < min) {
 				std::swap(min, max);
 			}
-			return (std::uniform_real_distribution<floatType>(floatType(0.0), std::nextafter(max - min, std::numeric_limits<floatType>::max()))(m_RNG) + min);
+			return (std::uniform_real_distribution<floatType>(floatType(0.0), std::nextafter(max - min, std::numeric_limits<floatType>::max()))(Engine()) + min);
 		}
 
 		/// Function template specialization for int types which returns a uniformly distributed random number in the range [min, max].
@@ -72,11 +78,21 @@ namespace RTE {
 			if (max < min) {
 				std::swap(min, max);
 			}
-			return (std::uniform_int_distribution<intType>(intType(0), max - min)(m_RNG) + min);
+			return (std::uniform_int_distribution<intType>(intType(0), max - min)(Engine()) + min);
+		}
+
+	private:
+		/// Gets the underlying engine for a draw. When built with RTE_RNG_TRACE, every draw is reported to RNGTraceHook so call sites can be compared between runs.
+		std::mt19937& Engine() {
+#ifdef RTE_RNG_TRACE
+			RNGTraceHook(this);
+#endif
+			return m_RNG;
 		}
 	};
 
 	extern RandomGenerator g_RandomGenerator; //!< The global random number generator used in our simulation thread.
+
 
 	/// Seed global the global random number generators.
 	void SeedRNG();

@@ -53,6 +53,7 @@ namespace RTE {
 	class MovableMan : public Singleton<MovableMan>, public Serializable {
 		friend class SettingsMan;
 		friend struct ManagerLuaBindings;
+		friend class DeterminismHarness;
 
 		/// Public member variable, method and friend function declarations
 	public:
