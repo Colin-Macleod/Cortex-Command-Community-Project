@@ -10,6 +10,7 @@ sources += files(
 'ContentFile.cpp',
 'Controller.cpp',
 'DeterminismHarness.cpp',
+'MathConsistency.cpp',
 'GenericSavedData.cpp',
 'Writer.cpp',
 'Box.cpp',

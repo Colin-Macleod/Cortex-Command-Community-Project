@@ -97,6 +97,9 @@
     <ClInclude Include="Source\System\DeterminismHarness.h">
       <Filter>System</Filter>
     </ClInclude>
+    <ClInclude Include="Source\System\MathConsistency.h">
+      <Filter>System</Filter>
+    </ClInclude>
     <ClInclude Include="Source\System\Vector.h">
       <Filter>System</Filter>
     </ClInclude>
@@ -698,6 +701,9 @@
       <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="Source\System\DeterminismHarness.cpp">
+      <Filter>System</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\System\MathConsistency.cpp">
       <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="Source\System\Vector.cpp">
