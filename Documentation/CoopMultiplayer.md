@@ -27,7 +27,7 @@ Optional host settings:
 - `-coop-difficulty <0-100>`: difficulty of the automatic Activity.
 - `-coop-gold <amount>`: starting gold of the automatic Activity.
 - `-coop-fog <0|1>`: fog of war for the automatic Activity.
-- `-coop-delay <sim updates>`: input delay; see below. Default 4, which is about 67 ms.
+- `-coop-delay <sim updates>`: fixed input delay; see below. By default the host picks it when the match starts, from the slowest player's measured round trip time (between 3 and 20 sim updates, i.e. 50–333 ms at the default sim speed).
 
 The host needs to forward the UDP port, or be on the same LAN as the other players.
 
@@ -65,10 +65,10 @@ Local settings are restored afterwards.
 
 ## How it works
 
-- Every sim update, each computer captures its local player's input (input elements, analog sticks, mouse movement and buttons, cursor position). It sends that to the host, tagged for a sim update a few updates in the future (the *input delay*).
+- Every sim update, each computer captures its local player's input (input elements, analog sticks, mouse movement and buttons, cursor position). It sends that to the host, tagged for a sim update a few updates in the future (the *input delay*). The host measures each player's round trip time while in the menus and sets the input delay so input normally arrives before it's needed. The top line of the screen shows the current value.
 - The host bundles everyone's input for each sim update and sends the bundle to all players. A computer only runs sim update N once it has bundle N.
 - In-game menus (pie menu, buy menu, inventory, object pickers) read their input through the same per-player input path (`UInputMan` virtual input). They therefore work, and stay in sync, without any special handling.
-- If a player's input is more than 3 seconds late, the host repeats their previous held input, so one stalled computer doesn't freeze everyone. Players still loading are waited for.
+- If a player's input is more than 3 seconds late, the host marks them as lagging and repeats their previous held input, so one stalled or disconnected computer doesn't freeze everyone. While a player is lagging, the host doesn't wait for them at all; once their input catches up, it's used again. Players still loading are waited for. A player who disconnects stands idle for the rest of the match.
 - Every 60 sim updates, each client sends a hash of its simulation state to the host. On a mismatch, everyone sees a **DESYNC** message saying which part of the state differs (RNG, Lua RNG, actors, items, particles, terrain). Each computer also writes a `CoopDesync_*.txt` state dump in the `Userdata` folder.
 
 ### What keeps the simulation identical
@@ -95,10 +95,11 @@ Always on:
 
 `Tools/Determinism/` has the tools used to test this. The in-game harness logs per-sim-update state hashes on both computers. Set `CCCP_DT_OBSERVE=1` when running a co-op session.
 
-Two test-only options:
+Test-only options:
 
 - `-coop-bot <seed>`: drives the local player with a pseudo-random input bot.
 - `-coop-inject-desync <update>`: deliberately perturbs the simulation on one computer, to check the desync detector.
+- `-coop-sim-latency <ms>` and `-coop-sim-jitter <ms>`: hold back every message this computer sends by the given latency plus a random 0 to jitter ms, keeping message order (like a reliable ordered connection over a slow link). Pass them to every game instance to test a slow network with all instances on one machine.
 
 Example, two computers on one machine:
 
@@ -107,6 +108,21 @@ CCCP_DT_LOG=host.log CCCP_DT_OBSERVE=1 CCCP_DT_TICKS=3000 ./CortexCommand -coop-
 CCCP_DT_LOG=client.log CCCP_DT_OBSERVE=1 CCCP_DT_TICKS=3000 ./CortexCommand -coop-join 127.0.0.1:7777 -coop-bot 2
 Tools/Determinism/compare_logs.py host.log client.log
 ```
+
+### Results so far
+
+All on one Linux machine, two to three game instances, bots driving every player:
+
+| Test | Result |
+|---|---|
+| Bunker Breach, 2 players, 3000 sim updates, several bot seeds | Identical on all computers |
+| Bunker Breach, 3 players | Identical |
+| Bunker Breach, 60–80 ms simulated latency (60 ms plus up to 20 ms jitter) on every message | Identical; the auto input delay keeps the normal speed |
+| Wave Defense, started from the Scenario menu by hand; the client joined as player 2 automatically | Identical |
+| Wave Defense, 4000 sim updates, bots placing objects in the build phase | Identical |
+| `-coop-inject-desync` | Desync detected at the next check, with the differing part named |
+| Client killed during a match | Host carries on after 3 s; that player stands idle |
+| Host killed during a match | Clients end the match, return to the main menu and keep trying to reconnect |
 
 ## Known limitations
 
