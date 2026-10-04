@@ -868,8 +868,10 @@ GameActivity* LockstepMan::BuildAutoActivity() const {
 	activity->SetStartingGold(m_Options.AutoGold);
 	activity->SetRequireClearPathToOrbit(false);
 	activity->SetFogOfWarEnabled(m_Options.AutoFog);
-	if (!m_Options.AutoScene.empty()) {
-		if (const Scene* scene = dynamic_cast<const Scene*>(g_PresetMan.GetEntityPreset("Scene", m_Options.AutoScene))) {
+	// Without -coop-scene, the Activity's own default scene.
+	const std::string sceneName = m_Options.AutoScene.empty() ? activity->GetSceneName() : m_Options.AutoScene;
+	if (!sceneName.empty()) {
+		if (const Scene* scene = dynamic_cast<const Scene*>(g_PresetMan.GetEntityPreset("Scene", sceneName))) {
 			g_SceneMan.SetSceneToLoad(scene, true, m_Options.AutoDeployUnits);
 		}
 	}
