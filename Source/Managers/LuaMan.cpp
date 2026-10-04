@@ -344,6 +344,14 @@ LuaStatesArray& LuaMan::GetThreadedScriptStates() {
 	return m_ScriptStates;
 }
 
+void LuaMan::ResetRandomGeneratorsAndStateAssignment() {
+	m_MasterScriptState.m_RandomGenerator.Seed(0x9E3779B97F4A7C15ULL);
+	for (size_t i = 0; i < m_ScriptStates.size(); ++i) {
+		m_ScriptStates[i].m_RandomGenerator.Seed(0x9E3779B97F4A7C15ULL + i + 1);
+	}
+	m_LastAssignedLuaState = 0;
+}
+
 thread_local LuaStateWrapper* s_luaStateOverride = nullptr;
 LuaStateWrapper* LuaMan::GetThreadLuaStateOverride() const {
 	return s_luaStateOverride;
@@ -351,6 +359,7 @@ LuaStateWrapper* LuaMan::GetThreadLuaStateOverride() const {
 
 void LuaMan::SetThreadLuaStateOverride(LuaStateWrapper* luaState) {
 	s_luaStateOverride = luaState;
+	g_ThreadRandomGeneratorOverride = luaState ? &luaState->m_RandomGenerator : nullptr;
 }
 
 thread_local LuaStateWrapper* s_currentLuaState = nullptr;
@@ -866,8 +875,9 @@ int LuaStateWrapper::RunScriptFileAndRetrieveFunctions(const std::string& filePa
 }
 
 void LuaStateWrapper::Update() {
-	for (MovableObject* mo: m_AddedRegisteredMOs) {
-		m_RegisteredMOs.insert(mo);
+	for (const auto& [mo, registrationOrder]: m_AddedRegisteredMOs) {
+		m_RegisteredMOs.emplace(registrationOrder, mo);
+		m_RegisteredMOOrder.emplace(mo, registrationOrder);
 	}
 	m_AddedRegisteredMOs.clear();
 }

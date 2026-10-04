@@ -1342,7 +1342,7 @@ void MovableMan::Update() {
 		const std::string threadedUpdate = "ThreadedUpdate"; // avoid string reconstruction
 
 		g_LuaMan.SetThreadLuaStateOverride(&g_LuaMan.GetMasterScriptState());
-		for (MovableObject* mo: g_LuaMan.GetMasterScriptState().GetRegisteredMOs()) {
+		for (const auto& [registrationOrder, mo]: g_LuaMan.GetMasterScriptState().GetRegisteredMOs()) {
 			if (ValidMO(mo->GetRootParent())) {
 				mo->RunScriptedFunctionInAppropriateScripts(threadedUpdate, false, false, {}, {}, {});
 			}
@@ -1356,7 +1356,7 @@ void MovableMan::Update() {
 			                                                     LuaStateWrapper& luaState = luaStates[start];
 			                                                     g_LuaMan.SetThreadLuaStateOverride(&luaState);
 
-			                                                     for (MovableObject* mo: luaState.GetRegisteredMOs()) {
+			                                                     for (const auto& [registrationOrder, mo]: luaState.GetRegisteredMOs()) {
 				                                                     if (ValidMO(mo->GetRootParent())) {
 					                                                     mo->RunScriptedFunctionInAppropriateScripts(threadedUpdate, false, false, {}, {}, {});
 				                                                     }
@@ -1373,7 +1373,7 @@ void MovableMan::Update() {
 		const std::string syncedUpdate = "SyncedUpdate"; // avoid string reconstruction
 
 		g_LuaMan.SetThreadLuaStateOverride(&g_LuaMan.GetMasterScriptState());
-		for (MovableObject* mo: g_LuaMan.GetMasterScriptState().GetRegisteredMOs()) {
+		for (const auto& [registrationOrder, mo]: g_LuaMan.GetMasterScriptState().GetRegisteredMOs()) {
 			if (ValidMO(mo->GetRootParent())) {
 				mo->RunScriptedFunctionInAppropriateScripts(syncedUpdate, false, false, {}, {}, {});
 			}
@@ -1383,7 +1383,7 @@ void MovableMan::Update() {
 		for (LuaStateWrapper& luaState: g_LuaMan.GetThreadedScriptStates()) {
 			g_LuaMan.SetThreadLuaStateOverride(&luaState);
 
-			for (MovableObject* mo: luaState.GetRegisteredMOs()) {
+			for (const auto& [registrationOrder, mo]: luaState.GetRegisteredMOs()) {
 				if (mo->HasRequestedSyncedUpdate()) {
 					mo->RunScriptedFunctionInAppropriateScripts(syncedUpdate, false, false, {}, {}, {});
 					mo->ResetRequestedSyncedUpdateFlag();
@@ -1671,7 +1671,12 @@ void MovableMan::Update() {
 	                                                                         [&](int start, int end) {
 		                                                                         ZoneScopedN("Actors See");
 		                                                                         for (int i = start; i < end; ++i) {
+			                                                                         // Seed a generator from the actor and sim tick so see rays are the same no matter which worker thread casts them, and don't race on the global generator.
+			                                                                         RandomGenerator seeRayRNG;
+			                                                                         seeRayRNG.Seed(static_cast<uint64_t>(m_Actors[i]->GetUniqueID()) * 2654435761ULL + static_cast<uint64_t>(g_TimerMan.GetSimUpdateCount()));
+			                                                                         g_ThreadRandomGeneratorOverride = &seeRayRNG;
 			                                                                         m_Actors[i]->CastSeeRays();
+			                                                                         g_ThreadRandomGeneratorOverride = nullptr;
 		                                                                         }
 	                                                                         });
 

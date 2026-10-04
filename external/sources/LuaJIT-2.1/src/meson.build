@@ -42,7 +42,10 @@ lj_defines = [
     '-D_LARGEFILE_SOURCE',
     '-U_FORTIFY_SOURCE',
     '-DLUA_MULTILIB="lib"',
-    '-DLUA_ROOT="' + get_option('prefix') + '"'
+    '-DLUA_ROOT="' + get_option('prefix') + '"',
+    # Fixed PRNG seed and no randomised string hashing, so table iteration order (pairs) over string keys is identical between runs and machines.
+    '-DLUAJIT_SECURITY_PRNG=0',
+    '-DLUAJIT_SECURITY_STRHASH=0'
 ]
 
 if host_machine.system() == 'darwin'

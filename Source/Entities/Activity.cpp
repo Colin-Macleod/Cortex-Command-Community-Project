@@ -8,6 +8,7 @@
 #include "FrameMan.h"
 #include "MetaMan.h"
 #include "SceneMan.h"
+#include "LuaMan.h"
 
 #include "ACraft.h"
 
@@ -288,6 +289,7 @@ int Activity::Save(Writer& writer) const {
 int Activity::Start() {
 	// Reseed the RNG for determinism
 	SeedRNG();
+	g_LuaMan.ResetRandomGeneratorsAndStateAssignment();
 
 	if (m_ActivityState != ActivityState::Editing) {
 		m_ActivityState = ActivityState::Running;

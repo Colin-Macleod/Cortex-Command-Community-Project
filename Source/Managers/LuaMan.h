@@ -8,6 +8,8 @@
 #include "BS_thread_pool.hpp"
 
 #include <array>
+#include <map>
+#include <unordered_map>
 
 #define g_LuaMan LuaMan::Instance()
 
@@ -20,6 +22,7 @@ namespace RTE {
 
 	/// A single lua state. Multiple of these can exist at once for multithreaded scripting.
 	class LuaStateWrapper {
+		friend class LuaMan;
 		friend class DeterminismHarness;
 
 	public:
@@ -76,18 +79,21 @@ namespace RTE {
 #pragma region Script Responsibility Handling
 		/// Registers an MO as using us.
 		/// @param moToRegister The MO to register with us. Ownership is NOT transferred!
-		void RegisterMO(MovableObject* moToRegister) { m_AddedRegisteredMOs.insert(moToRegister); }
+		void RegisterMO(MovableObject* moToRegister) { m_AddedRegisteredMOs.emplace(moToRegister, m_NextRegistrationOrder++); }
 
 		/// Unregisters an MO as using us.
 		/// @param moToUnregister The MO to unregister as using us. Ownership is NOT transferred!
 		void UnregisterMO(MovableObject* moToUnregister) {
-			m_RegisteredMOs.erase(moToUnregister);
+			if (auto orderItr = m_RegisteredMOOrder.find(moToUnregister); orderItr != m_RegisteredMOOrder.end()) {
+				m_RegisteredMOs.erase(orderItr->second);
+				m_RegisteredMOOrder.erase(orderItr);
+			}
 			m_AddedRegisteredMOs.erase(moToUnregister);
 		}
 
-		/// Gets a list of the MOs registed as using us.
-		/// @return The MOs registed as using us.
-		const std::unordered_set<MovableObject*>& GetRegisteredMOs() const { return m_RegisteredMOs; }
+		/// Gets the MOs registered as using us, keyed and ordered by registration order so iteration order doesn't depend on memory addresses.
+		/// @return The MOs registered as using us.
+		const std::map<uint64_t, MovableObject*>& GetRegisteredMOs() const { return m_RegisteredMOs; }
 #pragma endregion
 
 #pragma region Script Execution Handling
@@ -250,8 +256,10 @@ namespace RTE {
 		/// Clears all the member variables of this LuaStateWrapper, effectively resetting the members of this abstraction level only.
 		void Clear();
 
-		std::unordered_set<MovableObject*> m_RegisteredMOs; //!< The objects using our lua state.
-		std::unordered_set<MovableObject*> m_AddedRegisteredMOs; //!< The objects using our lua state that were recently added.
+		std::map<uint64_t, MovableObject*> m_RegisteredMOs; //!< The objects using our lua state, keyed by registration order.
+		std::unordered_map<MovableObject*, uint64_t> m_RegisteredMOOrder; //!< Reverse lookup of each registered object's registration order.
+		std::unordered_map<MovableObject*, uint64_t> m_AddedRegisteredMOs; //!< The objects using our lua state that were recently added, with their registration order.
+		uint64_t m_NextRegistrationOrder = 0; //!< Registration order counter. Deterministic because registration into a given state only ever happens from one thread at a time.
 
 		lua_State* m_State;
 		Entity* m_TempEntity; //!< Temporary holder for an Entity object that we want to pass into the Lua state without fuss. Lets you export objects to lua easily.
@@ -305,6 +313,9 @@ namespace RTE {
 		/// Returns our threaded script states which movable objects use.
 		/// @return A list of threaded script states.
 		LuaStatesArray& GetThreadedScriptStates();
+
+		/// Reseeds every Lua state's random generator with fixed seeds and restarts round-robin state assignment, so each Activity starts from the same state.
+		void ResetRandomGeneratorsAndStateAssignment();
 
 		/// Gets the current thread lua state override that new objects created will be assigned to.
 		/// @return The current lua state to force objects to be assigned to.

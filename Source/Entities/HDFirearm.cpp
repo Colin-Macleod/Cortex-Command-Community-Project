@@ -1006,7 +1006,7 @@ void HDFirearm::Update() {
 	if (m_FireFrame && m_pFlash && m_pFlash->GetScreenEffect()) {
 		Vector muzzlePos = m_Pos + RotateOffset(m_MuzzleOff + Vector(m_pFlash->GetSpriteWidth() * 0.3F, 0));
 		if (m_EffectAlwaysShows || !g_SceneMan.ObscuredPoint(muzzlePos)) {
-			g_PostProcessMan.RegisterPostEffect(muzzlePos, m_pFlash->GetScreenEffect(), m_pFlash->GetScreenEffectHash(), RandomNum(m_pFlash->GetEffectStopStrength(), m_pFlash->GetEffectStartStrength()), m_pFlash->GetEffectRotAngle());
+			g_PostProcessMan.RegisterPostEffect(muzzlePos, m_pFlash->GetScreenEffect(), m_pFlash->GetScreenEffectHash(), CosmeticRandomGenerator().RandomNum(m_pFlash->GetEffectStopStrength(), m_pFlash->GetEffectStartStrength()), m_pFlash->GetEffectRotAngle());
 		}
 	}
 }
@@ -1045,7 +1045,7 @@ void HDFirearm::DrawHUD(BITMAP* pTargetBitmap, const Vector& targetPos, int whic
 	}
 
 	float sharpLength = std::max(m_MaxSharpLength * m_SharpAim, 20.0F);
-	int glowStrength = RandomNum(95, 159);
+	int glowStrength = CosmeticRandomGenerator().RandomNum(95, 159);
 	int pointCount;
 	if (playerControlled && sharpLength > 20.0F) {
 		pointCount = m_SharpAim > 0.5F ? 4 : 3;

@@ -9,6 +9,12 @@
 namespace RTE {
 
 	RandomGenerator g_RandomGenerator;
+	thread_local RandomGenerator* g_ThreadRandomGeneratorOverride = nullptr;
+
+	RandomGenerator& CosmeticRandomGenerator() {
+		thread_local RandomGenerator cosmeticGenerator;
+		return cosmeticGenerator;
+	}
 
 	void SeedRNG() {
 		// Use a constant seed for determinism.

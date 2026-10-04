@@ -397,7 +397,7 @@ bool AudioMan::PlaySoundContainer(SoundContainer* soundContainer, int player) {
 		result = (result == FMOD_OK) ? channel->setUserData(soundContainer) : result;
 		result = (result == FMOD_OK) ? channel->setCallback(SoundChannelEndedCallback) : result;
 		result = (result == FMOD_OK) ? channel->setPriority(soundContainer->GetPriority()) : result;
-		float pitchVariationMultiplier = pitchVariationFactor == 1.0F ? 1.0F : RandomNum(1.0F / pitchVariationFactor, 1.0F * pitchVariationFactor);
+		float pitchVariationMultiplier = pitchVariationFactor == 1.0F ? 1.0F : CosmeticRandomGenerator().RandomNum(1.0F / pitchVariationFactor, 1.0F * pitchVariationFactor);
 		result = (result == FMOD_OK) ? channel->setPitch(soundContainer->GetPitch() * pitchVariationMultiplier) : result;
 
 		if (soundContainer->GetCustomPanValue() != 0.0f) {
