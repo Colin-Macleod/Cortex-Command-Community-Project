@@ -12,6 +12,9 @@
 #include "TimerMan.h"
 #include "SLTerrain.h"
 #include "Actor.h"
+#include "AHuman.h"
+#include "Attachable.h"
+#include "HeldDevice.h"
 #include "MOSprite.h"
 #include "Scene.h"
 #include "System.h"
@@ -47,6 +50,7 @@ uint64_t DeterminismHarness::s_LastTerrainHash = 0;
 bool DeterminismHarness::s_ObserveOnly = false;
 bool DeterminismHarness::s_RandomTicksPerFrame = false;
 std::minstd_rand DeterminismHarness::s_FrameRNG;
+int DeterminismHarness::s_FrameJitterMS = 0;
 
 namespace {
 	/// FNV-1a, 64 bit. Hashes the exact bytes so any float bit difference shows up.
@@ -81,7 +85,47 @@ namespace {
 			hasher.Add(actor->GetHealth());
 			hasher.Add(actor->GetStatus());
 			hasher.Add(actor->GetAIMode());
+			hasher.Add(actor->GetAimAngle(false));
+			hasher.Add(actor->GetMovePathSize());
+			hasher.Add(const_cast<Actor*>(actor)->GetWaypointsSize());
+			// What it carries, so a desync in pickups, purchases or dropped items is caught before it shows up in the world.
+			for (const MovableObject* item: *actor->GetInventory()) {
+				hasher.Add(item->GetUniqueID());
+				hasher.Add(item->GetPresetName());
+			}
+			if (const AHuman* human = dynamic_cast<const AHuman*>(actor); human && human->GetEquippedItem()) {
+				hasher.Add(human->GetEquippedItem()->GetUniqueID());
+			}
 		}
+		if (const MOSRotating* rotating = dynamic_cast<const MOSRotating*>(mo)) {
+			hasher.Add(rotating->GetAttachableList().size());
+			for (const Attachable* attachable: rotating->GetAttachableList()) {
+				hasher.Add(attachable->GetUniqueID());
+				hasher.Add(attachable->GetMass());
+			}
+		}
+	}
+
+	/// Hashes the Activity's game state that isn't in movable objects.
+	uint64_t HashActivity() {
+		Hasher hasher;
+		Activity* activity = g_ActivityMan.GetActivity();
+		if (!activity) {
+			return hasher.m_Hash;
+		}
+		hasher.Add(activity->GetActivityState());
+		for (int team = Activity::Teams::TeamOne; team < Activity::Teams::MaxTeamCount; ++team) {
+			hasher.Add(activity->GetTeamFunds(team));
+			hasher.Add(activity->GetTeamDeathCount(team));
+		}
+		for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+			// These pointers can outlive their actor, so only read actors that still exist.
+			const Actor* brain = activity->GetPlayerBrain(player);
+			hasher.Add(g_MovableMan.IsActor(brain) ? brain->GetUniqueID() : 0L);
+			const Actor* controlled = activity->GetControlledActor(player);
+			hasher.Add(g_MovableMan.IsActor(controlled) ? controlled->GetUniqueID() : 0L);
+		}
+		return hasher.m_Hash;
 	}
 
 	/// Hashes the state of a RandomGenerator without disturbing it, by sampling from a copy.
@@ -200,6 +244,9 @@ void DeterminismHarness::Initialize() {
 	if (const char* value = std::getenv("CCCP_DT_TICKS_PER_FRAME")) {
 		s_RandomTicksPerFrame = std::string(value) == "random";
 	}
+	if (const char* value = std::getenv("CCCP_DT_FRAME_JITTER_MS")) {
+		s_FrameJitterMS = std::max(0, std::atoi(value));
+	}
 	if (const char* value = std::getenv("CCCP_DT_FRAME_SEED")) {
 		s_FrameRNG.seed(static_cast<unsigned int>(std::atoll(value)));
 	}
@@ -272,6 +319,12 @@ int DeterminismHarness::GetSimUpdatesForThisFrame() {
 	return s_RandomTicksPerFrame ? static_cast<int>(s_FrameRNG() % 4) : 1;
 }
 
+void DeterminismHarness::SleepFrameJitter() {
+	if (s_Enabled && s_FrameJitterMS > 0) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(s_FrameRNG() % (s_FrameJitterMS + 1)));
+	}
+}
+
 DeterminismHarness::SimStateHashes DeterminismHarness::HashSimState(bool hashTerrain) {
 	SimStateHashes hashes;
 	hashes.ActorCount = g_MovableMan.m_Actors.size();
@@ -301,6 +354,7 @@ DeterminismHarness::SimStateHashes DeterminismHarness::HashSimState(bool hashTer
 		luaRngHash.Add(HashRNG(luaState.m_RandomGenerator));
 	}
 	hashes.LuaRNG = luaRngHash.m_Hash;
+	hashes.Activity = HashActivity();
 
 	if (hashTerrain && g_SceneMan.GetTerrain()) {
 		const BITMAP* materialBitmap = g_SceneMan.GetTerrain()->GetMaterialBitmap();
@@ -318,6 +372,7 @@ DeterminismHarness::SimStateHashes DeterminismHarness::HashSimState(bool hashTer
 	combined.Add(hashes.Items);
 	combined.Add(hashes.Particles);
 	combined.Add(hashes.Terrain);
+	combined.Add(hashes.Activity);
 	hashes.Combined = combined.m_Hash;
 	return hashes;
 }
@@ -346,11 +401,12 @@ void DeterminismHarness::EndOfSimUpdate() {
 	combined.Add(hashes.Items);
 	combined.Add(hashes.Particles);
 	combined.Add(s_LastTerrainHash);
+	combined.Add(hashes.Activity);
 
 	char line[512];
-	std::snprintf(line, sizeof(line), "%lld %zu %zu %zu | %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " | %016" PRIx64 "\n",
+	std::snprintf(line, sizeof(line), "%lld %zu %zu %zu | %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " %016" PRIx64 " | %016" PRIx64 "\n",
 	              s_Tick, hashes.ActorCount, hashes.ItemCount, hashes.ParticleCount,
-	              hashes.RNG, hashes.LuaRNG, hashes.Actors, hashes.Items, hashes.Particles, s_LastTerrainHash, combined.m_Hash);
+	              hashes.RNG, hashes.LuaRNG, hashes.Actors, hashes.Items, hashes.Particles, s_LastTerrainHash, hashes.Activity, combined.m_Hash);
 	s_Log << line;
 
 	if (s_DumpTicks.count(s_Tick)) {

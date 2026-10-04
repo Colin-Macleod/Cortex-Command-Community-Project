@@ -59,6 +59,9 @@ namespace RTE {
 		/// @return The number of sim updates to run this frame, or -1 if the harness isn't controlling sim stepping.
 		static int GetSimUpdatesForThisFrame();
 
+		/// Sleeps for a random 0 to CCCP_DT_FRAME_JITTER_MS milliseconds, if set, so that a machine draws an uneven number of frames between sim updates. Call once per frame.
+		static void SleepFrameJitter();
+
 		/// Hashes of the simulation state. Any difference in object state, RNG state or (optionally) terrain shows up as a different hash.
 		struct SimStateHashes {
 			uint64_t RNG = 0; //!< The global random generator.
@@ -67,6 +70,7 @@ namespace RTE {
 			uint64_t Items = 0; //!< All items.
 			uint64_t Particles = 0; //!< All particles.
 			uint64_t Terrain = 0; //!< The terrain material layer, if requested.
+			uint64_t Activity = 0; //!< Activity state: team funds and deaths, each player's brain and controlled actor.
 			uint64_t Combined = 0; //!< All of the above combined.
 			size_t ActorCount = 0; //!< Number of actors.
 			size_t ItemCount = 0; //!< Number of items.
@@ -98,5 +102,6 @@ namespace RTE {
 		static bool s_ObserveOnly; //!< Whether the harness only logs hashes, without launching an Activity or controlling stepping.
 		static bool s_RandomTicksPerFrame; //!< Whether to run a random number of sim updates per frame.
 		static std::minstd_rand s_FrameRNG; //!< Generator for the random ticks-per-frame sequence. Separate from all sim generators.
+		static int s_FrameJitterMS; //!< Maximum random sleep per frame, in milliseconds. 0 for none.
 	};
 } // namespace RTE

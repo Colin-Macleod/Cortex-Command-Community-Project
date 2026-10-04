@@ -1,0 +1,379 @@
+#!/usr/bin/env python3
+"""Lockstep determinism stress tests.
+
+Runs co-op sessions (a host and 1-3 clients, all on this machine, each under its own Xvfb display) with input bots driving every
+player, under deliberately hostile conditions, and checks that every peer's per-sim-update state hashes stay identical.
+
+Usage:
+    Tools/Determinism/stress/stress.py --list
+    Tools/Determinism/stress/stress.py                     # run every scenario
+    Tools/Determinism/stress/stress.py chaos cpu-features  # run the named scenarios (prefix match)
+    Tools/Determinism/stress/stress.py --quick ...         # a quarter of the sim updates
+    Tools/Determinism/stress/stress.py --jobs 2 ...        # run scenarios in parallel (each uses 2-4 game instances)
+
+Needs Xvfb and a built game (./CortexCommand, or --binary). Linux only. Logs go to --out (default /tmp/cccp-stress).
+The DeterminismStress.rte test module is linked into Mods/ for the duration of the run.
+"""
+import argparse
+import json
+import os
+import random
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+sys.path.insert(0, os.path.dirname(HERE))
+sys.dont_write_bytecode = True  # Don't leave __pycache__ in the repository.
+import compare_logs  # noqa: E402
+
+STRESS_MODULE = "DeterminismStress.rte"
+COMPONENTS = compare_logs.COMPONENTS
+
+# Masks the CPU features glibc's libm picks its fast paths with, so this instance computes double-precision sin/cos/exp/log/pow/atan2
+# like a CPU without FMA/AVX2 would.
+NO_FMA = "glibc.cpu.hwcaps=-AVX2,-FMA,-FMA4,-AVX512F,-AVX512VL,-AVX512DQ,-AVX512BW"
+
+
+def peer(env=None, args=None, wrap=None):
+    """One game instance. env: extra environment. args: extra command line. wrap: command prefix (e.g. taskset)."""
+    return {"env": env or {}, "args": args or [], "wrap": wrap or []}
+
+
+# Each scenario: peers[0] is the host. 'expect' is "identical" (all logs match, no desync reported) or "desync" (the detector must fire).
+SCENARIOS = [
+    {
+        "name": "baseline",
+        "doc": "Two peers, Bunker Breach, nothing special. If this fails, nothing else means anything.",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 2000,
+        "peers": [peer(), peer()],
+    },
+    {
+        "name": "negative-control",
+        "doc": "One peer deliberately perturbs its sim. The desync detector and the log comparison must both catch it.",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 900,
+        "peers": [peer(), peer(args=["-coop-inject-desync", "150"])],
+        "expect": "desync",
+    },
+    {
+        "name": "chaos",
+        "doc": "Determinism Chaos: constant multi-faction war, craft deliveries, bombardment, gibbing, path finding, chaotic Lua double math.",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 4000, "mod": True,
+        "peers": [peer(), peer()],
+    },
+    {
+        "name": "chaos-4p",
+        "doc": "Determinism Chaos with four human players on four machines.",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 2500, "mod": True,
+        "peers": [peer(), peer(), peer(), peer()],
+    },
+    {
+        "name": "cpu-features",
+        "doc": "Client's libm uses the non-FMA code paths (like an older CPU). Chaos amplifies any Lua double-math difference.",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 3000, "mod": True,
+        "peers": [peer(), peer(env={"GLIBC_TUNABLES": NO_FMA})],
+    },
+    {
+        "name": "math-mismatch",
+        "doc": "Client skips the start-up switch to the portable math library code paths, so its libm differs from the host's. The host must refuse it.",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 300, "timeout": 120,
+        "peers": [peer(), peer(env={"CCCP_MATH_RESTARTED": "1"})],
+        "expect": "reject",
+    },
+    {
+        "name": "cpu-features-bb",
+        "doc": "As cpu-features, in a stock Activity (Bunker Breach).",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 3000,
+        "peers": [peer(), peer(env={"GLIBC_TUNABLES": NO_FMA})],
+    },
+    {
+        "name": "contention",
+        "doc": "Host squeezed onto one CPU core at low priority while the client has the rest: very different thread timing and frame rates.",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 2000, "mod": True,
+        "peers": [peer(wrap=["taskset", "-c", "0", "nice", "-n", "15"]), peer(wrap=["taskset", "-c", "1-3"])],
+    },
+    {
+        "name": "frame-jitter",
+        "doc": "Each peer sleeps a random 0-40 ms per frame, so draws and sim updates interleave differently everywhere.",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 2000, "mod": True,
+        "peers": [peer(env={"CCCP_DT_FRAME_JITTER_MS": "40", "CCCP_DT_FRAME_SEED": "1"}),
+                  peer(env={"CCCP_DT_FRAME_JITTER_MS": "40", "CCCP_DT_FRAME_SEED": "2"})],
+    },
+    {
+        "name": "memory",
+        "doc": "Client fills every malloc/free with junk (MALLOC_PERTURB_) and runs without ASLR; host keeps defaults. Catches uninitialised reads and address dependence.",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 2000, "mod": True,
+        "peers": [peer(env={"MALLOC_PERTURB_": "0"}), peer(env={"MALLOC_PERTURB_": "165"}, wrap=["setarch", "-R"])],
+    },
+    {
+        "name": "environment",
+        "doc": "Client runs under a different locale, time zone and working-set limits.",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 1500,
+        "peers": [peer(), peer(env={"LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "TZ": "Pacific/Chatham"})],
+    },
+    {
+        "name": "bad-network",
+        "doc": "120-270 ms per message on every peer, plus a 5 s freeze of one client mid-match (it's marked lagging, then must catch up in sync).",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 2000,
+        "peers": [peer(args=["-coop-sim-latency", "120", "-coop-sim-jitter", "150"]),
+                  peer(args=["-coop-sim-latency", "120", "-coop-sim-jitter", "150"]),
+                  peer(args=["-coop-sim-latency", "120", "-coop-sim-jitter", "150"])],
+        "freeze": {"peer": 2, "at_tick": 700, "seconds": 5},
+    },
+    {
+        "name": "activity-sweep",
+        "doc": "Several stock Activities in turn, two peers each, different bot seeds.",
+        "sweep": [("Wave Defense", "First Signs"), ("One-Man Army", ""), ("Massacre", ""), ("Survival", ""), ("Skirmish Defense", ""),
+                  ("Harvester", ""), ("Keepie Uppie", ""), ("Brain vs Brain", "")],
+        "ticks": 1200,
+        "peers": [peer(), peer()],
+    },
+    {
+        "name": "long",
+        "doc": "One long Chaos match (about 5.5 minutes of game time).",
+        "activity": "Determinism Chaos", "scene": "Ketanot Hills", "ticks": 20000, "mod": True,
+        "peers": [peer(), peer()],
+    },
+]
+
+
+class Display:
+    """An Xvfb server on a free display number."""
+
+    lock = threading.Lock()
+    used = set()
+
+    def __init__(self):
+        with Display.lock:
+            while True:
+                number = random.randint(200, 900)
+                if number not in Display.used and not os.path.exists(f"/tmp/.X{number}-lock"):
+                    Display.used.add(number)
+                    break
+        self.number = number
+        self.proc = subprocess.Popen(["Xvfb", f":{number}", "-screen", "0", "1280x720x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1)
+
+    def close(self):
+        self.proc.kill()
+        self.proc.wait()
+        with Display.lock:
+            Display.used.discard(self.number)
+
+
+def count_ticks(path):
+    try:
+        with open(path) as f:
+            return sum(1 for line in f if line and not line.startswith("#"))
+    except OSError:
+        return 0
+
+
+def read_text(path):
+    try:
+        with open(path, errors="replace") as f:
+            return re.sub(r"\x1b\[[0-9;]*m", "", f.read())
+    except OSError:
+        return ""
+
+
+def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, timeout, freeze=None):
+    """Runs one co-op session. Returns a result dict."""
+    port = random.randint(20000, 40000)
+    displays, procs, logs, outs = [], [], [], []
+    started = time.time()
+    try:
+        for index, p in enumerate(peers):
+            display = Display()
+            displays.append(display)
+            log = os.path.join(out, f"{name}_p{index}.log")
+            stdout = os.path.join(out, f"{name}_p{index}.out")
+            for stale in (log, stdout):
+                if os.path.exists(stale):
+                    os.remove(stale)
+            logs.append(log)
+            outs.append(stdout)
+            env = dict(os.environ)
+            env.update({"DISPLAY": f":{display.number}", "CCCP_DT_LOG": log, "CCCP_DT_OBSERVE": "1",
+                        # The host runs a little longer so every client can reach its last tick.
+                        "CCCP_DT_TICKS": str(ticks + (120 if index == 0 else 0))})
+            env.update(p["env"])
+            command = p["wrap"] + [binary, "-cout"]
+            if index == 0:
+                command += ["-coop-host", str(port), "-coop-players", str(len(peers)), "-coop-activity", activity]
+                if scene:
+                    command += ["-coop-scene", scene]
+            else:
+                command += ["-coop-join", f"127.0.0.1:{port}"]
+            command += ["-coop-bot", str(bot_base + index)] + p["args"]
+            with open(stdout, "w") as f:
+                procs.append(subprocess.Popen(command, cwd=REPO, env=env, stdout=f, stderr=subprocess.STDOUT))
+            if index == 0:
+                time.sleep(2)
+
+        frozen = False
+        last_progress, last_ticks = time.time(), -1
+        while True:
+            if all(proc.poll() is not None for proc in procs[1:]):
+                break
+            if time.time() - started > timeout:
+                break
+            # Watchdog: give up if no peer has made progress for a long time (stuck loading, an assertion dialog, a stalled session).
+            ticks_now = sum(count_ticks(log) for log in logs)
+            if ticks_now != last_ticks:
+                last_progress, last_ticks = time.time(), ticks_now
+            elif time.time() - last_progress > (300 if ticks_now == 0 else 180):
+                break
+            if freeze and not frozen and count_ticks(logs[freeze["peer"]]) >= freeze["at_tick"]:
+                procs[freeze["peer"]].send_signal(signal.SIGSTOP)
+                time.sleep(freeze["seconds"])
+                procs[freeze["peer"]].send_signal(signal.SIGCONT)
+                frozen = True
+            time.sleep(1)
+        # Give the host a moment to log its last ticks and notice the clients leaving.
+        deadline = time.time() + 30
+        while procs[0].poll() is None and time.time() < deadline:
+            time.sleep(1)
+        timed_out = any(proc.poll() is None for proc in procs)
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGCONT)
+                proc.kill()
+            proc.wait()
+        for display in displays:
+            display.close()
+
+    result = {"name": name, "seconds": round(time.time() - started), "exit_codes": [proc.returncode for proc in procs],
+              "ticks": [count_ticks(log) for log in logs], "timed_out": timed_out, "comparisons": []}
+    host = compare_logs.load(logs[0]) if os.path.exists(logs[0]) else {}
+    for index in range(1, len(peers)):
+        client = compare_logs.load(logs[index]) if os.path.exists(logs[index]) else {}
+        common = sorted(set(host) & set(client))
+        first = None
+        for t in common:
+            a, b = host[t], client[t]
+            if a["hashes"] != b["hashes"] or a["counts"] != b["counts"]:
+                parts = [c for i, c in enumerate(COMPONENTS[:min(len(a["hashes"]), len(b["hashes"]))]) if a["hashes"][i] != b["hashes"][i]] or ["counts"]
+                first = {"tick": t, "components": parts}
+                break
+        result["comparisons"].append({"peer": index, "common_ticks": len(common), "diverged": first})
+    texts = [read_text(o) for o in outs]
+    result["desync_reported"] = any("DESYNC" in text for text in texts)
+    result["rejected"] = any("rejected the connection" in text for text in texts[1:])
+    result["crashed"] = any(code not in (0, None) and code != -signal.SIGKILL for code in result["exit_codes"]) or any(
+        "Stack trace" in text or "Segmentation fault" in text or "ERROR: Assertion" in text or "Abort in file" in text for text in texts)
+    # Script and engine errors, minus the audio system's complaints about having no sound device.
+    result["lua_errors"] = sum(1 for text in texts for line in text.splitlines() if "ERROR:" in line and "sound" not in line.lower())
+    return result
+
+
+def judge(scenario, result, ticks):
+    """Returns (passed, reason)."""
+    expect = scenario.get("expect", "identical")
+    diverged = [c for c in result["comparisons"] if c["diverged"]]
+    if expect == "reject":
+        if result["rejected"] and not any(result["ticks"]):
+            return True, "client refused at join"
+        return False, f"client wasn't refused (ticks {result['ticks']})"
+    if expect == "desync":
+        if not diverged:
+            return False, "expected a divergence, logs are identical"
+        if not result["desync_reported"]:
+            return False, "logs diverged but the in-game desync detector didn't report it"
+        return True, f"divergence caught at tick {diverged[0]['diverged']['tick']} and reported in game"
+    if result["crashed"]:
+        return False, f"a peer crashed (exit codes {result['exit_codes']})"
+    if diverged:
+        d = diverged[0]
+        return False, f"peer {d['peer']} diverged at tick {d['diverged']['tick']} ({', '.join(d['diverged']['components'])})"
+    if result["desync_reported"]:
+        return False, "desync reported in game"
+    short = [c for c in result["comparisons"] if c["common_ticks"] < ticks]
+    if short or result["timed_out"]:
+        return False, f"incomplete: compared {[c['common_ticks'] for c in result['comparisons']]} of {ticks} ticks" + (" (timed out)" if result["timed_out"] else "")
+    return True, f"identical for {ticks} ticks on {len(result['ticks'])} peers"
+
+
+def run_scenario(scenario, args):
+    ticks = max(200, scenario["ticks"] // 4) if args.quick else scenario["ticks"]
+    timeout = scenario.get("timeout", max(300, ticks * len(scenario["peers"]) // 4))
+    sessions = scenario.get("sweep") or [(scenario["activity"], scenario.get("scene", ""))]
+    outcomes = []
+    for index, (activity, scene) in enumerate(sessions):
+        name = scenario["name"] if len(sessions) == 1 else f"{scenario['name']}-{activity.replace(' ', '')}"
+        result = run_session(args.binary, args.out, name, activity, scene, ticks, scenario["peers"], args.seed + 10 * index, timeout, scenario.get("freeze"))
+        passed, reason = judge(scenario, result, ticks)
+        result.update({"activity": activity, "passed": passed, "reason": reason})
+        outcomes.append(result)
+        print(f"  {'PASS' if passed else 'FAIL'}  {name:34s} {reason}  [{result['seconds']} s, {result['lua_errors']} errors in console]", flush=True)
+    return outcomes
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("scenarios", nargs="*", help="scenario names or prefixes (default: all)")
+    parser.add_argument("--list", action="store_true", help="list scenarios and exit")
+    parser.add_argument("--quick", action="store_true", help="run a quarter of the sim updates")
+    parser.add_argument("--jobs", type=int, default=1, help="scenarios to run at once")
+    parser.add_argument("--seed", type=int, default=1000, help="base bot seed")
+    parser.add_argument("--binary", default=os.path.join(REPO, "CortexCommand"))
+    parser.add_argument("--out", default="/tmp/cccp-stress")
+    args = parser.parse_args()
+
+    if args.list:
+        for s in SCENARIOS:
+            print(f"{s['name']:18s} {s['doc']}")
+        return 0
+    chosen = [s for s in SCENARIOS if not args.scenarios or any(s["name"].startswith(p) for p in args.scenarios)]
+    if not chosen:
+        print("no matching scenarios")
+        return 2
+    os.makedirs(args.out, exist_ok=True)
+    args.binary = os.path.abspath(args.binary)
+
+    link = os.path.join(REPO, "Mods", STRESS_MODULE)
+    made_link = False
+    if any(s.get("mod") for s in chosen) and not os.path.exists(link):
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(os.path.join(HERE, STRESS_MODULE), link)
+        made_link = True
+    try:
+        results = []
+        lock = threading.Lock()
+        queue = list(chosen)
+
+        def worker():
+            while True:
+                with lock:
+                    if not queue:
+                        return
+                    scenario = queue.pop(0)
+                outcome = run_scenario(scenario, args)
+                with lock:
+                    results.append((scenario["name"], outcome))
+
+        threads = [threading.Thread(target=worker) for _ in range(max(1, args.jobs))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        if made_link:
+            os.remove(link)
+
+    flat = [r for _, outcome in results for r in outcome]
+    with open(os.path.join(args.out, "results.json"), "w") as f:
+        json.dump(flat, f, indent=1)
+    failed = [r for r in flat if not r["passed"]]
+    print(f"\n{len(flat) - len(failed)}/{len(flat)} passed. Logs and results.json in {args.out}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

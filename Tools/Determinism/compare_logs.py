@@ -2,7 +2,7 @@
 """Compare two CCCP determinism harness logs and report the first tick at which each state component diverges."""
 import sys
 
-COMPONENTS = ["rng", "luaRng", "actors", "items", "particles", "terrain"]
+COMPONENTS = ["rng", "luaRng", "actors", "items", "particles", "terrain", "activity"]
 
 
 def load(path):
@@ -26,7 +26,7 @@ def main():
         return 2
     first = {}
     for t in ticks:
-        for i, name in enumerate(COMPONENTS):
+        for i, name in enumerate(COMPONENTS[:min(len(a[t]["hashes"]), len(b[t]["hashes"]))]):
             if name not in first and a[t]["hashes"][i] != b[t]["hashes"][i]:
                 first[name] = t
         if "counts" not in first and a[t]["counts"] != b[t]["counts"]:
