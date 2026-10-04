@@ -841,6 +841,7 @@
     <ClInclude Include="Source\Managers\AudioMan.h" />
     <ClInclude Include="Source\Managers\ConsoleMan.h" />
     <ClInclude Include="Source\Managers\FrameMan.h" />
+    <ClInclude Include="Source\Managers\LockstepMan.h" />
     <ClInclude Include="Source\Managers\LuaMan.h" />
     <ClInclude Include="Source\Managers\MetaMan.h" />
     <ClInclude Include="Source\Managers\MovableMan.h" />
@@ -1008,6 +1009,7 @@
     </ClCompile>
     <ClCompile Include="Source\Managers\GLResourceMan.cpp" />
     <ClCompile Include="Source\Managers\MusicMan.cpp" />
+    <ClCompile Include="Source\Managers\LockstepMan.cpp" />
     <ClCompile Include="Source\Managers\LuaMan.cpp">
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

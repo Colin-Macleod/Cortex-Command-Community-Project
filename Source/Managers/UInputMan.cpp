@@ -1,4 +1,5 @@
 #include "UInputMan.h"
+#include "LockstepMan.h"
 #include "Constants.h"
 #include "SceneMan.h"
 #include "ActivityMan.h"
@@ -136,6 +137,10 @@ void UInputMan::LoadDeviceIcons() {
 }
 
 Vector UInputMan::AnalogMoveValues(int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		const VirtualInputFrame& frame = m_VirtualInput[whichPlayer].Frame;
+		return Vector(frame.AnalogMove[0], frame.AnalogMove[1]);
+	}
 	Vector moveValues(0, 0);
 	InputDevice device = m_ControlScheme.at(whichPlayer).GetDevice();
 	if (device >= InputDevice::DEVICE_GAMEPAD_1) {
@@ -155,6 +160,16 @@ Vector UInputMan::AnalogMoveValues(int whichPlayer) {
 
 Vector UInputMan::AnalogAimValues(int whichPlayer) {
 	InputDevice device = m_ControlScheme.at(whichPlayer).GetDevice();
+
+	if (IsVirtualPlayer(whichPlayer)) {
+		if (device == InputDevice::DEVICE_MOUSE_KEYB) {
+			return m_VirtualInput[whichPlayer].AnalogMouseAim / m_MouseTrapRadius;
+		} else if (device >= InputDevice::DEVICE_GAMEPAD_1) {
+			const VirtualInputFrame& frame = m_VirtualInput[whichPlayer].Frame;
+			return Vector(frame.AnalogAim[0], frame.AnalogAim[1]);
+		}
+		return Vector(0, 0);
+	}
 
 	Vector aimValues(0, 0);
 	if (device == InputDevice::DEVICE_MOUSE_KEYB) {
@@ -257,7 +272,8 @@ bool UInputMan::AnyPress() const {
 }
 
 bool UInputMan::AnyStartPress(bool includeSpacebar) {
-	if (KeyPressed(SDLK_ESCAPE) || (includeSpacebar && KeyPressed(SDLK_SPACE))) {
+	// Raw key presses are local to this machine, so they can't be part of the simulation during virtual input.
+	if (!m_VirtualInputActive && (KeyPressed(SDLK_ESCAPE) || (includeSpacebar && KeyPressed(SDLK_SPACE)))) {
 		return true;
 	}
 	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
@@ -308,7 +324,7 @@ void UInputMan::DisableMouseMoving(bool disable) {
 	}
 }
 bool UInputMan::CheckMultiMouseKeyboardEnabled(std::optional<std::reference_wrapper<const std::vector<int>>> players) {
-	if (m_ForceDisableMultiMouseKeyboard) {
+	if (m_ForceDisableMultiMouseKeyboard || m_VirtualInputActive) {
 		m_EnableMultiMouseKeyboard = false;
 		return false;
 	}
@@ -351,6 +367,9 @@ bool UInputMan::AllPlayerInputDevicesKnown(const std::vector<int>& humanPlayers)
 }
 
 Vector UInputMan::GetAbsoluteMousePosition(int whichPlayer) const {
+	if (IsVirtualPlayer(whichPlayer)) {
+		return m_VirtualInput[whichPlayer].MousePosition;
+	}
 	if (!m_EnableMultiMouseKeyboard || (whichPlayer == Players::NoPlayer)) {
 		return m_MouseStates.at(0).position;
 	} else if (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
@@ -362,6 +381,10 @@ Vector UInputMan::GetAbsoluteMousePosition(int whichPlayer) const {
 }
 
 void UInputMan::SetAbsoluteMousePosition(const Vector& pos, int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		m_VirtualInput[whichPlayer].MousePosition = pos;
+		return;
+	}
 	if (whichPlayer == Players::NoPlayer || !m_EnableMultiMouseKeyboard) {
 		m_MouseStates.at(0).position = pos;
 	} else if (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
@@ -372,6 +395,13 @@ void UInputMan::SetAbsoluteMousePosition(const Vector& pos, int whichPlayer) {
 }
 
 Vector UInputMan::GetMouseMovement(int whichPlayer) const {
+	if (IsVirtualPlayer(whichPlayer)) {
+		if (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
+			const VirtualInputFrame& frame = m_VirtualInput[whichPlayer].Frame;
+			return Vector(frame.MouseMovement[0], frame.MouseMovement[1]);
+		}
+		return Vector(0, 0);
+	}
 	if (whichPlayer == Players::NoPlayer || (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB && !m_EnableMultiMouseKeyboard)) {
 		return m_MouseStates.at(0).relativeMotion;
 	} else if (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
@@ -383,6 +413,12 @@ Vector UInputMan::GetMouseMovement(int whichPlayer) const {
 }
 
 void UInputMan::SetMouseValueMagnitude(float magCap, int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		if (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
+			m_VirtualInput[whichPlayer].AnalogMouseAim.SetMagnitude(m_MouseTrapRadius * magCap);
+		}
+		return;
+	}
 	if (whichPlayer != Players::NoPlayer && m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
 		if (!m_EnableMultiMouseKeyboard) {
 			m_MouseStates[0].analogAim.SetMagnitude(m_MouseTrapRadius * magCap);
@@ -395,6 +431,12 @@ void UInputMan::SetMouseValueMagnitude(float magCap, int whichPlayer) {
 }
 
 void UInputMan::SetMouseValueAngle(float angle, int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		if (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
+			m_VirtualInput[whichPlayer].AnalogMouseAim.SetAbsRadAngle(angle);
+		}
+		return;
+	}
 	if (whichPlayer != Players::NoPlayer && m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
 		if (!m_EnableMultiMouseKeyboard) {
 			m_MouseStates[0].analogAim.SetAbsRadAngle(angle);
@@ -407,6 +449,17 @@ void UInputMan::SetMouseValueAngle(float angle, int whichPlayer) {
 }
 
 void UInputMan::SetMousePos(const Vector& newPos, int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		m_VirtualInput[whichPlayer].MousePosition = newPos;
+		if (whichPlayer != m_LocalVirtualPlayer) {
+			return;
+		}
+		// Also move the real cursor of the local player, so their next captured input continues from there.
+		m_BypassVirtualInput = true;
+		SetMousePos(newPos * g_WindowMan.GetResMultiplier(), whichPlayer);
+		m_BypassVirtualInput = false;
+		return;
+	}
 	// Only mess with the mouse if the original mouse position is not above the screen and may be grabbing the title bar of the game window
 	if (!m_DisableMouseMoving && !m_TrapMousePos && ((whichPlayer == Players::NoPlayer) || (m_ControlScheme.at(whichPlayer).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB && !m_EnableMultiMouseKeyboard))) {
 		SDL_WarpMouseInWindow(g_WindowMan.GetWindow(), newPos.GetFloorIntX(), newPos.GetFloorIntY());
@@ -416,6 +469,9 @@ void UInputMan::SetMousePos(const Vector& newPos, int whichPlayer) {
 }
 
 const std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS>& UInputMan::GetMouseState(int whichPlayer) const {
+	if (IsVirtualPlayer(whichPlayer)) {
+		return m_VirtualInput[whichPlayer].MouseState;
+	}
 	if (whichPlayer == Players::NoPlayer || !m_EnableMultiMouseKeyboard) {
 		return m_MouseStates.at(0).state;
 	}
@@ -429,6 +485,9 @@ const std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS>& UInputMan::GetMouseStat
 	return m_MouseStates.at(0).state;
 }
 const std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS>& UInputMan::GetMouseChange(int whichPlayer) const {
+	if (IsVirtualPlayer(whichPlayer)) {
+		return m_VirtualInput[whichPlayer].MouseChange;
+	}
 	if (whichPlayer == Players::NoPlayer || !m_EnableMultiMouseKeyboard) {
 		return m_MouseStates.at(0).change;
 	}
@@ -450,6 +509,9 @@ void UInputMan::ClearMouseButtons() {
 }
 
 int UInputMan::MouseWheelMovedByPlayer(int player) const {
+	if (IsVirtualPlayer(player)) {
+		return m_ControlScheme.at(player).GetDevice() == InputDevice::DEVICE_MOUSE_KEYB ? m_VirtualInput[player].Frame.MouseWheel : 0;
+	}
 	if (player == Players::NoPlayer || player < Players::PlayerOne || player >= Players::MaxPlayerCount || !m_EnableMultiMouseKeyboard) {
 		return m_MouseStates.at(0).wheelChange;
 	}
@@ -473,6 +535,17 @@ bool UInputMan::AnyMouseButtonPress(SDL_MouseID mouseID) const {
 }
 
 void UInputMan::TrapMousePos(bool trap, int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		m_VirtualInput[whichPlayer].MouseTrapped = trap;
+		if (whichPlayer != m_LocalVirtualPlayer) {
+			return;
+		}
+		// The local player's real mouse follows, so what they capture next matches what the simulation expects.
+		m_BypassVirtualInput = true;
+		TrapMousePos(trap, whichPlayer);
+		m_BypassVirtualInput = false;
+		return;
+	}
 	if (whichPlayer == Players::NoPlayer) {
 		m_TrapMousePos = trap;
 		SDL_SetWindowRelativeMouseMode(g_WindowMan.GetWindow(), trap);
@@ -488,6 +561,19 @@ void UInputMan::TrapMousePos(bool trap, int whichPlayer) {
 }
 
 void UInputMan::ForceMouseWithinBox(int x, int y, int width, int height, int whichPlayer) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		// Each player has a full screen of their own during virtual input, so the box is relative to the top left of the screen.
+		Vector& position = m_VirtualInput[whichPlayer].MousePosition;
+		position.m_X = std::clamp(position.m_X, static_cast<float>(x), static_cast<float>(x + width));
+		position.m_Y = std::clamp(position.m_Y, static_cast<float>(y), static_cast<float>(y + height));
+		if (whichPlayer != m_LocalVirtualPlayer) {
+			return;
+		}
+		m_BypassVirtualInput = true;
+		ForceMouseWithinBox(x, y, width, height, whichPlayer);
+		m_BypassVirtualInput = false;
+		return;
+	}
 	// Only mess with the mouse if the original mouse position is not above the screen and may be grabbing the title bar of the game window.
 	int rightMostPos = m_PlayerScreenMouseBounds.x + m_PlayerScreenMouseBounds.w;
 	int bottomMostPos = m_PlayerScreenMouseBounds.y + m_PlayerScreenMouseBounds.h;
@@ -530,7 +616,10 @@ void UInputMan::ForceMouseWithinBox(int x, int y, int width, int height, int whi
 void UInputMan::ForceMouseWithinPlayerScreen(bool force, int whichPlayer) {
 	float resMultiplier = g_WindowMan.GetResMultiplier();
 
-	if (force && (whichPlayer >= Players::PlayerOne && whichPlayer < Players::MaxPlayerCount)) {
+	if (m_VirtualInputActive && force && whichPlayer == m_LocalVirtualPlayer) {
+		// The local player's screen covers the whole window during virtual input.
+		m_PlayerScreenMouseBounds = {0, 0, static_cast<int>(g_WindowMan.GetResX() * resMultiplier), static_cast<int>(g_WindowMan.GetResY() * resMultiplier)};
+	} else if (force && (whichPlayer >= Players::PlayerOne && whichPlayer < Players::MaxPlayerCount)) {
 		int screenWidth = g_FrameMan.GetPlayerFrameBufferWidth(whichPlayer) * resMultiplier;
 		int screenHeight = g_FrameMan.GetPlayerFrameBufferHeight(whichPlayer) * resMultiplier;
 
@@ -655,6 +744,20 @@ bool UInputMan::AnyJoyButtonPress(int whichJoy) const {
 }
 
 bool UInputMan::GetInputElementState(int whichPlayer, int whichElement, InputState whichState) {
+	if (IsVirtualPlayer(whichPlayer)) {
+		const VirtualInputFrame& frame = m_VirtualInput[whichPlayer].Frame;
+		const uint64_t elementBit = 1ULL << whichElement;
+		switch (whichState) {
+			case InputState::Held:
+				return frame.ElementHeld & elementBit;
+			case InputState::Pressed:
+				return frame.ElementPressed & elementBit;
+			case InputState::Released:
+				return frame.ElementReleased & elementBit;
+			default:
+				return false;
+		}
+	}
 	bool elementState = false;
 	InputDevice device = m_ControlScheme.at(whichPlayer).GetDevice();
 	const InputMapping* element = &(m_ControlScheme.at(whichPlayer).GetInputMappings()->at(whichElement));
@@ -689,10 +792,10 @@ bool UInputMan::GetMenuButtonState(int whichButton, InputState whichState) {
 		bool buttonState = false;
 		InputDevice device = m_ControlScheme[player].GetDevice();
 		if (!buttonState && whichButton >= MenuCursorButtons::MENU_PRIMARY) {
-			buttonState = GetInputElementState(player, InputElements::INPUT_FIRE, whichState) || GetMouseButtonState(NoPlayer, MouseButtons::MOUSE_LEFT, whichState);
+			buttonState = GetInputElementState(player, InputElements::INPUT_FIRE, whichState) || (!m_VirtualInputActive && GetMouseButtonState(NoPlayer, MouseButtons::MOUSE_LEFT, whichState));
 		}
 		if (!buttonState && whichButton >= MenuCursorButtons::MENU_SECONDARY) {
-			buttonState = GetInputElementState(player, InputElements::INPUT_PIEMENU_DIGITAL, whichState) || GetMouseButtonState(NoPlayer, MouseButtons::MOUSE_RIGHT, whichState);
+			buttonState = GetInputElementState(player, InputElements::INPUT_PIEMENU_DIGITAL, whichState) || (!m_VirtualInputActive && GetMouseButtonState(NoPlayer, MouseButtons::MOUSE_RIGHT, whichState));
 		}
 		if (buttonState) {
 			m_LastDeviceWhichControlledGUICursor = device;
@@ -704,6 +807,11 @@ bool UInputMan::GetMenuButtonState(int whichButton, InputState whichState) {
 
 bool UInputMan::GetKeyboardButtonState(SDL_Scancode scancodeToTest, InputState whichState, int whichPlayer, SDL_KeyboardID keyboardID) const {
 	if (m_DisableKeyboard && (scancodeToTest >= SDL_SCANCODE_0 && scancodeToTest < SDL_SCANCODE_ESCAPE)) {
+		return false;
+	}
+
+	// Individual keys aren't part of virtual input frames, only the input elements they map to.
+	if (IsVirtualPlayer(whichPlayer)) {
 		return false;
 	}
 
@@ -756,6 +864,23 @@ bool UInputMan::GetMouseButtonState(int whichPlayer, int whichButton, InputState
 	InputDevice playerDevice = InputDevice::DEVICE_COUNT;
 	if (whichPlayer != Players::NoPlayer) {
 		playerDevice = m_ControlScheme.at(whichPlayer).GetDevice();
+	}
+
+	if (IsVirtualPlayer(whichPlayer)) {
+		if (playerDevice != InputDevice::DEVICE_MOUSE_KEYB) {
+			return false;
+		}
+		const VirtualPlayerInput& virtualInput = m_VirtualInput[whichPlayer];
+		switch (whichState) {
+			case InputState::Held:
+				return virtualInput.MouseState[whichButton];
+			case InputState::Pressed:
+				return virtualInput.MouseState[whichButton] && virtualInput.MouseChange[whichButton];
+			case InputState::Released:
+				return !virtualInput.MouseState[whichButton] && virtualInput.MouseChange[whichButton];
+			default:
+				return false;
+		}
 	}
 
 	if (whichPlayer != NoPlayer && playerDevice != InputDevice::DEVICE_MOUSE_KEYB) {
@@ -1064,6 +1189,37 @@ void UInputMan::HandleSpecialInput() {
 		return;
 	}
 
+	if (m_VirtualInputActive) {
+		// In a lockstep session only purely local shortcuts are allowed. Anything that pauses, restarts, reloads or retimes the simulation on this
+		// machine alone would desync it from the other peers.
+		if (g_ActivityMan.IsInActivity() && KeyPressed(SDLK_ESCAPE)) {
+			g_LockstepMan.RequestLeave();
+		}
+		if (m_SkipHandlingSpecialInput) {
+			return;
+		}
+		if (FlagRAltState()) {
+			if (KeyHeld(SDLK_S)) {
+				g_FrameMan.SaveScreenToPNG("ScreenDump");
+			} else if (KeyPressed(SDLK_P)) {
+				g_PerformanceMan.ShowPerformanceStats(!g_PerformanceMan.IsShowingPerformanceStats());
+			}
+		} else if (FlagLAltState()) {
+			if (KeyPressed(SDLK_RETURN)) {
+				g_WindowMan.ToggleFullscreen();
+			}
+		} else if (KeyPressed(SDLK_F1)) {
+			g_ConsoleMan.ShowShortcuts();
+		} else if (KeyPressed(SDLK_F3)) {
+			g_ConsoleMan.SaveAllText("Console.dump.log");
+		} else if (KeyPressed(SDLK_F10)) {
+			g_ConsoleMan.ClearLog();
+		} else if (KeyPressed(SDLK_F12)) {
+			g_FrameMan.SaveScreenToPNG("ScreenDump");
+		}
+		return;
+	}
+
 	if (g_ActivityMan.IsInActivity()) {
 		const GameActivity* gameActivity = dynamic_cast<GameActivity*>(g_ActivityMan.GetActivity());
 		// Don't allow pausing and returning to main menu when running in server mode to not disrupt the simulation for the clients
@@ -1178,6 +1334,10 @@ void UInputMan::UpdateMouseInput() {
 	if (g_WindowMan.AnyWindowHasFocus() && !m_DisableMouseMoving && (!m_TrapMousePos || m_EnableMultiMouseKeyboard)) {
 		// The mouse cursor is visible and can move about the screen/window, but it should still be contained within the mouse player's part of the window
 		for (int player = PlayerOne; player < MaxPlayerCount; player++) {
+			// Only the local player's real mouse is confined during virtual input.
+			if (m_VirtualInputActive && player != m_LocalVirtualPlayer) {
+				continue;
+			}
 			if (m_ControlScheme[player].GetDevice() == InputDevice::DEVICE_MOUSE_KEYB) {
 				ForceMouseWithinPlayerScreen(g_ActivityMan.IsInActivity() && !g_MenuMan.GetIsInMenuScreen(), player);
 			}
@@ -1327,4 +1487,122 @@ void UInputMan::HandleGamepadHotPlug(SDL_JoystickID joystickID) {
 		s_ChangedJoystickStates[controllerIndex] = Gamepad(controllerIndex, joystickID, numAxis, numButtons);
 		m_NumJoysticks++;
 	}
+}
+
+void UInputMan::BeginVirtualInput(int localPlayer, const std::array<bool, Players::MaxPlayerCount>& virtualPlayers, const std::array<InputDevice, Players::MaxPlayerCount>& devices) {
+	if (m_VirtualInputActive) {
+		EndVirtualInput();
+	}
+	m_SavedControlSchemes = m_ControlScheme;
+	m_SavedEnableMultiMouseKeyboard = m_EnableMultiMouseKeyboard;
+	m_EnableMultiMouseKeyboard = false;
+
+	m_LocalVirtualPlayer = localPlayer;
+	m_IsVirtualPlayer = virtualPlayers;
+	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+		m_VirtualInput[player] = VirtualPlayerInput();
+		if (!m_IsVirtualPlayer[player]) {
+			continue;
+		}
+		if (player == localPlayer) {
+			// Whatever player slot this machine ends up controlling, it's driven by this machine's own player one setup.
+			m_ControlScheme[player] = m_SavedControlSchemes[Players::PlayerOne];
+		} else {
+			// Remote players' key mappings don't matter (their input arrives already mapped), but how their input is interpreted depends on their device.
+			m_ControlScheme[player].SetDevice(devices[player]);
+		}
+		m_VirtualInput[player].MousePosition.SetXY(static_cast<float>(g_WindowMan.GetResX() / 2), static_cast<float>(g_WindowMan.GetResY() / 2));
+	}
+	m_VirtualInputActive = true;
+}
+
+void UInputMan::EndVirtualInput() {
+	if (!m_VirtualInputActive) {
+		return;
+	}
+	m_VirtualInputActive = false;
+	m_ControlScheme = m_SavedControlSchemes;
+	m_EnableMultiMouseKeyboard = m_SavedEnableMultiMouseKeyboard;
+	m_LocalVirtualPlayer = Players::NoPlayer;
+	m_IsVirtualPlayer.fill(false);
+}
+
+VirtualInputFrame UInputMan::CaptureLocalInputFrame() {
+	VirtualInputFrame frame;
+	const int player = m_LocalVirtualPlayer;
+	if (!m_VirtualInputActive || player < Players::PlayerOne || player >= Players::MaxPlayerCount) {
+		return frame;
+	}
+	// Typing into the console shouldn't move the player's actor.
+	if (g_ConsoleMan.IsEnabled() && !g_ConsoleMan.IsReadOnly()) {
+		return frame;
+	}
+
+	m_BypassVirtualInput = true;
+
+	for (int element = 0; element < InputElements::INPUT_COUNT; ++element) {
+		const uint64_t elementBit = 1ULL << element;
+		if (GetInputElementState(player, element, InputState::Held)) {
+			frame.ElementHeld |= elementBit;
+		}
+		if (GetInputElementState(player, element, InputState::Pressed)) {
+			frame.ElementPressed |= elementBit;
+		}
+		if (GetInputElementState(player, element, InputState::Released)) {
+			frame.ElementReleased |= elementBit;
+		}
+	}
+
+	const InputDevice device = m_ControlScheme[player].GetDevice();
+	const Vector analogMove = AnalogMoveValues(player);
+	frame.AnalogMove[0] = analogMove.m_X;
+	frame.AnalogMove[1] = analogMove.m_Y;
+	if (device >= InputDevice::DEVICE_GAMEPAD_1) {
+		const Vector analogAim = AnalogAimValues(player);
+		frame.AnalogAim[0] = analogAim.m_X;
+		frame.AnalogAim[1] = analogAim.m_Y;
+	}
+
+	if (device == InputDevice::DEVICE_MOUSE_KEYB) {
+		const Vector mouseMovement = GetMouseMovement(player);
+		frame.MouseMovement[0] = mouseMovement.m_X;
+		frame.MouseMovement[1] = mouseMovement.m_Y;
+
+		const std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS>& buttonStates = GetMouseState(player);
+		const std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS>& buttonChanges = GetMouseChange(player);
+		for (int button = MouseButtons::MOUSE_LEFT; button < MouseButtons::MAX_MOUSE_BUTTONS; ++button) {
+			const uint8_t buttonBit = static_cast<uint8_t>(1 << button);
+			if (buttonStates[button]) {
+				frame.MouseHeld |= buttonBit;
+			}
+			if (buttonChanges[button]) {
+				(buttonStates[button] ? frame.MousePressed : frame.MouseReleased) |= buttonBit;
+			}
+		}
+		frame.MouseWheel = static_cast<int8_t>(std::clamp(MouseWheelMovedByPlayer(player), -127, 127));
+	}
+
+	const Vector mousePosition = GetAbsoluteMousePosition(player) / g_WindowMan.GetResMultiplier();
+	frame.MousePosition[0] = std::clamp(mousePosition.m_X, 0.0F, static_cast<float>(g_WindowMan.GetResX() - 1));
+	frame.MousePosition[1] = std::clamp(mousePosition.m_Y, 0.0F, static_cast<float>(g_WindowMan.GetResY() - 1));
+
+	m_BypassVirtualInput = false;
+	return frame;
+}
+
+void UInputMan::ApplyVirtualInputFrame(int player, const VirtualInputFrame& frame) {
+	if (player < Players::PlayerOne || player >= Players::MaxPlayerCount) {
+		return;
+	}
+	VirtualPlayerInput& virtualInput = m_VirtualInput[player];
+	virtualInput.Frame = frame;
+	for (int button = MouseButtons::MOUSE_LEFT; button < MouseButtons::MAX_MOUSE_BUTTONS; ++button) {
+		const uint8_t buttonBit = static_cast<uint8_t>(1 << button);
+		virtualInput.MouseState[button] = frame.MouseHeld & buttonBit;
+		virtualInput.MouseChange[button] = (frame.MousePressed | frame.MouseReleased) & buttonBit;
+	}
+	// Same analog stick emulation as UpdateMouseInput does for local mice.
+	virtualInput.AnalogMouseAim += Vector(frame.MouseMovement[0], frame.MouseMovement[1]) * 3;
+	virtualInput.AnalogMouseAim.CapMagnitude(m_MouseTrapRadius);
+	virtualInput.MousePosition.SetXY(frame.MousePosition[0], frame.MousePosition[1]);
 }

@@ -29,6 +29,22 @@ namespace RTE {
 
 	class Icon;
 
+	/// One player's input for one sim update, as captured from their local devices and sent to every peer in a lockstep multiplayer session.
+	/// Plain data with a fixed layout so it can be sent over the network as-is.
+	struct VirtualInputFrame {
+		uint64_t ElementHeld = 0; //!< Bit per InputElements value: held this update.
+		uint64_t ElementPressed = 0; //!< Bit per InputElements value: pressed this update.
+		uint64_t ElementReleased = 0; //!< Bit per InputElements value: released this update.
+		float AnalogMove[2] = {0, 0}; //!< Analog move values (gamepads).
+		float AnalogAim[2] = {0, 0}; //!< Analog aim values (gamepads). Mouse aim is integrated from MouseMovement on every peer instead.
+		float MouseMovement[2] = {0, 0}; //!< Relative mouse movement this update, sensitivity applied.
+		float MousePosition[2] = {0, 0}; //!< Absolute mouse position in game (not window) pixels, relative to the player's screen.
+		uint8_t MouseHeld = 0; //!< Bit per MouseButtons value: held this update.
+		uint8_t MousePressed = 0; //!< Bit per MouseButtons value: pressed this update.
+		uint8_t MouseReleased = 0; //!< Bit per MouseButtons value: released this update.
+		int8_t MouseWheel = 0; //!< Mouse wheel movement this update.
+	};
+
 	/// The singleton manager responsible for handling user input.
 	class UInputMan : public Singleton<UInputMan> {
 		friend class SettingsMan;
@@ -373,6 +389,40 @@ namespace RTE {
 		void ForceMouseWithinBox(int x, int y, int width, int height, int whichPlayer = Players::NoPlayer);
 #pragma endregion
 
+#pragma region Virtual Input
+		/// Starts virtual input, used for lockstep multiplayer. While active, every per-player input query for a virtual player is answered from the
+		/// VirtualInputFrame most recently applied for that player, rather than from local devices, so all peers see exactly the same input.
+		/// @param localPlayer The player controlled from this machine. Their input is captured from this machine's player one control scheme.
+		/// @param virtualPlayers Which players get their input from virtual input frames.
+		/// @param devices The input device each virtual player is using on their own machine. Determines how their input is interpreted.
+		void BeginVirtualInput(int localPlayer, const std::array<bool, Players::MaxPlayerCount>& virtualPlayers, const std::array<InputDevice, Players::MaxPlayerCount>& devices);
+
+		/// Stops virtual input and restores the local control schemes.
+		void EndVirtualInput();
+
+		/// Gets whether virtual input is active.
+		/// @return Whether virtual input is active.
+		bool IsVirtualInputActive() const { return m_VirtualInputActive; }
+
+		/// Gets whether a player's input currently comes from virtual input frames.
+		/// @param player The player to check.
+		/// @return Whether the player's input is virtual.
+		bool IsVirtualPlayer(int player) const { return m_VirtualInputActive && !m_BypassVirtualInput && player >= Players::PlayerOne && player < Players::MaxPlayerCount && m_IsVirtualPlayer[player]; }
+
+		/// Gets the player controlled from this machine while virtual input is active.
+		/// @return The local player, or NoPlayer if virtual input isn't active.
+		int GetLocalVirtualPlayer() const { return m_VirtualInputActive ? m_LocalVirtualPlayer : Players::NoPlayer; }
+
+		/// Captures the local player's input from this machine's devices since the last sim update.
+		/// @return The captured input frame.
+		VirtualInputFrame CaptureLocalInputFrame();
+
+		/// Makes the given frame the current input of a virtual player. Call once per sim update for every virtual player, before anything reads input.
+		/// @param player The player the frame belongs to.
+		/// @param frame The input frame.
+		void ApplyVirtualInputFrame(int player, const VirtualInputFrame& frame);
+#pragma endregion
+
 #pragma region Joystick Handling
 		/// Gets the number of active joysticks.
 		/// @return The number of active joysticks.
@@ -526,6 +576,24 @@ namespace RTE {
 		/// This is set when focus is switched back to the game window and will cause the m_DisableMouseMoving to switch to false when the mouse button is RELEASED.
 		/// This is to avoid having the window fly away because the user clicked the title bar.
 		bool m_PrepareToEnableMouseMoving;
+
+		/// The deterministic input state of a virtual player.
+		struct VirtualPlayerInput {
+			VirtualInputFrame Frame; //!< The frame applied for the current sim update.
+			std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS> MouseState{}; //!< Mouse button held states.
+			std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS> MouseChange{}; //!< Mouse button changed states.
+			Vector AnalogMouseAim; //!< Analog stick emulation from mouse movement, integrated the same way UpdateMouseInput does for local mice.
+			Vector MousePosition; //!< Absolute mouse position, in game pixels.
+			bool MouseTrapped = false; //!< Whether the simulation has trapped this player's mouse (relative mode).
+		};
+
+		bool m_VirtualInputActive = false; //!< Whether virtual input is active.
+		bool m_BypassVirtualInput = false; //!< Set while capturing local input, so queries read the real devices.
+		int m_LocalVirtualPlayer = Players::NoPlayer; //!< The player controlled from this machine while virtual input is active.
+		std::array<bool, Players::MaxPlayerCount> m_IsVirtualPlayer{}; //!< Which players' input is virtual.
+		std::array<VirtualPlayerInput, Players::MaxPlayerCount> m_VirtualInput; //!< Virtual input state of each player.
+		std::array<InputScheme, Players::MaxPlayerCount> m_SavedControlSchemes; //!< The local control schemes, saved while virtual input is active.
+		bool m_SavedEnableMultiMouseKeyboard = false; //!< The local multi mouse/keyboard setting, saved while virtual input is active.
 
 		static constexpr double c_GamepadAxisLimit = 32767.0; //!< Maximum axis value as defined by SDL (int16 max).
 		static constexpr int c_AxisDigitalPressedThreshold = 16384; //!< Digital Axis threshold value as defined by allegro.

@@ -186,7 +186,8 @@ void Controller::GetInputFromPlayer() {
 	std::array<bool, ControlState::CONTROLSTATECOUNT> lastControlStates = m_ControlStates;
 	ResetCommandState();
 
-	if ((g_ConsoleMan.IsEnabled() && !g_ConsoleMan.IsReadOnly()) || m_Player < 0) {
+	// The console being open is local to this machine, so for virtual (lockstep) players it's handled when their input is captured instead.
+	if ((!g_UInputMan.IsVirtualPlayer(m_Player) && g_ConsoleMan.IsEnabled() && !g_ConsoleMan.IsReadOnly()) || m_Player < 0) {
 		return;
 	}
 

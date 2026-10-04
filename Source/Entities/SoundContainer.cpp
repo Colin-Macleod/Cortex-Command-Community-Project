@@ -1,4 +1,5 @@
 #include "SoundContainer.h"
+#include "TimerMan.h"
 
 #include "SoundSet.h"
 #include "SettingsMan.h"
@@ -35,6 +36,8 @@ void SoundContainer::Clear() {
 	m_TopLevelSoundSet->Destroy();
 
 	m_PlayingChannels.clear();
+	m_SimPlaybackEndTicks = 0;
+	m_SimPlaybackLoopsForever = false;
 	m_SoundOverlapMode = SoundOverlapMode::OVERLAP;
 
 	m_BusRouting = BusRouting::SFX;
@@ -65,6 +68,8 @@ int SoundContainer::Create(const SoundContainer& reference) {
 	m_TopLevelSoundSet->Create(*reference.m_TopLevelSoundSet);
 
 	m_PlayingChannels.clear();
+	m_SimPlaybackEndTicks = 0;
+	m_SimPlaybackLoopsForever = false;
 	m_SoundOverlapMode = reference.m_SoundOverlapMode;
 
 	m_BusRouting = reference.m_BusRouting;
@@ -232,7 +237,10 @@ float SoundContainer::GetLength(LengthOfSoundType type) const {
 
 	float lengthMilliseconds = 0.0f;
 	for (const SoundData* selectedSoundData: flattenedSoundData) {
-		unsigned int length;
+		unsigned int length = 0;
+		if (!selectedSoundData->SoundObject) {
+			continue;
+		}
 		selectedSoundData->SoundObject->getLength(&length, FMOD_TIMEUNIT_MS);
 		lengthMilliseconds = std::max(lengthMilliseconds, static_cast<float>(length));
 	}
@@ -308,6 +316,20 @@ void SoundContainer::SetPaused(bool paused) {
 	}
 }
 
+bool SoundContainer::IsBeingPlayed() const {
+	if (g_TimerMan.IsInDeterministicMode()) {
+		return m_SimPlaybackLoopsForever || g_TimerMan.GetSimTickCount() < m_SimPlaybackEndTicks;
+	}
+	return !m_PlayingChannels.empty();
+}
+
+void SoundContainer::StartDeterministicPlayback() {
+	// The longest sound rather than the one actually selected, since which one gets selected is cosmetic and differs between machines.
+	m_SimPlaybackLoopsForever = m_Loops < 0;
+	const double lengthMS = static_cast<double>(GetLength(LengthOfSoundType::Any)) * static_cast<double>(std::max(m_Loops, 0) + 1);
+	m_SimPlaybackEndTicks = g_TimerMan.GetSimTickCount() + static_cast<long long>(lengthMS * static_cast<double>(g_TimerMan.GetTicksPerSecond()) / 1000.0);
+}
+
 bool SoundContainer::Play(int player) {
 	if (HasAnySounds()) {
 		m_WasFadedOut = false;
@@ -318,22 +340,56 @@ bool SoundContainer::Play(int player) {
 				return false;
 			}
 		}
+		if (g_TimerMan.IsInDeterministicMode()) {
+			// Whether the audio system actually manages to play it (e.g. channel limits) is cosmetic and mustn't affect the result.
+			StartDeterministicPlayback();
+			g_AudioMan.PlaySoundContainer(this, player);
+			return true;
+		}
 		return g_AudioMan.PlaySoundContainer(this, player);
 	}
 	return false;
 }
 
 bool SoundContainer::Stop(int player) {
+	if (g_TimerMan.IsInDeterministicMode()) {
+		bool wasPlaying = HasAnySounds() && IsBeingPlayed();
+		m_SimPlaybackEndTicks = 0;
+		m_SimPlaybackLoopsForever = false;
+		if (!m_PlayingChannels.empty()) {
+			g_AudioMan.StopSoundContainerPlayingChannels(this, player);
+		}
+		return wasPlaying;
+	}
 	return (HasAnySounds() && IsBeingPlayed()) ? g_AudioMan.StopSoundContainerPlayingChannels(this, player) : false;
 }
 
 bool SoundContainer::Restart(int player) {
+	if (g_TimerMan.IsInDeterministicMode()) {
+		if (!HasAnySounds() || !IsBeingPlayed()) {
+			return false;
+		}
+		if (!m_PlayingChannels.empty()) {
+			g_AudioMan.StopSoundContainerPlayingChannels(this, player);
+		}
+		StartDeterministicPlayback();
+		g_AudioMan.PlaySoundContainer(this, player);
+		return true;
+	}
 	return (HasAnySounds() && IsBeingPlayed()) ? g_AudioMan.StopSoundContainerPlayingChannels(this, player) && g_AudioMan.PlaySoundContainer(this, player) : false;
 }
 
 void SoundContainer::FadeOut(int fadeOutTime) {
 	if (!m_WasFadedOut && IsBeingPlayed()) {
 		m_WasFadedOut = true;
+		if (g_TimerMan.IsInDeterministicMode()) {
+			const long long fadeEndTicks = g_TimerMan.GetSimTickCount() + static_cast<long long>(fadeOutTime) * g_TimerMan.GetTicksPerSecond() / 1000;
+			m_SimPlaybackEndTicks = m_SimPlaybackLoopsForever ? fadeEndTicks : std::min(m_SimPlaybackEndTicks, fadeEndTicks);
+			m_SimPlaybackLoopsForever = false;
+			if (m_PlayingChannels.empty()) {
+				return;
+			}
+		}
 		return g_AudioMan.FadeOutSoundContainerPlayingChannels(this, fadeOutTime);
 	}
 }

@@ -962,7 +962,7 @@ bool SceneMan::RevealUnseen(const int posX, const int posY, const int team) {
 		int pixel = getpixel(pUnseenLayer->GetBitmap(), scaledX, scaledY);
 		if (pixel != g_MaskColor && pixel != -1) {
 			// Add the pixel to the list of now seen pixels so it can be visually flashed
-			m_pCurrentScene->GetSeenPixels(team).push_back(Vector(scaledX, scaledY));
+			m_pCurrentScene->AddSeenPixel(team, Vector(scaledX, scaledY));
 			// Clear to key color that pixel on the map so it won't be detected as unseen again
 			putpixel(pUnseenLayer->GetBitmap(), scaledX, scaledY, g_MaskColor);
 			// Play the reveal sound, if there's not too many already revealed this frame
@@ -2566,9 +2566,12 @@ void SceneMan::Update(int screenId) {
 	if (SceneLayer* unseenLayer = (teamId != Activity::NoTeam) ? m_pCurrentScene->GetUnseenLayer(teamId) : nullptr) {
 		unseenLayer->SetOffset(offset);
 	}
+}
 
-	if (m_CleanTimer.GetElapsedSimTimeMS() > CLEANAIRINTERVAL) {
-		terrain->CleanAir();
+void SceneMan::UpdateTerrainCleaning() {
+	// This changes the terrain, so it's done once per sim update rather than in the per-screen, per-frame Update, otherwise when it happens would depend on the frame rate and number of screens.
+	if (m_pCurrentScene && m_CleanTimer.GetElapsedSimTimeMS() > CLEANAIRINTERVAL) {
+		m_pCurrentScene->GetTerrain()->CleanAir();
 		m_CleanTimer.Reset();
 	}
 }

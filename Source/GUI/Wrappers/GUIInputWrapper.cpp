@@ -59,9 +59,11 @@ void GUIInputWrapper::Update() {
 	}
 
 	// Update the mouse position of this GUIInput, based on the SDL mouse vars (which may have been altered by joystick or keyboard input).
+	// Virtual (lockstep) players' mouse positions are already in game pixels.
+	float resMultiplier = g_UInputMan.IsVirtualPlayer(m_Player) ? 1.0F : static_cast<float>(g_WindowMan.GetResMultiplier());
 	Vector mousePos = g_UInputMan.GetAbsoluteMousePosition(m_Player);
-	m_MouseX = static_cast<int>(mousePos.GetX() / static_cast<float>(g_WindowMan.GetResMultiplier()));
-	m_MouseY = static_cast<int>(mousePos.GetY() / static_cast<float>(g_WindowMan.GetResMultiplier()));
+	m_MouseX = static_cast<int>(mousePos.GetX() / resMultiplier);
+	m_MouseY = static_cast<int>(mousePos.GetY() / resMultiplier);
 }
 
 void GUIInputWrapper::StartTextInput() {
@@ -80,6 +82,14 @@ void GUIInputWrapper::UpdateKeyboardInput(float keyElapsedTime) {
 	// Clear the keyboard buffer, we need it to check for changes.
 	memset(m_KeyboardBuffer, 0, sizeof(uint8_t) * GUIInput::Constants::KEYBOARD_BUFFER_SIZE);
 	memset(m_ScanCodeState, 0, sizeof(uint8_t) * GUIInput::Constants::KEYBOARD_BUFFER_SIZE);
+
+	// Raw keyboard input is local to this machine and isn't part of lockstep input, so a virtual player's GUI can't use it.
+	if (g_UInputMan.IsVirtualPlayer(m_Player)) {
+		m_HasTextInput = false;
+		m_TextInput.clear();
+		m_Modifier = GUIInput::ModNone;
+		return;
+	}
 
 	for (size_t k = 0; k < GUIInput::Constants::KEYBOARD_BUFFER_SIZE; ++k) {
 		if (g_UInputMan.KeyPressed(static_cast<SDL_Scancode>(k))) {
@@ -144,8 +154,9 @@ void GUIInputWrapper::UpdateMouseInput() {
 
 void GUIInputWrapper::UpdateKeyJoyMouseInput(float keyElapsedTime) {
 	// TODO Try to not use magic numbers throughout this method.
-	float mouseDenominator = g_WindowMan.GetResMultiplier();
-	Vector joyKeyDirectional = g_UInputMan.GetMenuDirectional() * 5;
+	const bool virtualPlayer = g_UInputMan.IsVirtualPlayer(m_Player);
+	float mouseDenominator = virtualPlayer ? 1.0F : g_WindowMan.GetResMultiplier();
+	Vector joyKeyDirectional = g_UInputMan.GetMenuDirectional(virtualPlayer ? m_Player : -1) * 5;
 
 	// See how much to accelerate the joystick input based on how long the stick has been pushed around.
 	if (joyKeyDirectional.MagnitudeIsLessThan(0.95F)) {

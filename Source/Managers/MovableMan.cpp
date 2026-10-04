@@ -1317,6 +1317,8 @@ void MovableMan::Update() {
 
 	// Finish our Seeing rays from last frame
 	m_ActorsSeeFuture.wait();
+	// Process what they revealed here, at a fixed point in the sim update, rather than whenever a frame happens to be drawn.
+	g_SceneMan.ClearSeenPixels();
 
 	// Prior to controller/AI update, execute lua callbacks
 	g_LuaMan.ExecuteLuaScriptCallbacks();
@@ -1354,22 +1356,13 @@ void MovableMan::Update() {
 
 		LuaStatesArray& luaStates = g_LuaMan.GetThreadedScriptStates();
 		const AddedMOCounts addedMOCountsBeforeThreadedUpdate = GetAddedMOCounts();
-		g_ThreadMan.GetPriorityThreadPool().parallelize_loop(luaStates.size(),
-		                                                     [&](int start, int end) {
-			                                                     RTEAssert(start + 1 == end, "Threaded script state being updated across multiple threads!");
-			                                                     LuaStateWrapper& luaState = luaStates[start];
-			                                                     g_LuaMan.SetThreadLuaStateOverride(&luaState);
-
-			                                                     for (const auto& [registrationOrder, mo]: luaState.GetRegisteredMOs()) {
-				                                                     if (ValidMO(mo->GetRootParent())) {
-					                                                     mo->RunScriptedFunctionInAppropriateScripts(threadedUpdate, false, false, {}, {}, {});
-				                                                     }
-			                                                     }
-
-			                                                     g_LuaMan.SetThreadLuaStateOverride(nullptr);
-		                                                     },
-		                                                     luaStates.size())
-		    .wait();
+		RunForEachThreadedLuaState([&](LuaStateWrapper& luaState) {
+			for (const auto& [registrationOrder, mo]: luaState.GetRegisteredMOs()) {
+				if (ValidMO(mo->GetRootParent())) {
+					mo->RunScriptedFunctionInAppropriateScripts(threadedUpdate, false, false, {}, {}, {});
+				}
+			}
+		});
 		SortAddedMOsIfChanged(addedMOCountsBeforeThreadedUpdate);
 	}
 
@@ -1694,6 +1687,13 @@ void MovableMan::Update() {
 		UpdateDrawMOIDs();
 	});
 
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Normally these run on in the background while the rest of the frame happens, but then anything else that reads the unseen or MOID layers
+		// in the meantime (scripts, activity logic) would see a result that depends on thread timing.
+		m_ActorsSeeFuture.wait();
+		m_DrawMOIDsTask.wait();
+	}
+
 	////////////////////////////////////////////////////////////////////
 	// Draw the MO colors ONLY if this is a drawn update!
 
@@ -1779,22 +1779,14 @@ void MovableMan::UpdateControllers() {
 		}
 		g_LuaMan.SetThreadLuaStateOverride(nullptr);
 
-		LuaStatesArray& luaStates = g_LuaMan.GetThreadedScriptStates();
 		const AddedMOCounts addedMOCountsBeforeThreadedAI = GetAddedMOCounts();
-		g_ThreadMan.GetPriorityThreadPool().parallelize_loop(luaStates.size(),
-		                                                     [&](int start, int end) {
-			                                                     RTEAssert(start + 1 == end, "Threaded script state being updated across multiple threads!");
-			                                                     LuaStateWrapper& luaState = luaStates[start];
-			                                                     g_LuaMan.SetThreadLuaStateOverride(&luaState);
-			                                                     for (Actor* actor: m_Actors) {
-				                                                     if (actor->GetLuaState() == &luaState && actor->GetController()->ShouldUpdateAIThisFrame()) {
-					                                                     actor->RunScriptedFunctionInAppropriateScripts("ThreadedUpdateAI", false, true, {}, {}, {});
-				                                                     }
-			                                                     }
-			                                                     g_LuaMan.SetThreadLuaStateOverride(nullptr);
-		                                                     },
-		                                                     luaStates.size())
-		    .wait();
+		RunForEachThreadedLuaState([&](LuaStateWrapper& luaState) {
+			for (Actor* actor: m_Actors) {
+				if (actor->GetLuaState() == &luaState && actor->GetController()->ShouldUpdateAIThisFrame()) {
+					actor->RunScriptedFunctionInAppropriateScripts("ThreadedUpdateAI", false, true, {}, {}, {});
+				}
+			}
+		});
 		SortAddedMOsIfChanged(addedMOCountsBeforeThreadedAI);
 
 		for (Actor* actor: m_Actors) {
@@ -1804,6 +1796,31 @@ void MovableMan::UpdateControllers() {
 		}
 	}
 	g_PerformanceMan.StopPerformanceMeasurement(PerformanceMan::ActorsAI);
+}
+
+void MovableMan::RunForEachThreadedLuaState(const std::function<void(LuaStateWrapper&)>& work) {
+	LuaStatesArray& luaStates = g_LuaMan.GetThreadedScriptStates();
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Scripts aren't supposed to touch other objects in their threaded functions, but some read (or even write) objects that belong to other
+		// Lua states, which are being updated at the same time on other threads. What they see then depends on thread timing. Running the states
+		// one after another in a fixed order gives the same results as running them in parallel would without those races.
+		for (LuaStateWrapper& luaState: luaStates) {
+			g_LuaMan.SetThreadLuaStateOverride(&luaState);
+			work(luaState);
+			g_LuaMan.SetThreadLuaStateOverride(nullptr);
+		}
+		return;
+	}
+	g_ThreadMan.GetPriorityThreadPool().parallelize_loop(luaStates.size(),
+	                                                     [&](int start, int end) {
+		                                                     RTEAssert(start + 1 == end, "Threaded script state being updated across multiple threads!");
+		                                                     LuaStateWrapper& luaState = luaStates[start];
+		                                                     g_LuaMan.SetThreadLuaStateOverride(&luaState);
+		                                                     work(luaState);
+		                                                     g_LuaMan.SetThreadLuaStateOverride(nullptr);
+	                                                     },
+	                                                     luaStates.size())
+	    .wait();
 }
 
 MovableMan::AddedMOCounts MovableMan::GetAddedMOCounts() const {

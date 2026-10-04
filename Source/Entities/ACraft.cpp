@@ -807,9 +807,9 @@ void ACraft::DrawHUD(BITMAP* pTargetBitmap, const Vector& targetPos, int whichSc
 				continue;
 			}
 
-			Vector exitRadius = RotateOffset(exit->GetVelocity().GetPerpendicular().SetMagnitude(exit->GetRadius()));
+			Vector exitRadius = RotateOffset(exit->GetBaseVelocity().GetPerpendicular().SetMagnitude(exit->GetRadius()));
 			Vector exitCorner = m_Pos - targetPos + RotateOffset(exit->GetOffset()) + exitRadius;
-			Vector arrowVec = RotateOffset(exit->GetVelocity().SetMagnitude(exit->GetRange()));
+			Vector arrowVec = RotateOffset(exit->GetBaseVelocity().SetMagnitude(exit->GetRange()));
 			g_FrameMan.DrawLine(pTargetBitmap, exitCorner, exitCorner + arrowVec, 120, 120, EXITLINESPACING, m_ExitLinePhase);
 			exitCorner -= exitRadius * 2;
 			g_FrameMan.DrawLine(pTargetBitmap, exitCorner, exitCorner + arrowVec, 120, 120, EXITLINESPACING, m_ExitLinePhase);

@@ -1522,6 +1522,8 @@ void Scene::SetUnseenLayer(SceneLayer* pNewLayer, int team) {
 
 void Scene::ClearSeenPixels(int team) {
 	if (team != Activity::NoTeam) {
+		// See rays add pixels from several threads in no particular order, and the orphan cleaning below depends on order, so put them in a fixed order first.
+		m_SeenPixels[team].sort([](const Vector& lhs, const Vector& rhs) { return lhs.m_Y != rhs.m_Y ? lhs.m_Y < rhs.m_Y : lhs.m_X < rhs.m_X; });
 		// Clear all the pixels off the map, set them to key color
 		if (m_apUnseenLayer[team]) {
 			for (std::list<Vector>::iterator itr = m_SeenPixels[team].begin(); itr != m_SeenPixels[team].end(); ++itr) {

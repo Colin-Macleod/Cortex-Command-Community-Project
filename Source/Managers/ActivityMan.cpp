@@ -1,4 +1,5 @@
 #include "ActivityMan.h"
+#include "LockstepMan.h"
 #include "Activity.h"
 
 #include "CameraMan.h"
@@ -574,6 +575,15 @@ bool ActivityMan::RestartActivity() {
 	if (m_StartActivity) {
 		// Need to pass in a clone of the activity because the original will be deleted and re-set during StartActivity.
 		Activity* startActivityToUse = dynamic_cast<Activity*>(m_StartActivity->Clone());
+		if (GameActivity* gameActivity = dynamic_cast<GameActivity*>(startActivityToUse); gameActivity && g_LockstepMan.WantsToPrepareMatch()) {
+			// Co-op: every peer starts an identical Activity, built from the host's configuration, and runs it in lockstep.
+			startActivityToUse = g_LockstepMan.PrepareMatch(gameActivity);
+			if (!startActivityToUse) {
+				g_ConsoleMan.PrintString("ERROR: CO-OP: Could not set up the co-op match!");
+				return false;
+			}
+			g_LockstepMan.BeginMatch();
+		}
 		startActivityToUse->SetActivityState(Activity::ActivityState::NotStarted);
 		activityStarted = StartActivity(startActivityToUse);
 	} else {
@@ -584,6 +594,7 @@ bool ActivityMan::RestartActivity() {
 		m_InActivity = true;
 		return true;
 	} else {
+		g_LockstepMan.EndMatch();
 		m_InActivity = false;
 		PauseActivity();
 		g_ConsoleMan.SetEnabled(true);

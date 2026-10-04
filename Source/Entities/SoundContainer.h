@@ -111,8 +111,10 @@ namespace RTE {
 		std::unordered_set<int> const* GetPlayingChannels() const { return &m_PlayingChannels; }
 
 		/// Indicates whether any sound in this SoundContainer is currently being played.
+		/// In deterministic mode (see TimerMan::SetDeterministicMode) this is worked out in sim time from the sounds' lengths rather than asked of the audio
+		/// system, because gameplay code depends on it and actual playback runs in real time, differently on every machine.
 		/// @return Whether any sounds are playing.
-		bool IsBeingPlayed() const { return !m_PlayingChannels.empty(); }
+		bool IsBeingPlayed() const;
 
 		/// Adds a channel index to the SoundContainer's collection of playing channels.
 		/// @param channel The channel index to add.
@@ -338,6 +340,11 @@ namespace RTE {
 		std::shared_ptr<SoundSet> m_TopLevelSoundSet; // The top level SoundSet that handles all SoundData and sub SoundSets in this SoundContainer.
 
 		std::unordered_set<int> m_PlayingChannels; //!< The channels this SoundContainer is currently using.
+		long long m_SimPlaybackEndTicks; //!< Deterministic mode: the sim tick count at which playback is considered finished.
+		bool m_SimPlaybackLoopsForever; //!< Deterministic mode: whether playback is considered to continue until stopped.
+
+		/// Deterministic mode: marks playback as started now, lasting as long as the longest sound in this SoundContainer (times the number of loops).
+		void StartDeterministicPlayback();
 		SoundOverlapMode m_SoundOverlapMode; //!< The SoundOverlapMode for this SoundContainer, used to determine how it should handle overlapping play calls.
 
 		BusRouting m_BusRouting; //!< What bus this sound routes to.

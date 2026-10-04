@@ -32,6 +32,7 @@ namespace RTE {
 	///   CCCP_DT_SYNC_TERRAIN_HASH  1 to wait for all thread pool tasks before hashing terrain (rules out read races in the harness itself).
 	///   CCCP_DT_TRACE_TICKS Only in builds compiled with -DRTE_RNG_TRACE: log the call stack of every global RNG draw
 	///                       during the first N ticks to "<log>.rngtrace" (resolve with Tools/Determinism/symbolize_trace.py).
+	///   CCCP_DT_TRACE_FROM  With CCCP_DT_TRACE_TICKS, only trace from this tick on (tracing slows the game, which can hide timing-dependent bugs).
 	class DeterminismHarness {
 
 	public:

@@ -245,11 +245,14 @@ void CameraMan::Update(int screenId) {
 		// So just hard-coded multiply to make 100% in settings correspond to 30% here (much easier than rebalancing everything).
 		const float screenShakeScale = 0.3F;
 
-		Vector screenShakeOffset(1.0F, 0.0F);
-		screenShakeOffset.RadRotate(CosmeticRandomGenerator().RandomNormalNum() * c_PI);
-		screenShakeOffset *= screen.ScreenShakeMagnitude * m_ScreenShakeStrength * screenShakeScale;
+		// In deterministic mode the camera offset is part of the simulation (scripts read it), so shake is applied only when drawing, see GetScreenShakeDrawOffset.
+		if (!g_TimerMan.IsInDeterministicMode()) {
+			Vector screenShakeOffset(1.0F, 0.0F);
+			screenShakeOffset.RadRotate(CosmeticRandomGenerator().RandomNormalNum() * c_PI);
+			screenShakeOffset *= screen.ScreenShakeMagnitude * m_ScreenShakeStrength * screenShakeScale;
 
-		newOffset += screenShakeOffset;
+			newOffset += screenShakeOffset;
+		}
 	} else {
 		screen.ScreenShakeMagnitude = 0;
 	}
@@ -258,4 +261,14 @@ void CameraMan::Update(int screenId) {
 
 	screen.DeltaOffset = screen.Offset - oldOffset;
 	screen.ScrollTimer.Reset();
+}
+
+Vector CameraMan::GetScreenShakeDrawOffset(int screenId) const {
+	if (!g_TimerMan.IsInDeterministicMode() || !g_ActivityMan.GetActivity() || g_ActivityMan.GetActivity()->GetActivityState() != Activity::ActivityState::Running) {
+		return Vector();
+	}
+	const float screenShakeScale = 0.3F; // See Update.
+	Vector screenShakeOffset(1.0F, 0.0F);
+	screenShakeOffset.RadRotate(CosmeticRandomGenerator().RandomNormalNum() * c_PI);
+	return screenShakeOffset * (m_Screens[screenId].ScreenShakeMagnitude * m_ScreenShakeStrength * screenShakeScale);
 }

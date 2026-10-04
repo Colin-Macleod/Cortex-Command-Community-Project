@@ -96,6 +96,10 @@ namespace RTE {
 		/// @return The next unique ID from this state's range.
 		long GetNextUniqueID() { return ++m_LastUniqueID; }
 
+		/// Gets this state's random number generator.
+		/// @return This state's random number generator.
+		const RandomGenerator& GetRandomGenerator() const { return m_RandomGenerator; }
+
 		/// Gets the MOs registered as using us, keyed and ordered by registration order so iteration order doesn't depend on memory addresses.
 		/// @return The MOs registered as using us.
 		const std::map<uint64_t, MovableObject*>& GetRegisteredMOs() const { return m_RegisteredMOs; }

@@ -16,6 +16,7 @@
 #include <future>
 #include <unordered_set>
 #include <array>
+#include <functional>
 
 #define g_MovableMan MovableMan::Instance()
 
@@ -31,6 +32,7 @@ namespace RTE {
 	class SceneObject;
 	class Box;
 	class LuabindObjectWrapper;
+	class LuaStateWrapper;
 
 	/// A struct to keep all data about a an alarming event for the AI Actors.
 	struct AlarmEvent {
@@ -55,6 +57,7 @@ namespace RTE {
 		friend class SettingsMan;
 		friend struct ManagerLuaBindings;
 		friend class DeterminismHarness;
+		friend class LockstepMan;
 
 		/// Public member variable, method and friend function declarations
 	public:
@@ -659,6 +662,11 @@ namespace RTE {
 		/// This is needed because of a very awkward and ugly old code path where controllers were updated in the middle of update, and various mods relied of this behaviour for actions that were therefore delayed by a frame
 		/// Ideally we wouldn't need this, but this is all very fragile code and I'd prefer to avoid breaking things.
 		void PreControllerUpdate();
+
+		/// Runs some work once for each threaded Lua state, with that state set as the thread's Lua state override. Normally the states run in parallel,
+		/// one per worker thread. In deterministic mode they run one after another on the calling thread, in order.
+		/// @param work The work to run for each state.
+		void RunForEachThreadedLuaState(const std::function<void(LuaStateWrapper&)>& work);
 
 		/// The sizes of the added actor, item and particle lists, used to tell whether threaded scripts added any MOs.
 		using AddedMOCounts = std::array<size_t, 3>;

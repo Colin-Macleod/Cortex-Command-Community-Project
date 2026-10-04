@@ -9,6 +9,8 @@
 #include "Box.h"
 #include "Activity.h"
 #include "PathFinder.h"
+
+#include <mutex>
 #include "SceneLayer.h"
 
 #include <array>
@@ -374,6 +376,14 @@ namespace RTE {
 		/// @param team Which team to get the unseen layer for. (default: Activity::TeamOne)
 		/// @return The list of pixel coordinates in the unseen layer's scale.
 		std::list<Vector>& GetSeenPixels(int team = Activity::TeamOne) { return m_SeenPixels[team]; }
+
+		/// Adds a pixel to the list of pixels revealed on a team's unseen layer since they were last cleared. Thread safe, since see rays are cast from several threads.
+		/// @param team The team whose unseen layer the pixel was revealed on.
+		/// @param pixel The revealed pixel, in unseen layer coordinates.
+		void AddSeenPixel(int team, const Vector& pixel) {
+			std::scoped_lock lock(m_SeenPixelsMutex);
+			m_SeenPixels[team].push_back(pixel);
+		}
 
 		/// Clears the pixels that have been seen on a team's unseen layer.
 		/// @param team Which team to get the unseen layer for. (default: Activity::TeamOne)
@@ -759,6 +769,7 @@ namespace RTE {
 		SceneLayer* m_apUnseenLayer[Activity::MaxTeamCount];
 		// Which pixels of the unseen map have just been revealed this frame, in the coordinates of the unseen map
 		std::list<Vector> m_SeenPixels[Activity::MaxTeamCount];
+		std::mutex m_SeenPixelsMutex; //!< Guards m_SeenPixels while see rays are being cast from several threads.
 		// Pixels on the unseen map deemed to be orphans and cleaned up, will be moved to seen pixels next update
 		std::list<Vector> m_CleanedPixels[Activity::MaxTeamCount];
 		// Whether this Scene is scheduled to be orbitally scanned by any team

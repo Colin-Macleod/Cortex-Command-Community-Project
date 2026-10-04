@@ -71,6 +71,11 @@ bool AudioMan::Initialize() {
 #endif
 
 	audioSystemSetupResult = (audioSystemSetupResult == FMOD_OK) ? m_AudioSystem->init(c_MaxVirtualChannels, flags, 0) : audioSystemSetupResult;
+	if (audioSystemSetupResult != FMOD_OK && m_AudioSystem) {
+		// No usable audio device. Fall back to silent output so sounds still load, since gameplay depends on their lengths (see SoundContainer::IsBeingPlayed).
+		audioSystemSetupResult = m_AudioSystem->setOutput(FMOD_OUTPUTTYPE_NOSOUND);
+		audioSystemSetupResult = (audioSystemSetupResult == FMOD_OK) ? m_AudioSystem->init(c_MaxVirtualChannels, flags, 0) : audioSystemSetupResult;
+	}
 
 	audioSystemSetupResult = (audioSystemSetupResult == FMOD_OK) ? m_AudioSystem->getMasterChannelGroup(&m_MasterChannelGroup) : audioSystemSetupResult;
 	audioSystemSetupResult = (audioSystemSetupResult == FMOD_OK) ? m_AudioSystem->createChannelGroup("SFX", &m_SFXChannelGroup) : audioSystemSetupResult;

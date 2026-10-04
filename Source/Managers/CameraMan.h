@@ -41,6 +41,12 @@ namespace RTE {
 		/// @return The offset for the given screen.
 		Vector GetOffset(int screenId = 0) const { return m_Screens[screenId].Offset; }
 
+		/// Gets a purely cosmetic screen shake offset to add to the offset when drawing. Only non-zero in deterministic mode, where shake is kept out of the
+		/// offset itself because the offset is part of the simulation.
+		/// @param screenId Which screen to get the shake offset for.
+		/// @return The screen shake offset to draw with.
+		Vector GetScreenShakeDrawOffset(int screenId = 0) const;
+
 		/// Sets the offset (scroll position) of the terrain.
 		/// @param offset The new offset value.
 		/// @param screenId Which screen you want to set the offset of.

@@ -7,6 +7,7 @@ sources += files(
 'FrameMan.cpp',
 #'LuaMan.cpp',
 'GLResourceMan.cpp',
+'LockstepMan.cpp',
 'MenuMan.cpp',
 'MetaMan.cpp',
 'MovableMan.cpp',

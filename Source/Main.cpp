@@ -53,6 +53,7 @@
 #include "MusicMan.h"
 #include "System.h"
 #include "DeterminismHarness.h"
+#include "LockstepMan.h"
 
 #include "RenderTarget.h"
 #include "tracy/Tracy.hpp"
@@ -96,6 +97,7 @@ void InitializeManagers() {
 	CameraMan::Construct();
 	ActivityMan::Construct();
 	LoadingScreen::Construct();
+	LockstepMan::Construct();
 
 	g_ThreadMan.Initialize();
 	g_SettingsMan.Initialize();
@@ -131,6 +133,7 @@ void InitializeManagers() {
 /// Destroys all the managers and frees all loaded data before termination.
 /// </summary>
 void DestroyManagers() {
+	g_LockstepMan.Destroy();
 	g_MetaMan.Destroy();
 	g_PerformanceMan.Destroy();
 	g_MovableMan.Destroy();
@@ -275,11 +278,19 @@ void RunMenuLoop() {
 			break;
 		}
 
+		// A co-op host started a match (or this host's automatic start kicked in), so leave the menus and start it.
+		g_LockstepMan.Update();
+		if (g_LockstepMan.IsMatchStartPending() && g_ActivityMan.ActivitySetToRestart()) {
+			g_UInputMan.EndFrame();
+			break;
+		}
+
 		g_ConsoleMan.Update();
 
 		g_UInputMan.EndFrame();
 		g_WindowMan.GetScreenBuffer()->Begin();
 		g_MenuMan.Draw();
+		g_LockstepMan.DrawOverlay(g_FrameMan.GetBackBuffer32());
 		g_ConsoleMan.Draw(g_FrameMan.GetBackBuffer32());
 		g_WindowMan.GetScreenBuffer()->End();
 		g_WindowMan.UploadFrame();
@@ -323,15 +334,38 @@ void RunGameLoop() {
 		g_WindowMan.ClearBackbuffer();
 
 		g_TimerMan.Update();
+		g_LockstepMan.Update();
 
 		if (int harnessSimUpdates = DeterminismHarness::GetSimUpdatesForThisFrame(); harnessSimUpdates >= 0) {
 			// Decouple the sim from wall-clock time: a fixed number of fixed-length sim updates per frame.
 			g_TimerMan.SetAccumulatorForSimUpdates(harnessSimUpdates);
 		}
 
+		if (g_LockstepMan.IsInSession()) {
+			// In a co-op session the sim may be stalled waiting for other players, so these can't be left to the sim update loop below.
+			if (g_ActivityMan.ActivitySetToRestart()) {
+				g_LoadingScreen.DrawLoadingSplash();
+				g_WindowMan.UploadFrame();
+				if (!g_ActivityMan.RestartActivity()) {
+					break;
+				}
+			} else if (!g_ActivityMan.IsInActivity()) {
+				g_TimerMan.PauseSim(true);
+				g_MenuMan.HandleTransitionIntoMenuLoop();
+				RunMenuLoop();
+				g_TimerMan.PauseSim(false);
+				continue;
+			}
+		}
+
 		// Simulation update, as many times as the fixed update step allows in the span since last frame draw.
 		while (g_TimerMan.TimeForSimUpdate()) {
 			ZoneScopedN("Simulation Update");
+
+			// In a co-op match, wait until everyone's input for this update has arrived.
+			if (!g_LockstepMan.CanSimulateNextUpdate()) {
+				break;
+			}
 
 			serverUpdated = false;
 
@@ -344,6 +378,7 @@ void RunGameLoop() {
 			g_LuaMan.Update();
 
 			g_UInputMan.Update();
+			g_LockstepMan.BeginSimUpdate();
 
 			g_FrameMan.Update();
 
@@ -354,6 +389,7 @@ void RunGameLoop() {
 
 			if (g_SceneMan.GetScene()) {
 				g_SceneMan.GetScene()->Update();
+				g_SceneMan.UpdateTerrainCleaning();
 			}
 
 			g_LuaMan.ClearScriptTimings();
@@ -372,6 +408,7 @@ void RunGameLoop() {
 			g_PerformanceMan.StopPerformanceMeasurement(PerformanceMan::SimTotal);
 			g_UInputMan.EndFrame();
 
+			g_LockstepMan.EndSimUpdate();
 			DeterminismHarness::EndOfSimUpdate();
 
 			if (!g_ActivityMan.IsInActivity()) {
@@ -451,6 +488,7 @@ int main(int argc, char** argv) {
 
 	HandleMainArgs(argc, argv);
 	DeterminismHarness::Initialize();
+	g_LockstepMan.HandleCommandLine(argc, argv);
 
 	g_PresetMan.LoadAllDataModules();
 

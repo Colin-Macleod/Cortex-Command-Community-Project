@@ -934,6 +934,9 @@ namespace RTE {
 		/// @param screenId Which screen to update for. (default: 0)
 		void Update(int screenId = 0);
 
+		/// Does the per-sim-update terrain upkeep (converting cavity pixels to air). Call once per sim update.
+		void UpdateTerrainCleaning();
+
 		/// Draws this SceneMan's current graphical representation to a BITMAP of choice.
 		/// @param targetBitmap A pointer to a BITMAP to draw on, appropriately sized for the split screen segment.
 		/// @param targetGUIBitmap The offset into the scene where the target bitmap's upper left corner is located.

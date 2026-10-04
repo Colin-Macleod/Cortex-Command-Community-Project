@@ -1,0 +1,283 @@
+#pragma once
+
+#include "Singleton.h"
+#include "Constants.h"
+#include "UInputMan.h"
+
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <map>
+#include <random>
+#include <string>
+#include <vector>
+
+#define g_LockstepMan LockstepMan::Instance()
+
+struct BITMAP;
+
+namespace RakNet {
+	class RakPeerInterface;
+	struct Packet;
+} // namespace RakNet
+
+namespace RTE {
+
+	class GameActivity;
+
+	/// Online co-op multiplayer using deterministic lockstep.
+	///
+	/// Every peer runs the whole simulation. The only thing sent over the network is each player's input: every sim update, each peer captures its
+	/// local player's input and sends it to the host tagged for a sim update a few updates in the future (the input delay). The host bundles the
+	/// input of all players for each sim update and broadcasts the bundle. A peer only runs sim update N once it has bundle N, so every peer runs
+	/// every update with exactly the same input, and (because the simulation is deterministic, see TimerMan::SetDeterministicMode) ends up in exactly
+	/// the same state. Peers periodically exchange hashes of their simulation state so any desync is detected and reported.
+	///
+	/// Session flow: the host starts the game with -coop-host and either picks an Activity in the menus as usual, or passes -coop-activity to start one
+	/// automatically once enough players have joined. Clients start with -coop-join <address>. When the host starts an Activity, every connected client
+	/// is added to it as an extra human player on the host's team, and the Activity configuration is sent to the clients so they start the same one.
+	class LockstepMan : public Singleton<LockstepMan> {
+
+	public:
+		/// What this machine is doing in a co-op session.
+		enum class Role {
+			None,
+			Host,
+			Client
+		};
+
+#pragma region Creation
+		/// Constructor method used to instantiate a LockstepMan object in system memory.
+		LockstepMan();
+
+		/// Destructor method used to clean up a LockstepMan object before deletion from system memory.
+		~LockstepMan();
+
+		/// Shuts down any session and networking.
+		void Destroy();
+#pragma endregion
+
+#pragma region Session Setup
+		/// Parses the co-op command line arguments (-coop-host, -coop-join etc.) and starts hosting or joining if requested.
+		/// @param argCount Argument count.
+		/// @param argValue Argument values.
+		void HandleCommandLine(int argCount, char** argValue);
+
+		/// Starts hosting a co-op session.
+		/// @param port The UDP port to listen on.
+		/// @return Whether hosting started successfully.
+		bool StartHosting(unsigned short port);
+
+		/// Starts joining a co-op session.
+		/// @param address The host's address.
+		/// @param port The host's UDP port.
+		/// @return Whether the connection attempt started.
+		bool StartJoining(const std::string& address, unsigned short port);
+
+		/// Gets what this machine is doing in a co-op session.
+		/// @return The role of this machine.
+		Role GetRole() const { return m_Role; }
+
+		/// Gets whether this machine is hosting or has joined a co-op session.
+		/// @return Whether a session is active.
+		bool IsInSession() const { return m_Role != Role::None; }
+
+		/// Gets whether a lockstep match (a running Activity) is in progress.
+		/// @return Whether a match is running.
+		bool IsMatchRunning() const { return m_MatchRunning; }
+
+		/// Gets whether the host has started a match that this client hasn't started yet. Used to leave the menus.
+		/// @return Whether a match start is pending.
+		bool IsMatchStartPending() const { return m_MatchStartPending; }
+#pragma endregion
+
+#pragma region Match Lifecycle
+		/// Gets whether the Activity about to be started should be set up as a lockstep match: always when hosting, and on clients only when the host started it.
+		/// @return Whether ActivityMan should call PrepareMatch and BeginMatch.
+		bool WantsToPrepareMatch() const { return m_Role == Role::Host || (m_Role == Role::Client && m_MatchStartPending); }
+
+		/// Called by ActivityMan when an Activity is about to be (re)started. On the host this adds the connected clients to the Activity as players and
+		/// sends its configuration to them; on every peer it then rebuilds the Activity from that configuration so all peers start exactly the same one.
+		/// @param activity The Activity about to be started. Ownership IS transferred.
+		/// @return The Activity to actually start. Ownership IS transferred.
+		GameActivity* PrepareMatch(GameActivity* activity);
+
+		/// Called by ActivityMan right before the Activity prepared by PrepareMatch is started. Switches the engine into lockstep operation.
+		void BeginMatch();
+
+		/// Stops lockstep operation and restores local settings and input.
+		void EndMatch();
+
+		/// Leaves the current match after the player confirms by pressing Esc twice. Hosts end the match for everyone.
+		void RequestLeave();
+#pragma endregion
+
+#pragma region Per-Frame and Per-Update Hooks
+		/// Pumps the network. Call once per frame, both in menus and in game.
+		void Update();
+
+		/// Gets whether the next sim update can run, i.e. the input for it has arrived. Always true when no match is running.
+		/// @return Whether the next sim update can run.
+		bool CanSimulateNextUpdate();
+
+		/// Call at the start of every sim update, after UInputMan::Update. Captures and sends the local player's input and applies everyone's input for this update.
+		void BeginSimUpdate();
+
+		/// Call at the end of every sim update. Handles desync detection.
+		void EndSimUpdate();
+
+		/// Draws session status (waiting for players, desyncs etc.) over the frame.
+		/// @param targetBitmap The bitmap to draw on.
+		void DrawOverlay(BITMAP* targetBitmap);
+#pragma endregion
+
+	private:
+		/// Network message identifiers, offset from RakNet's ID_USER_PACKET_ENUM.
+		enum MessageType : uint8_t {
+			MsgHello, //!< Client -> host: version and setup info.
+			MsgReject, //!< Host -> client: the client can't join, and why.
+			MsgLobby, //!< Host -> clients: how many peers are connected.
+			MsgStart, //!< Host -> client: start a match with this configuration.
+			MsgInput, //!< Client -> host: the client's input for a sim update.
+			MsgTick, //!< Host -> clients: everyone's input for a sim update.
+			MsgChecksum, //!< Client -> host: hash of the client's sim state at a sim update.
+			MsgDesync, //!< Host -> clients: a desync was detected.
+			MsgEndMatch //!< Host -> clients: the host left the match.
+		};
+
+		/// A connected client, as seen by the host.
+		struct Peer {
+			uint64_t Guid = 0; //!< RakNet GUID of the connection.
+			std::string Address; //!< Network address, for messages.
+			bool Accepted = false; //!< Whether the client passed the version checks.
+			InputDevice Device = InputDevice::DEVICE_KEYB_ONLY; //!< The input device the client plays with.
+			int Player = Players::NoPlayer; //!< The player the client controls in the current match.
+			bool Connected = true; //!< Whether the client is still connected.
+		};
+
+		/// Configuration from the command line.
+		struct LaunchOptions {
+			int ExpectedPlayers = 2; //!< With AutoActivity, how many players (including the host) to wait for before starting.
+			std::string AutoActivity; //!< Activity to start automatically on the host once enough players have joined.
+			std::string AutoScene; //!< Scene for AutoActivity.
+			int AutoDifficulty = 50; //!< Difficulty for AutoActivity.
+			int AutoGold = 5000; //!< Starting gold for AutoActivity.
+			bool AutoFog = true; //!< Fog of war for AutoActivity.
+			bool AutoDeployUnits = true; //!< Whether to deploy the scene's units for AutoActivity.
+			int BotSeed = -1; //!< If not negative, the local player is driven by a pseudo-random input bot (for automated testing).
+			int DesyncInjectTick = -1; //!< If not negative, deliberately perturb this machine's simulation at this sim update (for testing desync detection).
+		};
+
+		Role m_Role = Role::None; //!< What this machine is doing in a session.
+		RakNet::RakPeerInterface* m_Peer = nullptr; //!< The RakNet peer. Owned.
+		uint64_t m_HostGuid = 0; //!< Client: the host's GUID once connected.
+		std::string m_HostAddress; //!< Client: the host's address.
+		bool m_ConnectedToHost = false; //!< Client: whether the connection to the host is up.
+		bool m_HelloSent = false; //!< Client: whether the hello message has been sent.
+		std::string m_StatusMessage; //!< Status text shown in the overlay.
+		std::string m_RejectReason; //!< Client: why the host rejected us, if it did.
+		std::vector<Peer> m_Peers; //!< Host: connected clients.
+		int m_LobbyPeerCount = 0; //!< Client: number of peers in the session, as last reported by the host.
+		LaunchOptions m_Options; //!< Configuration from the command line.
+		bool m_AutoStartDone = false; //!< Host: whether the automatic Activity start has happened.
+
+		// Match state
+		bool m_MatchRunning = false; //!< Whether a lockstep match is running.
+		bool m_MatchStartPending = false; //!< Client: whether a match start was received but not yet acted on.
+		GameActivity* m_PendingMatchActivity = nullptr; //!< Client: the Activity built from the host's match configuration. Not owned once handed to ActivityMan.
+		uint32_t m_MatchId = 0; //!< Identifies the current match, so stale messages from a previous one are ignored.
+		std::string m_MatchConfig; //!< The current match's configuration, as sent by the host.
+		int m_InputDelay = 4; //!< How many sim updates in the future local input is scheduled for.
+		int m_LocalPlayer = Players::NoPlayer; //!< The player controlled from this machine.
+		std::array<bool, Players::MaxPlayerCount> m_MatchPlayers{}; //!< Which players' input goes through lockstep (all human players in the match).
+		std::array<InputDevice, Players::MaxPlayerCount> m_PlayerDevices{}; //!< The input device of each match player.
+		std::array<int, Players::MaxPlayerCount> m_PlayerOwnerPeer{}; //!< Host: which peer index controls each player (-1 host, -2 nobody).
+		long long m_NextSimUpdate = 0; //!< Index of the next sim update to run in this match.
+		std::map<long long, std::array<VirtualInputFrame, Players::MaxPlayerCount>> m_UpdateInputs; //!< Input bundles for upcoming sim updates.
+		std::chrono::steady_clock::time_point m_WaitingSince; //!< When we started waiting for the next bundle.
+		bool m_Waiting = false; //!< Whether we're currently waiting for the next bundle.
+
+		// Host bundle building
+		std::array<std::map<long long, VirtualInputFrame>, Players::MaxPlayerCount> m_PendingPlayerInputs; //!< Host: inputs received but not yet bundled, per player.
+		std::array<VirtualInputFrame, Players::MaxPlayerCount> m_LastPlayerInputs; //!< Host: the last input bundled for each player, repeated if a player's input is late.
+		std::array<bool, Players::MaxPlayerCount> m_PlayerHasSentInput{}; //!< Host: whether each player has sent any input this match (i.e. has finished loading).
+		long long m_NextBundleUpdate = 0; //!< Host: the next sim update to build a bundle for.
+
+		// Desync detection
+		static constexpr int c_ChecksumInterval = 60; //!< How often (in sim updates) peers compare state hashes.
+		static constexpr int c_TerrainChecksumInterval = 600; //!< How often the (expensive) terrain hash is included.
+		std::map<long long, std::array<uint64_t, 7>> m_HostChecksums; //!< Host: own state hashes by sim update.
+		std::map<long long, std::vector<std::pair<int, std::array<uint64_t, 7>>>> m_ClientChecksums; //!< Host: client state hashes by sim update, waiting for the host's own.
+		bool m_Desynced = false; //!< Whether a desync has been detected in this match.
+		std::string m_DesyncMessage; //!< Description of the detected desync.
+		long long m_ChecksumsCompared = 0; //!< Host: how many checksum comparisons succeeded, for the overlay and logs.
+
+		// Leaving
+		std::chrono::steady_clock::time_point m_LeaveRequestTime; //!< When Esc was first pressed to leave.
+		bool m_LeaveRequested = false; //!< Whether Esc was pressed once and a second press would leave.
+
+		// Saved local settings, restored after a match
+		std::map<std::string, std::string> m_SavedSettings; //!< Local values of the settings the host dictates during a match.
+
+		// Testing aids
+		std::minstd_rand m_BotRNG; //!< Generator for the input bot.
+		VirtualInputFrame m_BotHeld; //!< The bot's currently held input.
+		int m_BotHoldUpdates = 0; //!< How many more sim updates the bot holds its current input.
+
+#pragma region Networking
+		/// Sends a message to one connection.
+		void Send(const std::vector<uint8_t>& message, uint64_t guid);
+
+		/// Sends a message to every accepted, connected client.
+		void Broadcast(const std::vector<uint8_t>& message);
+
+		/// Handles one received packet.
+		void HandlePacket(RakNet::Packet* packet);
+
+		/// Host: handles a message from a client.
+		void HandleHostMessage(Peer& peer, MessageType type, const uint8_t* data, size_t size);
+
+		/// Client: handles a message from the host.
+		void HandleClientMessage(MessageType type, const uint8_t* data, size_t size);
+
+		/// Host: sends the lobby status to all clients.
+		void BroadcastLobbyStatus();
+
+		/// Host: finds a peer by GUID.
+		Peer* FindPeer(uint64_t guid);
+#pragma endregion
+
+#pragma region Match Helpers
+		/// Serializes everything needed to construct an identical Activity on another machine.
+		std::string SerializeMatchConfig(const GameActivity* activity) const;
+
+		/// Constructs an Activity from a serialized configuration, and applies the session settings in it.
+		GameActivity* BuildActivityFromConfig(const std::string& config, int& localPlayerOut);
+
+		/// Host: builds the Activity for the automatic start option.
+		GameActivity* BuildAutoActivity() const;
+
+		/// Host: builds and broadcasts bundles for which everyone's input has arrived (or has timed out).
+		void HostBuildBundles();
+
+		/// Gets a string describing this build and its data, which must match between peers.
+		std::string GetCompatibilityString() const;
+
+		/// Gets the local player's input for a sim update, from devices or from the input bot.
+		VirtualInputFrame CaptureLocalInput();
+
+		/// Saves the local values of the settings the host dictates, and applies the given values.
+		void ApplySessionSettings(const std::map<std::string, std::string>& values);
+
+		/// Restores the local values of the settings the host dictated.
+		void RestoreLocalSettings();
+
+		/// Handles a detected desync.
+		void ReportDesync(long long simUpdate, const std::string& description);
+#pragma endregion
+
+		// Disallow the use of some implicit methods.
+		LockstepMan(const LockstepMan& reference) = delete;
+		LockstepMan& operator=(const LockstepMan& rhs) = delete;
+	};
+} // namespace RTE

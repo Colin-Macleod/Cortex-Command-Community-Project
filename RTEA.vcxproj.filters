@@ -130,6 +130,9 @@
     <ClInclude Include="Source\Managers\FrameMan.h">
       <Filter>Managers</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Managers\LockstepMan.h">
+      <Filter>Managers</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Managers\LuaMan.h">
       <Filter>Managers</Filter>
     </ClInclude>
@@ -719,6 +722,9 @@
       <Filter>Managers</Filter>
     </ClCompile>
     <ClCompile Include="Source\Managers\FrameMan.cpp">
+      <Filter>Managers</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Managers\LockstepMan.cpp">
       <Filter>Managers</Filter>
     </ClCompile>
     <ClCompile Include="Source\Managers\LuaMan.cpp">

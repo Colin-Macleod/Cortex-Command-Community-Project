@@ -13,6 +13,7 @@ namespace RTE {
 
 	/// The singleton manager over the application and misc settings.
 	class SettingsMan : public Singleton<SettingsMan>, public Serializable {
+		friend class LockstepMan;
 
 	public:
 		SerializableClassNameGetter;

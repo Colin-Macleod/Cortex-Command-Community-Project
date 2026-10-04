@@ -75,6 +75,10 @@ namespace RTE {
 			/// @return The velocity vector for anything exiting through this.
 			Vector GetVelocity() const { return m_Velocity * (1.0F + m_VelSpread * RandomNormalNum()); }
 
+			/// Gets the velocity of anything that exits through this, without the random spread. Use for drawing, which mustn't consume random numbers.
+			/// @return The base velocity vector for anything exiting through this.
+			Vector GetBaseVelocity() const { return m_Velocity; }
+
 			/// Gets the width from the center tanget created by the velocity vector
 			/// out from the offet point. This times two gives the total width of the
 			/// opening.

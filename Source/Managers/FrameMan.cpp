@@ -1,4 +1,5 @@
 #include "FrameMan.h"
+#include "LockstepMan.h"
 
 #include "SDL3/SDL_surface.h"
 #include "WindowMan.h"
@@ -225,12 +226,21 @@ void FrameMan::Update() {
 
 	// Update redundantly in sim update to ensure our values are exactly precise for the purposes of script GetOffset()
 	int screenCount = (m_HSplit ? 2 : 1) * (m_VSplit ? 2 : 1);
+	if (g_LockstepMan.IsMatchRunning() && g_ActivityMan.GetActivity()) {
+		// In co-op every player has a screen of their own (on their own machine), and every peer keeps all of them updated identically, since scripts can read camera state.
+		// They're only updated here, never when drawing, so camera state is the same on every peer.
+		screenCount = std::clamp(static_cast<int>(g_ActivityMan.GetActivity()->GetHumanCount()), 1, static_cast<int>(c_MaxScreenCount));
+	}
 	for (int playerScreen = 0; playerScreen < screenCount; ++playerScreen) {
 		g_CameraMan.Update(playerScreen);
 	}
 }
 
 void FrameMan::ResetSplitScreens(bool hSplit, bool vSplit) {
+	if (g_LockstepMan.IsMatchRunning()) {
+		// In co-op each player sees only their own screen, in full, on their own machine. This also makes the screen dimensions the simulation sees the same on every peer.
+		hSplit = vSplit = false;
+	}
 	// Override screen splitting according to settings if needed
 	if ((hSplit || vSplit) && !(hSplit && vSplit) && m_TwoPlayerVSplit) {
 		hSplit = false;
@@ -271,7 +281,7 @@ float FrameMan::GetResolutionMultiplier() const {
 Vector FrameMan::GetMiddleOfPlayerScreen(int whichPlayer) {
 	Vector middleOfPlayerScreen;
 
-	if (whichPlayer == -1) {
+	if (whichPlayer == -1 || g_LockstepMan.IsMatchRunning()) {
 		middleOfPlayerScreen.SetXY(static_cast<float>(g_WindowMan.GetResX() / 2), static_cast<float>(g_WindowMan.GetResY() / 2));
 	} else {
 		int playerScreen = g_ActivityMan.GetActivity()->ScreenOfPlayer(whichPlayer);
@@ -811,6 +821,15 @@ void FrameMan::Draw() {
 	ZoneScopedN("Draw");
 	TracyGpuZone("FrameMan::Draw");
 
+	// Drawing happens a varying number of times per sim update, and in co-op only for this machine's screen, so any random numbers drawing code asks for
+	// (HUDs, effects) must not come from the simulation's generators. Route them all to the cosmetic generator while drawing.
+	struct CosmeticRandomScope {
+		RandomGenerator* m_Previous;
+		CosmeticRandomScope() :
+		    m_Previous(g_ThreadRandomGeneratorOverride) { g_ThreadRandomGeneratorOverride = &CosmeticRandomGenerator(); }
+		~CosmeticRandomScope() { g_ThreadRandomGeneratorOverride = m_Previous; }
+	} cosmeticRandomScope;
+
 	// rlSetShader(rlGetShaderIdDefault(), rlGetShaderLocsDefault());
 	Shader backgroundShader;
 	g_PresetMan.GetEntityPreset("Shader", "Background")->Clone(&backgroundShader);
@@ -830,7 +849,18 @@ void FrameMan::Draw() {
 
 	const Activity* pActivity = g_ActivityMan.GetActivity();
 
-	for (int playerScreen = 0; playerScreen < screenCount; ++playerScreen) {
+	// Normally every split screen is drawn. In co-op only the local player's screen is drawn, filling the window.
+	const bool coopMatch = g_LockstepMan.IsMatchRunning() && pActivity;
+	std::vector<int> screensToDraw;
+	if (coopMatch) {
+		screensToDraw.push_back(std::max(0, pActivity->ScreenOfPlayer(g_UInputMan.GetLocalVirtualPlayer())));
+	} else {
+		for (int playerScreen = 0; playerScreen < screenCount; ++playerScreen) {
+			screensToDraw.push_back(playerScreen);
+		}
+	}
+
+	for (int playerScreen: screensToDraw) {
 		screenRelativeEffects.clear();
 		screenRelativeGlowBoxes.clear();
 		rlEnableColorBlend();
@@ -854,10 +884,12 @@ void FrameMan::Draw() {
 		AllegroBitmap playerGUIBitmap(drawScreenGUI);
 
 		// Update the scene view to line up with a specific screen and then draw it onto the intermediate screen
-		g_CameraMan.Update(playerScreen);
+		if (!coopMatch) {
+			g_CameraMan.Update(playerScreen);
+		}
 		g_SceneMan.Update(playerScreen);
 
-		Vector targetPos = g_CameraMan.GetOffset(playerScreen);
+		Vector targetPos = g_CameraMan.GetOffset(playerScreen) + g_CameraMan.GetScreenShakeDrawOffset(playerScreen);
 
 		// Adjust the drawing position on the target screen for if the target screen is larger than the scene in non-wrapping dimension.
 		// Scene needs to be displayed centered on the target bitmap then, and that has to be adjusted for when drawing to the screen
@@ -907,8 +939,6 @@ void FrameMan::Draw() {
 		g_PostProcessMan.AdjustEffectsPosToPlayerScreen(playerScreen, drawScreen, screenOffset, screenRelativeEffects, screenRelativeGlowBoxes);
 	}
 
-	// Clears the pixels that have been revealed from the unseen layers
-	g_SceneMan.ClearSeenPixels();
 
 	// Draw separating lines for split-screens
 	if (m_HSplit) {
@@ -938,6 +968,7 @@ void FrameMan::Draw() {
 
 	// Draw the performance stats and console on top of everything.
 	g_PerformanceMan.Draw(m_BackBuffer32.get());
+	g_LockstepMan.DrawOverlay(m_BackBuffer32.get());
 	g_ConsoleMan.Draw(m_BackBuffer32.get());
 
 #ifdef DEBUG_BUILD

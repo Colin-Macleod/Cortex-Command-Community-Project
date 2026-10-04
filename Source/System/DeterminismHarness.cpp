@@ -17,6 +17,7 @@
 #include "System.h"
 #include "RTETools.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
@@ -109,13 +110,40 @@ namespace {
 	std::mutex s_TraceMutex;
 	std::ofstream s_Trace;
 	long long s_TraceTicks = 0;
+	long long s_TraceFromTick = 0;
 	std::thread::id s_MainThread;
 } // namespace
 
 /// Records the call stack of every draw from the global RNG (and which thread made it) during the first CCCP_DT_TRACE_TICKS ticks.
 /// Addresses are written as offsets into the module so they can be resolved with addr2line.
 void RTE::RNGTraceHook(const RandomGenerator* generator) {
-	if (!DeterminismHarness::IsEnabled() || !s_Trace.is_open() || generator != &g_RandomGenerator) {
+	if (!DeterminismHarness::IsEnabled() || !s_Trace.is_open()) {
+		return;
+	}
+	if (const long long currentTick = DeterminismHarness::GetTick(); currentTick < s_TraceFromTick || currentTick >= s_TraceTicks) {
+		return;
+	}
+	// Identify the generator: the global one, a Lua state's, or something else (cosmetic or temporary generators, which aren't traced).
+	std::string generatorName;
+	std::string scriptPath;
+	if (generator == &g_RandomGenerator) {
+		generatorName = "G";
+	} else if (generator == &g_LuaMan.GetMasterScriptState().GetRandomGenerator()) {
+		generatorName = "Lm";
+		scriptPath = g_LuaMan.GetMasterScriptState().GetCurrentlyRunningScriptFilePath();
+	} else {
+		const LuaStatesArray& luaStates = g_LuaMan.GetThreadedScriptStates();
+		for (size_t i = 0; i < luaStates.size(); ++i) {
+			if (generator == &luaStates[i].GetRandomGenerator()) {
+				generatorName = "L" + std::to_string(i);
+				scriptPath = luaStates[i].GetCurrentlyRunningScriptFilePath();
+				break;
+			}
+		}
+	}
+	// Keep the record a single whitespace-separated token for the script.
+	std::replace(scriptPath.begin(), scriptPath.end(), ' ', '_');
+	if (generatorName.empty()) {
 		return;
 	}
 	long long tick = DeterminismHarness::GetTick();
@@ -125,7 +153,10 @@ void RTE::RNGTraceHook(const RandomGenerator* generator) {
 	void* frames[10];
 	int frameCount = backtrace(frames, 10);
 	std::scoped_lock lock(s_TraceMutex);
-	s_Trace << tick << (std::this_thread::get_id() == s_MainThread ? " M" : " W");
+	s_Trace << tick << (std::this_thread::get_id() == s_MainThread ? " M" : " W") << ":" << generatorName;
+	if (!scriptPath.empty()) {
+		s_Trace << " lua:" << scriptPath;
+	}
 	for (int i = 2; i < frameCount; ++i) {
 		Dl_info info;
 		if (dladdr(frames[i], &info) && info.dli_fbase) {
@@ -192,6 +223,9 @@ void DeterminismHarness::Initialize() {
 #ifdef RTE_RNG_TRACE
 	if (const char* value = std::getenv("CCCP_DT_TRACE_TICKS")) {
 		s_TraceTicks = std::atoll(value);
+		if (const char* fromValue = std::getenv("CCCP_DT_TRACE_FROM")) {
+			s_TraceFromTick = std::atoll(fromValue);
+		}
 		s_MainThread = std::this_thread::get_id();
 		s_Trace.open(s_LogPath + ".rngtrace", std::ios::out | std::ios::trunc);
 	}
