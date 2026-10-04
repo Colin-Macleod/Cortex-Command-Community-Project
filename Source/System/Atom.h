@@ -358,7 +358,7 @@ namespace RTE {
 		Material const* m_Material; //!< The material this Atom is made of.
 		int m_SubgroupID; //!< Identifying ID for adding and removing atoms from AtomGroups.
 
-		bool m_StepWasTaken; //!< Whether the last call to StepForward actually resulted in a step or not.
+		bool m_StepWasTaken = false; //!< Whether the last call to StepForward actually resulted in a step or not.
 		float m_StepRatio; //!< The normalized ratio of how many steps are actually taken to how many calls to TakeStep are made.
 		Vector m_SegTraj; //!< The segment trajectory currently set by SetupSeg.
 		float m_SegProgress; //!< The segment progress while taking steps.
@@ -391,20 +391,21 @@ namespace RTE {
 		int m_TrailLength; //!< The longest the trail should/can get drawn. If 0, no trail is drawn.
 		float m_TrailLengthVariation; //!< What percentage the trail length of this Atom can vary each frame it's drawn. 0 means no variance, 1 means 100% variance between 0 and its TrailLength.
 
-		// Bresenham line algorithm variables
-		int m_IntPos[2];
-		int m_PrevIntPos[2];
-		int m_TrailPos[2];
-		int m_HitPos[2];
-		int m_Delta[2];
-		int m_Delta2[2];
-		int m_Increment[2];
-		int m_Error;
-		int m_Dom;
-		int m_Sub;
-		int m_DomSteps;
-		int m_SubSteps;
-		bool m_SubStepped;
+		// Bresenham line algorithm variables. Initialized so that an Atom that steps before its first SetupSeg (see the note in Clear) behaves the same
+		// on every machine, instead of reading whatever its pooled memory last held.
+		int m_IntPos[2] = {0, 0};
+		int m_PrevIntPos[2] = {0, 0};
+		int m_TrailPos[2] = {0, 0};
+		int m_HitPos[2] = {0, 0};
+		int m_Delta[2] = {0, 0};
+		int m_Delta2[2] = {0, 0};
+		int m_Increment[2] = {0, 0};
+		int m_Error = 0;
+		int m_Dom = 0;
+		int m_Sub = 0;
+		int m_DomSteps = 0;
+		int m_SubSteps = 0;
+		bool m_SubStepped = false;
 
 	private:
 		static const std::string c_ClassName; //!< A string with the friendly-formatted type name of this.

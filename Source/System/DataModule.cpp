@@ -439,14 +439,21 @@ void DataModule::ReloadAllScripts() const {
 int DataModule::FindAndRead(const ProgressCallback& progressCallback) {
 	int result = 0;
 	const std::string directoryToScan = g_PresetMan.GetFullModulePath(m_FileName);
+	// Read in name order. Directory iteration order depends on the file system, and the order presets are added in matters (e.g. for random picks
+	// from groups), so it must be the same on every machine.
+	std::vector<std::string> iniFileNames;
 	for (const std::filesystem::directory_entry& directoryEntry: std::filesystem::directory_iterator(System::GetWorkingDirectory() + directoryToScan)) {
 		if (directoryEntry.path().extension() == ".ini" && directoryEntry.path().filename() != "Index.ini") {
-			Reader iniReader;
-			if (iniReader.Create(directoryToScan + "/" + directoryEntry.path().filename().generic_string(), false, progressCallback) >= 0) {
-				result = Serializable::CreateSerializable(iniReader, false, true, true);
-				if (progressCallback) {
-					progressCallback(" ", true);
-				}
+			iniFileNames.emplace_back(directoryEntry.path().filename().generic_string());
+		}
+	}
+	std::sort(iniFileNames.begin(), iniFileNames.end());
+	for (const std::string& iniFileName: iniFileNames) {
+		Reader iniReader;
+		if (iniReader.Create(directoryToScan + "/" + iniFileName, false, progressCallback) >= 0) {
+			result = Serializable::CreateSerializable(iniReader, false, true, true);
+			if (progressCallback) {
+				progressCallback(" ", true);
 			}
 		}
 	}

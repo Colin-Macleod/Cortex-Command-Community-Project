@@ -1,4 +1,5 @@
 #include "Actor.h"
+#include "TimerMan.h"
 
 #include "UInputMan.h"
 #include "ActivityMan.h"
@@ -101,6 +102,7 @@ void Actor::Clear() {
 	m_pItemInReach = nullptr;
 	m_HotkeyActivated.fill(false);
 	m_HUDStack = 0;
+	m_MovementState = NOMOVE;
 	m_DeploymentID = 0;
 	m_PassengerSlots = 1;
 
@@ -461,6 +463,15 @@ void Actor::DestroyScriptState() {
 	}
 
 	MOSRotating::DestroyScriptState();
+}
+
+Vector Actor::GetAboveHUDPos() const {
+	// m_HUDStack is worked out while drawing this machine's screen, so it depends on who's viewing. Scripts use this position for things in the
+	// simulation (e.g. Medikit spawns a particle there), so in deterministic mode only sim state may decide it.
+	if (g_TimerMan.IsInDeterministicMode()) {
+		return m_Pos + Vector(0, static_cast<float>(static_cast<int>(-m_CharHeight / 2) + 6));
+	}
+	return m_Pos + Vector(0, static_cast<float>(m_HUDStack + 6));
 }
 
 void Actor::Destroy(bool notInherited) {

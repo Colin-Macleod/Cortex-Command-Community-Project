@@ -38,7 +38,7 @@ namespace RTE {
 
 		Vector Pos; //!< Absolute position of the center of this PathNode in the scene.
 
-		bool m_Navigable; //!< Whether this node can be navigated through.
+		bool m_Navigable = true; //!< Whether this node can be navigated through.
 
 		/// Pointers to all adjacent PathNodes, in clockwise order with top first. These are not owned, and may be 0 if adjacent to non-wrapping scene border.
 		std::array<PathNode*, c_MaxAdjacentNodeCount> AdjacentNodes;

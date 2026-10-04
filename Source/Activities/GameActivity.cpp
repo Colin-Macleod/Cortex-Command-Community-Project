@@ -2023,7 +2023,9 @@ void GameActivity::DrawGUI(BITMAP* pTargetBitmap, const Vector& targetPos, int w
 	if (pIcon)
 		draw_sprite(pTargetBitmap, pIcon->GetBitmaps8()[0], MAX(2, g_CameraMan.GetScreenOcclusion(which).m_X + 2), 2);
 	// Gold
-	std::snprintf(str, sizeof(str), "%c Funds: %.10g oz", TeamFundsChanged(which) ? -57 : -58, std::floor(GetTeamFunds(m_Team[PoS])));
+	// Drawing happens only for this machine's screen, so in deterministic mode it mustn't reset state that scripts can read.
+	const bool fundsChanged = g_TimerMan.IsInDeterministicMode() ? PeekTeamFundsChanged(m_Team[PoS]) : TeamFundsChanged(m_Team[PoS]);
+	std::snprintf(str, sizeof(str), "%c Funds: %.10g oz", fundsChanged ? -57 : -58, std::floor(GetTeamFunds(m_Team[PoS])));
 	g_FrameMan.GetLargeFont()->DrawAligned(&pBitmapInt, MAX(16, g_CameraMan.GetScreenOcclusion(which).m_X + 16), yTextPos, str, GUIFont::Left);
 	/* Not applicable anymore to the 4-team games
 	    // Body losses

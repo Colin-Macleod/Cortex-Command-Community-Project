@@ -372,6 +372,11 @@ namespace RTE {
 		/// @return Whether funds amount changed for this team since last time this was called.
 		bool TeamFundsChanged(int whichTeam = 0);
 
+		/// Checks whether the team funds changed since TeamFundsChanged was last called, without resetting that state.
+		/// @param whichTeam Which team's funds to check.
+		/// @return Whether funds amount changed for this team.
+		bool PeekTeamFundsChanged(int whichTeam) const { return whichTeam >= Teams::TeamOne && whichTeam < Teams::MaxTeamCount && m_FundsChanged[whichTeam]; }
+
 		/// Gets the amount of funds a specific player originally added to his team's collective stash.
 		/// @param player Which player to check for.
 		/// @return A float with the funds originally deposited by this player.

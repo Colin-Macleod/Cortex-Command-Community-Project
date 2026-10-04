@@ -317,6 +317,10 @@ void PathFinder::RecalculateAllCosts() {
 	RTEAssert(g_SceneMan.GetScene(), "Scene doesn't exist or isn't loaded when recalculating PathFinder!");
 
 	// Deadlock until all path requests are complete
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Including deterministic requests that are queued but haven't started yet, which the counter below doesn't count.
+		WaitForDeterministicRequests();
+	}
 	while (m_CurrentPathingRequests.load() != 0) {};
 
 	// I hate this copy, but fuck it.

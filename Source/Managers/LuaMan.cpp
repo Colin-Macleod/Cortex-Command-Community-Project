@@ -1033,6 +1033,8 @@ const std::vector<std::string>* LuaMan::DirectoryList(const std::string& path) {
 					directoryPaths->emplace_back(entry.path().filename().generic_string());
 				}
 			}
+			// Directory iteration order depends on the file system, so would differ between machines.
+			std::sort(directoryPaths->begin(), directoryPaths->end());
 		}
 	}
 	return directoryPaths;
@@ -1052,6 +1054,8 @@ const std::vector<std::string>* LuaMan::FileList(const std::string& path) {
 					filePaths->emplace_back(entry.path().filename().generic_string());
 				}
 			}
+			// Directory iteration order depends on the file system, so would differ between machines.
+			std::sort(filePaths->begin(), filePaths->end());
 		}
 	}
 	return filePaths;
@@ -1319,6 +1323,17 @@ void LuaMan::StartAsyncGarbageCollection() {
 	}
 
 	m_GarbageCollectionTask = BS::multi_future<void>();
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Collecting frees Lua-owned engine objects, which returns their memory to the entity pools and unregisters them. Done on worker threads,
+		// the order of that (and so which address the next new object gets) depends on thread timing, and the collection could also overlap with
+		// script running later in the update. Do it here, one state after another.
+		for (LuaStateWrapper* luaState: allStates) {
+			std::lock_guard<std::recursive_mutex> lock(luaState->GetMutex());
+			lua_gc(luaState->GetLuaState(), LUA_GCSTEP, 100);
+			lua_gc(luaState->GetLuaState(), LUA_GCSTOP, 0);
+		}
+		return;
+	}
 	for (LuaStateWrapper* luaState: allStates) {
 		m_GarbageCollectionTask.push_back(
 		    g_ThreadMan.GetPriorityThreadPool().submit([luaState]() {

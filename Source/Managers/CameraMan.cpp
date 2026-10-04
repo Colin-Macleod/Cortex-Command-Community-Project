@@ -158,7 +158,9 @@ Vector CameraMan::GetFrameSize(int screenId) {
 }
 
 void CameraMan::ResetAllScreenShake() {
-	for (int screenId = 0; screenId < g_FrameMan.GetScreenCount(); ++screenId) {
+	// In a lockstep session every player's camera is simulated on every machine although only one screen is drawn, so cover them all.
+	const int screenCount = g_TimerMan.IsInDeterministicMode() ? c_MaxScreenCount : g_FrameMan.GetScreenCount();
+	for (int screenId = 0; screenId < screenCount; ++screenId) {
 		Screen& screen = m_Screens[screenId];
 		screen.ScreenShakeMagnitude = 0;
 		screen.ScrollTimer.Reset();
@@ -166,7 +168,8 @@ void CameraMan::ResetAllScreenShake() {
 }
 
 void CameraMan::AddScreenShake(float magnitude, const Vector& position) {
-	for (int screenId = 0; screenId < g_FrameMan.GetScreenCount(); ++screenId) {
+	const int screenCount = g_TimerMan.IsInDeterministicMode() ? c_MaxScreenCount : g_FrameMan.GetScreenCount();
+	for (int screenId = 0; screenId < screenCount; ++screenId) {
 		Screen& screen = m_Screens[screenId];
 
 		Vector frameSize = GetFrameSize(screenId);
@@ -228,7 +231,8 @@ void CameraMan::Update(int screenId) {
 	Vector newOffset = screen.Offset;
 	if (offsetTarget.GetFloored() != screen.Offset.GetFloored()) {
 		Vector scrollVec(offsetTarget - screen.Offset);
-		float scrollProgress = std::min(1.0F, static_cast<float>(screen.ScrollSpeed * screen.ScrollTimer.GetElapsedRealTimeMS() * 0.05F));
+		// Clamped at 0 too: a timer started in an earlier time base (e.g. before the sim clock was reset for a new activity) reads negative.
+		float scrollProgress = std::clamp(static_cast<float>(screen.ScrollSpeed * screen.ScrollTimer.GetElapsedRealTimeMS() * 0.05F), 0.0F, 1.0F);
 		newOffset += scrollVec * scrollProgress;
 	}
 

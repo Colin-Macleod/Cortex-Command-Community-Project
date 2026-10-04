@@ -747,6 +747,8 @@ int Scene::LoadData(bool placeObjects, bool initPathfinding, bool placeUnits) {
 		for (int i = 0; i < m_pPathFinders.size(); ++i) {
 			m_pPathFinders[i] = std::make_unique<PathFinder>(pathFinderGridNodeSize);
 		}
+		// The new grids need their navigable flags set up again before anything uses them.
+		m_NavigableAreasUpToDate = false;
 		ResetPathFinding();
 	}
 
@@ -2378,6 +2380,9 @@ void Scene::ResetPathFinding() {
 }
 
 void Scene::BlockUntilAllPathingRequestsComplete() {
+	if (g_TimerMan.IsInDeterministicMode()) {
+		PathFinder::WaitForDeterministicRequests();
+	}
 	for (int team = Activity::Teams::NoTeam; team < Activity::Teams::MaxTeamCount; ++team) {
 		while (GetPathFinder(static_cast<Activity::Teams>(team)).GetCurrentPathingRequests() != 0) {};
 	}
@@ -2388,6 +2393,12 @@ void Scene::UpdatePathFinding() {
 
 	constexpr int nodeUpdatesPerCall = 100;
 	constexpr int maxUnupdatedMaterialAreas = 1000;
+
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Whether any requests are still running would depend on thread timing (this is also called outside Scene::Update, e.g. by door team
+		// changes, the editor and scripts), so wait for them instead.
+		PathFinder::WaitForDeterministicRequests();
+	}
 
 	// If any pathing requests are active, don't update things yet, wait till they're finished
 	// TODO: this can indefinitely block updates if pathing requests are made every frame. Figure out a solution for this

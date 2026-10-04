@@ -227,7 +227,7 @@ namespace RTE {
 
 		/// Gets the absoltue position of the top of this' HUD stack.
 		/// @return A Vector with the absolute position of this' HUD stack top point.
-		Vector GetAboveHUDPos() const override { return m_Pos + Vector(0, m_HUDStack + 6); }
+		Vector GetAboveHUDPos() const override;
 
 		/// Gets the offset position of the holster where this Actor draws his devices from.
 		/// @return The offset position of the holster.
