@@ -1,3 +1,5 @@
+require("Utilities");
+
 if not AutomoverData then
 	AutomoverData = {};
 	for team = Activity.NOTEAM, Activity.TEAM_4 do
@@ -119,7 +121,8 @@ function Automovers_CheckConnections(node)
 
 	local checkWrapping = SceneMan.SceneWrapsX or SceneMan.SceneWrapsY;
 
-	for otherNode, otherNodeData in pairs(teamAutomoverData.nodeData) do
+	-- Sorted: pairs() over node keys goes in memory address order, which differs between machines in multiplayer.
+	for otherNode, otherNodeData in SortedPairs(teamAutomoverData.nodeData, SortKeyMO) do
 		if type(otherNode) ~= "string" and MovableMan:IsParticle(otherNode) and (not teamAutomoverData.teleporterNodes[node] or not teamAutomoverData.teleporterNodes[otherNode]) then
 			local otherNodeIsHorizontalOnly = otherNode.PresetName:find("Horizontal Only");
 			local otherNodeIsVerticalOnly = otherNode.PresetName:find("Vertical Only");
@@ -143,7 +146,7 @@ function Automovers_CheckConnections(node)
 		local distanceToClosestNode;
 		for _, nodeInDirection in pairs(nodesInDirection) do
 			local distanceToNode = SceneMan:ShortestDistance(node.Pos, nodeInDirection.Pos, checkWrapping);
-			if (distanceToClosestNode == nil or distanceToNode.SqrMagnitude < distanceToClosestNode.SqrMagnitude) then
+			if (distanceToClosestNode == nil or distanceToNode.SqrMagnitude < distanceToClosestNode.SqrMagnitude or (distanceToNode.SqrMagnitude == distanceToClosestNode.SqrMagnitude and nodeInDirection.UniqueID < closestNode.UniqueID)) then
 				closestNode = nodeInDirection;
 				distanceToClosestNode = distanceToNode;
 			end

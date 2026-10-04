@@ -1444,7 +1444,7 @@ function DecisionDay:UpdateRegionCapturing()
 									end
 								end
 							end
-							for box, boxData in pairs(self.popoutTurretsData[bunkerRegionData.bunkerId].boxData) do
+							for box, boxData in SortedPairs(self.popoutTurretsData[bunkerRegionData.bunkerId].boxData, SortKeyBox) do
 								if boxData.actor and MovableMan:ValidMO(boxData.actor) then
 									boxData.actor:GibThis();
 								end
@@ -1644,16 +1644,24 @@ function DecisionDay:UpdateAIInternalReinforcements(forceInstantSpawning)
 		end
 	end
 
-	for internalReinforcementDoor, actorsToSpawn in pairs(self.internalReinforcementsData.doorsAndActorsToSpawn) do
+	-- An array in creation order, not a table keyed by door: pairs() over object keys goes in memory address order, which differs between machines
+	-- in multiplayer.
+	local doorsAndActorsToSpawn = self.internalReinforcementsData.doorsAndActorsToSpawn;
+	local doorIndex = 1;
+	while doorIndex <= #doorsAndActorsToSpawn do
+		local internalReinforcementDoor = doorsAndActorsToSpawn[doorIndex].door;
+		local actorsToSpawn = doorsAndActorsToSpawn[doorIndex].actors;
 		if MovableMan:ValidMO(internalReinforcementDoor) and (forceInstantSpawning or internalReinforcementDoor.Frame == internalReinforcementDoor.FrameCount - 1) then
-			for _, actorToSpawn in pairs(actorsToSpawn) do
+			for _, actorToSpawn in ipairs(actorsToSpawn) do
 				actorToSpawn.Team = internalReinforcementDoor.Team;
 				actorToSpawn:AddToGroup("AI Internal Reinforcements");
 				self.aiData.actors.internalReinforcements[actorToSpawn.UniqueID] = actorToSpawn;
 				self.aiData.actors.internalReinforcements.count = self.aiData.actors.internalReinforcements.count + 1;
 				MovableMan:AddActor(actorToSpawn);
 			end
-			self.internalReinforcementsData.doorsAndActorsToSpawn[internalReinforcementDoor] = nil;
+			table.remove(doorsAndActorsToSpawn, doorIndex);
+		else
+			doorIndex = doorIndex + 1;
 		end
 	end
 end
@@ -2021,7 +2029,7 @@ function DecisionDay:UpdateMainBunkerExternalPopoutTurrets()
 
 	local bunkerId = self.bunkerIds.mainBunker;
 	if self.popoutTurretsData[bunkerId].enabled then
-		for box, boxData in pairs(self.popoutTurretsData[bunkerId].boxData) do
+		for box, boxData in SortedPairs(self.popoutTurretsData[bunkerId].boxData, SortKeyBox) do
 			if boxData.actor and not MovableMan:ValidMO(boxData.actor) then
 				boxData.actor = nil;
 				boxData.respawnTimer:Reset();
@@ -2047,18 +2055,18 @@ function DecisionDay:UpdateMainBunkerExternalPopoutTurrets()
 			if not self.popoutTurretsData[bunkerId].turretsActivated then
 				self.popoutTurretsData[bunkerId].turretsActivated = true;
 
-				for _, boxData in pairs(self.popoutTurretsData[bunkerId].boxData) do
+				for _, boxData in SortedPairs(self.popoutTurretsData[bunkerId].boxData, SortKeyBox) do
 					updateMovementTimerForActivationChange(boxData.movementTimer);
 				end
 			end
 		elseif not popoutTurretsShouldActivate and self.popoutTurretsData[bunkerId].turretsActivated and self.popoutTurretsData[bunkerId].deactivationDelayTimer:IsPastSimTimeLimit() then
 			self.popoutTurretsData[bunkerId].turretsActivated = false;
-			for _, boxData in pairs(self.popoutTurretsData[bunkerId].boxData) do
+			for _, boxData in SortedPairs(self.popoutTurretsData[bunkerId].boxData, SortKeyBox) do
 				updateMovementTimerForActivationChange(boxData.movementTimer);
 			end
 		end
 
-		for box, boxData in pairs(self.popoutTurretsData[bunkerId].boxData) do
+		for box, boxData in SortedPairs(self.popoutTurretsData[bunkerId].boxData, SortKeyBox) do
 			if not boxData.movementTimer:IsPastSimTimeLimit() and boxData.actor then
 				local startPos = self.popoutTurretsData[bunkerId].turretsActivated and box.Center or box.Center + Vector(25, 25);
 				local endPos = self.popoutTurretsData[bunkerId].turretsActivated and box.Center + Vector(25, 25) or box.Center;
@@ -2371,13 +2379,14 @@ function DecisionDay:CreateInternalReinforcements(loadout, internalReinforcement
 	crabToHumanSpawnRatio = 0;
 
 	local numberOfReinforcementsCreated = 0;
-	for internalReinforcementPosition, enemyTargetsForPosition in pairs(internalReinforcementPositionsToEnemyTargets) do
+	for internalReinforcementPosition, enemyTargetsForPosition in SortedPairs(internalReinforcementPositionsToEnemyTargets, SortKeyVector) do
 		if numberOfReinforcementsCreated < maxNumberOfInternalReinforcementsToCreate and maxFundsForInternalReinforcements > 0 then
 			local doorParticle = self.internalReinforcementsDoorParticle:Clone();
 			doorParticle.Pos = internalReinforcementPosition;
 			doorParticle.Team = self.aiTeam;
 			MovableMan:AddParticle(doorParticle);
-			self.internalReinforcementsData.doorsAndActorsToSpawn[doorParticle] = {};
+			local actorsToSpawnAtDoor = {};
+			table.insert(self.internalReinforcementsData.doorsAndActorsToSpawn, {door = doorParticle, actors = actorsToSpawnAtDoor});
 
 			local numberOfInternalReinforcementsToCreateAtPosition = math.min(#enemyTargetsForPosition, 5);
 			if numberOfInternalReinforcementsToCreateAtPosition == 1 and math.random() < (self.difficultyRatio * 0.5) then
@@ -2415,7 +2424,7 @@ function DecisionDay:CreateInternalReinforcements(loadout, internalReinforcement
 					end
 				end
 
-				table.insert(self.internalReinforcementsData.doorsAndActorsToSpawn[doorParticle], internalReinforcement);
+				table.insert(actorsToSpawnAtDoor, internalReinforcement);
 
 				numberOfReinforcementsCreated = numberOfReinforcementsCreated + 1;
 				maxFundsForInternalReinforcements = maxFundsForInternalReinforcements - internalReinforcement:GetTotalValue(self.aiTeamTech, 1);

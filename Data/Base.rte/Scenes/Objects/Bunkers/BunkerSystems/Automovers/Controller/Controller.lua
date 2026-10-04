@@ -418,7 +418,7 @@ automoverUtilityFunctions.updateActivityEditingMode = function(self)
 
 			for direction, matches in pairs(directionMatches) do
 				local distanceInDirectionMustBeNegative = direction == "up" or direction == "left";
-				for node, nodeData in pairs(teamNodeTable) do
+				for node, nodeData in SortedPairs(teamNodeTable, SortKeyMO) do
 					if selectedEditorObject.PresetName:find("Teleporter Zone") == nil or not teamTeleporterTable[node] then
 						local ignoreXMatching = direction == "left" or direction == "right" or (node.PresetName:find("Horizontal Only") ~= nil);
 						local ignoreYMatching = direction == "up" or direction == "down" or (node.PresetName:find("Vertical Only") ~= nil);
@@ -487,7 +487,7 @@ automoverUtilityFunctions.checkAllObstructions = function(self)
 		[Directions.Right] = Directions.Left,
 	};
 
-	for node, nodeData in pairs(teamNodeTable) do
+	for node, nodeData in SortedPairs(teamNodeTable, SortKeyMO) do
 		local previousConnectedNodeData = nodeData.connectedNodeData;
 		nodeData.connectedNodeData = {};
 
@@ -540,7 +540,7 @@ automoverUtilityFunctions.addAllBoxes = function(self)
 	local teamNodeTable = AutomoverData[self.Team].nodeData;
 
 	local addedNodeCount = 0;
-	for node, nodeData in pairs(teamNodeTable) do
+	for node, nodeData in SortedPairs(teamNodeTable, SortKeyMO) do
 		if nodeData.zoneBox ~= nil then
 			self.combinedAutomoverArea:AddBox(nodeData.zoneBox);
 			SceneMan.Scene:GetArea("NoGravityArea"):AddBox(nodeData.zoneBox);
@@ -581,7 +581,7 @@ automoverUtilityFunctions.addAllBoxes = function(self)
 		end
 	end
 
-	for node, nodeData in pairs(teamNodeTable) do
+	for node, nodeData in SortedPairs(teamNodeTable, SortKeyMO) do
 		for _, direction in pairs({Directions.Down, Directions.Right}) do
 			if nodeData.connectedNodeData[direction] then
 				nodeData.connectingAreas[direction] = teamNodeTable[nodeData.connectedNodeData[direction].node].connectingAreas[(direction == Directions.Down and Directions.Up or Directions.Left)];
@@ -598,7 +598,8 @@ automoverUtilityFunctions.addAllPaths = function(self)
 
 	local possibleConnectionDirections = {Directions.Up, Directions.Down, Directions.Left, Directions.Right};
 
-	for node, nodeData in pairs(teamNodeTable) do
+	-- SortedPairs and the UniqueID tie-breaks below: pairs() over node keys goes in memory address order, which differs between machines in multiplayer.
+	for node, nodeData in SortedPairs(teamNodeTable, SortKeyMO) do
 		local tentativeNodes = {};
 		local confirmedNodes = {};
 		confirmedNodes[node] = { distance = 0, direction = Directions.None };
@@ -623,7 +624,7 @@ automoverUtilityFunctions.addAllPaths = function(self)
 			local closestNode;
 			local distanceToClosestNode;
 			for tentativeNode, tentativeNodeData in pairs(tentativeNodes) do
-				if distanceToClosestNode == nil or tentativeNodeData.distance < distanceToClosestNode then
+				if distanceToClosestNode == nil or tentativeNodeData.distance < distanceToClosestNode or (tentativeNodeData.distance == distanceToClosestNode and tentativeNode.UniqueID < closestNode.UniqueID) then
 					closestNode = tentativeNode;
 					distanceToClosestNode = tentativeNodeData.distance;
 				end
@@ -683,7 +684,7 @@ automoverUtilityFunctions.findClosestNode = function(self, positionToFindClosest
 	for node, _ in pairs(nodesToCheck) do
 		local nodeData = teamNodeTable[node];
 		local distanceToNode = SceneMan:ShortestDistance(node.Pos, positionToFindClosestNodeFor, self.checkWrapping);
-		if distanceToClosestNodeSqr == nil or distanceToNode.SqrMagnitude < distanceToClosestNodeSqr then
+		if distanceToClosestNodeSqr == nil or distanceToNode.SqrMagnitude < distanceToClosestNodeSqr or (distanceToNode.SqrMagnitude == distanceToClosestNodeSqr and node.UniqueID < closestNode.UniqueID) then
 			local nodeSatisfiesConditions = true;
 			if checkForLineOfSight then
 				nodeSatisfiesConditions = not SceneMan:CastStrengthRay(node.Pos, distanceToNode, 15, Vector(), 4, 0, true);
@@ -778,7 +779,7 @@ automoverVisualEffectsFunctions.updateVisualEffects = function(self)
 	local selectedVisualEffects = self.visualEffectsConfig[self.visualEffectsSelectedType][self.visualEffectsSelectedSize];
 
 	if selectedVisualEffects.moveTimer:IsPastSimTimeLimit() then
-		for node, nodeData in pairs(AutomoverData[self.Team].nodeData) do
+		for node, nodeData in SortedPairs(AutomoverData[self.Team].nodeData, SortKeyMO) do
 			for _, direction in ipairs({Directions.Up, Directions.Left}) do
 				self:setupNodeVisualEffectsForDirectionIfAppropriate(node, nodeData, direction);
 			end
@@ -1025,7 +1026,7 @@ automoverActorFunctions.setupManualTeleporterData = function(self, actorData)
 	local startingTeleporter = self:findClosestNode(actor.Pos, nil, false, false);
 	manualTeleporterData.sortedTeleporters = {{ node = startingTeleporter, distance = 0 }};
 
-	for teleporterNode, _ in pairs(teamTeleporterTable) do
+	for teleporterNode, _ in SortedPairs(teamTeleporterTable, SortKeyMO) do
 		if teleporterNode.UniqueID ~= startingTeleporter.UniqueID then
 			local xDistanceToTeleporter = SceneMan:ShortestDistance(startingTeleporter.Pos, teleporterNode.Pos, self.checkWrapping).X;
 
@@ -1389,7 +1390,8 @@ automoverActorFunctions.handleTeleportingActorToAppropriateTeleporterForWaypoint
 			else
 				local closestTeleporterDistance;
 				for teleporterNode, _ in pairs(teamTeleporterTable) do
-					if self.pathTable[teleporterNode][waypointData.endNode] ~= nil and (closestTeleporterDistance == nil or self.pathTable[teleporterNode][waypointData.endNode].distance < closestTeleporterDistance) then
+					local pathToEndNode = self.pathTable[teleporterNode][waypointData.endNode];
+					if pathToEndNode ~= nil and (closestTeleporterDistance == nil or pathToEndNode.distance < closestTeleporterDistance or (pathToEndNode.distance == closestTeleporterDistance and teleporterNode.UniqueID < waypointData.nextNode.UniqueID)) then
 						closestTeleporterDistance = self.pathTable[teleporterNode][waypointData.endNode].distance;
 						waypointData.nextNode = teleporterNode;
 					end
