@@ -42,13 +42,14 @@ The game goes straight to the main menu and waits for the host to start a match.
 ### During a match
 
 - Your screen shows only your own player, filling the window.
-- **Esc twice** leaves the match. If the host leaves, the match ends for everyone.
-- Pausing, restarting, quick save/load and script reloading are disabled, because doing them on one computer only would break the sync.
-- Typing in the console still works, but anything you run there only affects your own computer and will cause a desync.
+- **Esc twice** leaves the match, also while the game is waiting for other players. If the host leaves, the match ends for everyone.
+- Pausing, restarting, quick save/load and script reloading are disabled, because doing them on one computer only would break the sync. For the same reason the console doesn't run commands during a match.
+- The buy menu offers the built-in loadouts only, not the ones you saved yourself (each computer would otherwise use its own file for every player). Your saved loadouts are kept for single player.
+- On Linux the game restarts itself once when started with `-coop-host` or `-coop-join`, to use the same math library code on every CPU (see below).
 
 ### What's checked when you join
 
-The host rejects a player whose game version, loaded mods, audio availability or game resolution don't match its own, and says why. For the duration of a match, clients use the host's values for settings that affect gameplay:
+The host rejects a player whose game version, loaded mods, audio availability, game resolution, math library results or Lua setup (LuaJIT on or off, string hashing, case-sensitive paths) don't match its own, and says why. Each player's input device and digital aim speed setting are recorded when they join, and every computer uses those for that player. For the duration of a match, clients use the host's values for settings that affect gameplay:
 
 - AI update interval
 - automatic gold deposit
@@ -60,16 +61,18 @@ The host rejects a player whose game version, loaded mods, audio availability or
 - sim delta time
 - enabled global scripts
 - buy menu options
+- which groups the editors' object pickers always show
 
 Local settings are restored afterwards.
 
 ## How it works
 
-- Every sim update, each computer captures its local player's input (input elements, analog sticks, mouse movement and buttons, cursor position). It sends that to the host, tagged for a sim update a few updates in the future (the *input delay*). The host measures each player's round trip time while in the menus and sets the input delay so input normally arrives before it's needed. The top line of the screen shows the current value.
+- Every sim update, each computer captures its local player's input (input elements, analog sticks, mouse movement and buttons, cursor position, and which keyboard keys are held). It sends that to the host, tagged for a sim update a few updates in the future (the *input delay*). The host measures each player's round trip time while in the menus and sets the input delay so input normally arrives before it's needed. The top line of the screen shows the current value.
 - The host bundles everyone's input for each sim update and sends the bundle to all players. A computer only runs sim update N once it has bundle N.
 - In-game menus (pie menu, buy menu, inventory, object pickers) read their input through the same per-player input path (`UInputMan` virtual input). They therefore work, and stay in sync, without any special handling.
-- If a player's input is more than 3 seconds late, the host marks them as lagging and repeats their previous held input, so one stalled or disconnected computer doesn't freeze everyone. While a player is lagging, the host doesn't wait for them at all; once their input catches up, it's used again. Players still loading are waited for. A player who disconnects stands idle for the rest of the match.
-- Every 60 sim updates, each client sends a hash of its simulation state to the host. On a mismatch, everyone sees a **DESYNC** message saying which part of the state differs (RNG, Lua RNG, actors, items, particles, terrain). Each computer also writes a `CoopDesync_*.txt` state dump in the `Userdata` folder.
+- Code that asks about keys, mice or gamepads without naming a player (scripts checking `UInputMan:KeyPressed(Key.SPACE)`, "any key" checks, Shift in the buy menu) gets answers from the players' synced input too: "a key on this computer" becomes "a key of any player". Raw gamepad queries read as idle. Player slots that nobody uses get no input at all.
+- If a player's input is more than 3 seconds late, the host marks them as lagging and repeats their previous held input, so one stalled or disconnected computer doesn't freeze everyone. While a player is lagging, the host doesn't wait for them at all; input that arrives too late for its own sim update is used for the next one, so they keep playing while their computer catches up. After 10 seconds of lag their held input is no longer repeated, so their actor stops. Players still loading are waited for. A player who disconnects or leaves stands idle for the rest of the match.
+- Every 60 sim updates, each client sends a hash of its simulation state to the host. The hash covers every movable object (position, velocity, rotation, mass, team, health, AI mode, aim, inventory, equipped item, AI path and waypoints, attachables), the random generators, the terrain (every 600 updates) and the activity (team funds and deaths, each player's brain and controlled actor). On a mismatch, everyone sees a **DESYNC** message saying which part of the state differs (RNG, Lua RNG, actors, items, particles, terrain, activity). Each computer also writes a `CoopDesync_*.txt` state dump in the `Userdata` folder.
 
 ### What keeps the simulation identical
 
@@ -80,8 +83,11 @@ Determinism changes in the engine (see also `LockstepMultiplayerFeasibility.md`)
 - Threaded Lua scripts run one Lua state after another rather than in parallel. Some scripts read objects owned by other states, which would otherwise race.
 - See rays and MOID drawing finish within the sim update.
 - Sound playback state, which gameplay code checks (e.g. weapon pre-fire sounds), is tracked in sim time instead of asked of the audio system.
-- Camera shake is applied only when drawing, because scripts read camera offsets.
+- Camera shake is applied only when drawing, because scripts read camera offsets. Every player's camera is simulated on every computer, although only one is drawn.
 - Every player gets one full-size screen at the shared resolution, so screen-size-dependent gameplay values match.
+- Nothing worked out while drawing this computer's screen feeds back into the simulation (e.g. `AboveHUDPos`, which scripts spawn effects at, and the funds-changed flag).
+- Lua garbage collection runs on the main thread at a fixed point, one Lua state after another. On worker threads, the order objects were freed back to the engine's memory pools depended on thread timing.
+- Path cost updates wait for background path requests to finish instead of being skipped if any are running.
 
 Always on:
 
@@ -90,10 +96,16 @@ Always on:
 - Ordered script registration.
 - Terrain cleaning and fog-of-war reveal processing done in the sim update instead of when drawing.
 - LuaJIT built without randomised string hashing.
+- Folder scans (module `.ini` files, Lua's `GetDirectoryList`/`GetFileList`) sorted by name, instead of file system order.
+- Uninitialised fields that could carry leftover memory from a previous object (path nodes, atoms, actors' movement state) are initialised.
+- Shipped scripts that looped over tables keyed by objects (`pairs()` order follows memory addresses, which differ between computers) now use `SortedPairs` from `Base.rte/Utilities.lua`, ordered arrays, or tie-breaks on `UniqueID`.
+- **The same math library code on every CPU.** The x86-64 math libraries choose faster FMA-based versions of double-precision `sin`, `cos`, `exp`, `log`, `pow`, `atan2` and others on CPUs that support FMA. These give a slightly different result for a fraction of a percent of inputs, enough to desync a Haswell-or-newer PC from an older one (or a low-end Pentium/Celeron) over time; Lua's `math` functions and `^` use them. On Windows the game switches the FMA versions off at start-up. On Linux it restarts itself once with FMA hidden from glibc (`GLIBC_TUNABLES`) when started for co-op. A fingerprint of the math library's results is part of the join check, so any remaining difference is refused instead of desyncing.
 
 ## Testing
 
 `Tools/Determinism/` has the tools used to test this. The in-game harness logs per-sim-update state hashes on both computers. Set `CCCP_DT_OBSERVE=1` when running a co-op session.
+
+`Tools/Determinism/stress/stress.py` runs a suite of stress tests: co-op sessions with every player driven by an input bot, under hostile conditions (constant war in a test activity, other CPUs, starved and jittery frame rates, scrambled memory, a bad network, a frozen client, and more). See `Tools/Determinism/README.md`.
 
 Test-only options:
 
@@ -129,9 +141,10 @@ All on one Linux machine, two to three game instances, bots driving every player
 - **Same build only.** Windows and Linux builds can't play together; neither can different compilers or compiler settings. See the feasibility report for what cross-platform play needs: own RNG distributions and a deterministic math library.
 - **Same game resolution on every computer.** The window can still be scaled with the resolution multiplier.
 - **One player per computer.** No local split-screen in a co-op match.
-- **Joining:** no joining mid-match, and no reconnecting.
+- **Joining:** no joining or rejoining mid-match. A player who dropped out can reconnect and join the next match.
+- **Content check:** the join check compares module names and versions, not file contents. A locally edited `.ini` or `.lua` file, a mod updated without changing its version, or a user-made scene with the same name as someone else's will desync.
 - **Scripts:**
-  - Mods whose scripts read real-time state outside the engine's control (e.g. `os.clock`), or keep tables keyed by objects and act on `pairs()` order, can still desync. The desync detector will report it.
+  - Mods whose scripts read state outside the engine's control (`os.clock`, `io`, `TimerMan:TimeForSimUpdate()`, the mouse position without a player), or keep tables keyed by objects and act on `pairs()` order, can still desync. The desync detector will report it. Mods can use `SortedPairs` from `Base.rte/Utilities.lua` for object-keyed tables.
   - Scripts that read `FrameMan.PlayerScreenWidth` behave as if every player had a full screen at the shared resolution.
 - **Activities:** Conquest (MetaGame) and editor Activities aren't supported.
 - **Raw keyboard input in GUIs** (e.g. typing into a text box in the buy menu) isn't sent, so it doesn't work for any player in a match.

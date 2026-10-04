@@ -41,6 +41,34 @@ The script prints three things:
 - every call site that drew from a worker thread (each one is a data race);
 - call sites whose draw counts differ between the runs.
 
+## Stress tests (`stress/`)
+
+`stress/stress.py` runs co-op sessions on one machine: a host and one to three clients, each under its own Xvfb display, with every player driven by the `-coop-bot` input bot. It compares every peer's per-sim-update state hashes and reports, per scenario, whether they stayed identical (or, for the negative tests, whether the expected failure was caught).
+
+```sh
+Tools/Determinism/stress/stress.py --list               # what each scenario does
+Tools/Determinism/stress/stress.py                      # everything (about 1.5 hours on 4 cores)
+Tools/Determinism/stress/stress.py chaos memory --quick # chosen scenarios, a quarter of the sim updates
+Tools/Determinism/stress/stress.py --jobs 2             # two scenarios at a time
+```
+
+Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console output and `results.json` go to `--out` (default `/tmp/cccp-stress`).
+
+| Scenario | What's different between the peers |
+|---|---|
+| `baseline` | Nothing (Bunker Breach). |
+| `negative-control` | One peer perturbs its sim on purpose. Passes only if both the logs and the in-game detector catch it. |
+| `chaos`, `chaos-4p` | Nothing, but the sim is pushed hard: the test-only *Determinism Chaos* activity (`stress/DeterminismStress.rte`, linked into `Mods/` while the suite runs) keeps a multi-faction war going with craft deliveries, bombardment, gibbing and path finding, and feeds a chaotic Lua double-precision value into spawn positions. 2 and 4 players. |
+| `cpu-features` | The client's glibc picks its non-FMA math code paths, like an older CPU (`GLIBC_TUNABLES`). |
+| `math-mismatch` | The client skips the start-up switch to the portable math code. Passes only if the host refuses it at join. |
+| `contention` | The host runs on one CPU core at low priority, the client on the other three: very different thread timing and frame rates. |
+| `frame-jitter` | Each peer sleeps a random 0-40 ms every frame (`CCCP_DT_FRAME_JITTER_MS`). |
+| `memory` | The client fills allocated and freed memory with junk (`MALLOC_PERTURB_`) and runs without ASLR. |
+| `environment` | The client has a different locale and time zone. |
+| `bad-network` | 120-270 ms on every message, three players, and one client frozen for 5 s mid-match (it must catch up in sync). |
+| `activity-sweep` | Several stock activities in turn. |
+| `long` | 20000 sim updates of Determinism Chaos. |
+
 ## Micro-tests (`micro/`)
 
 Standalone programs. Build each one with different compilers, standard libraries or flags and compare the output.
@@ -52,3 +80,4 @@ Standalone programs. Build each one with different compilers, standard libraries
 | `fp_libm.c` | Are `sinf`/`cosf`/`atan2f`/`powf`/... bit-identical across libm implementations and FP flags (`-ffast-math`, FMA contraction, x87)? Also runs a small chaotic physics loop. |
 | `lua_pairs_order.c` | Is LuaJIT `pairs()` order the same from one process to the next? Link it against `build/external/sources/LuaJIT-2.1/libluajit.a`. |
 | `lua_jit_vs_interp.c` | Does LuaJIT float math give the same bits with the JIT on and off? |
+| `libm_cpu_paths.c` | Does glibc's libm give the same bits with its FMA code paths (newer CPUs) and without? Run it as is and with `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-FMA4` and compare. |

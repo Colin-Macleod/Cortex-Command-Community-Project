@@ -97,6 +97,8 @@ Compared against `gcc -O2` with glibc:
 - `RTEA.vcxproj` sets `<FloatingPointModel>Fast</FloatingPointModel>` in every configuration, which licenses the compiler to reassociate and contract FP. Two MSVC builds of the same source are not guaranteed to agree; in practice the same .exe will agree with itself. Use `/fp:precise` (or `/fp:strict`) for multiplayer builds.
 - Cross-platform play needs sim code to stop using the platform `sin`/`cos`/`atan2`/`pow`/`exp`/`log`. `Vector::RadRotate`, `Vector::GetAbsRadAngle`, `Matrix` and `AHuman` all call them. Lua's `math` library calls them too. The options are a bundled, correctly-rounded or fixed implementation (e.g. CORE-MATH or a small polynomial set). FMA contraction must also be disabled explicitly (`-ffp-contract=off`), because clang on ARM, i.e. Apple Silicon, contracts by default.
 
+**Same build, different CPU (found later, `micro/libm_cpu_paths.c`):** the table above compares builds. glibc also picks an FMA/AVX2 implementation of double `sin`, `cos`, `exp`, `log`, `pow`, `atan2`, `atan`, `asin` and `acos` at load time when the CPU has FMA, and Microsoft's x64 UCRT does the same. Masking FMA with `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-FMA4` changes their results in the last bit for 0.03-0.07% of inputs (glibc 2.39), while the float versions don't change. So even the same binary can disagree between, say, a Haswell-or-newer PC and an older or low-end CPU, through Lua (whose numbers are doubles) and the few double calls in C++. None of the million samples still differed once converted to float, which is why short same-build tests didn't show it. The co-op implementation now selects the portable code paths at start-up (`Source/System/MathConsistency.*`) and puts a fingerprint of the math library's results in the join check.
+
 ### 4.3 LuaJIT JIT vs interpreter (`micro/lua_jit_vs_interp.c`)
 
 2 M iterations of trig, sqrt, pow, exp and log vector math gave **identical** bits with the JIT on and off on x86-64. I did not test ARM64, where the JIT's FMA use should be checked.
@@ -144,6 +146,8 @@ These are not covered by the prototype. File references are approximate.
    - Same-build stdlib makes these deterministic in practice. The `PieMenu` map is address-dependent.
 
 **Cross-platform only:** RNG distributions (§4.1), libm (§4.2), `/fp:fast`, unstable `std::partition` on actor and particle lists (stdlib-specific order), LuaJIT on ARM64.
+
+**Found by a second audit, after the co-op implementation (all fixed; see `CoopMultiplayer.md`):** raw keyboard queries without a player in scripts and the buy menu; unused player slots reading local gamepads; per-machine loadout files, input device and aim speed settings; a HUD value computed while drawing that scripts used to place effects; Lua garbage collection on worker threads returning objects to the memory pools in timing order; path cost updates racing background path requests; uninitialised path node, atom and actor fields; unsorted folder scans; and `pairs()` over object-keyed tables in Bunker Breach, Decision Day and the Automovers, whose order follows memory addresses (confirmed by `micro/lua_pairs_order.c`: table-keyed order changes from run to run with ASLR).
 
 ## 6. What lockstep needs beyond determinism
 
