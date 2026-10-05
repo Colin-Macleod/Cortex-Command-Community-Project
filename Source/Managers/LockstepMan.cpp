@@ -17,6 +17,8 @@
 #include "DeterminismHarness.h"
 #include "FrameMan.h"
 #include "GameActivity.h"
+#include "GAScripted.h"
+#include "MetaMan.h"
 #include "GameVersion.h"
 #include "LuaMan.h"
 #include "MovableMan.h"
@@ -1430,6 +1432,29 @@ void LockstepMan::ReportDesync(long long simUpdate, const std::string& descripti
 #pragma endregion
 
 #pragma region Match Lifecycle
+
+bool LockstepMan::WantsToPrepareMatch(const GameActivity* activity) {
+	if (m_Role == Role::Client) {
+		return m_MatchStartPending;
+	}
+	if (m_Role != Role::Host || !activity) {
+		return false;
+	}
+	// Only scripted (Scenario) Activities can be rebuilt on the clients from the match configuration. Conquest battles depend on the campaign's state, and
+	// the tutorial and the old network multiplayer lobby are other kinds of Activity.
+	std::string unsupported;
+	if (g_MetaMan.GameInProgress()) {
+		unsupported = "Conquest battles";
+	} else if (!dynamic_cast<const GAScripted*>(activity)) {
+		unsupported = "\"" + activity->GetPresetName() + "\"";
+	}
+	if (!unsupported.empty()) {
+		m_StatusMessage = unsupported + " can't be played in co-op, so it's only started on this computer. The other players keep waiting";
+		g_ConsoleMan.PrintString("CO-OP: " + m_StatusMessage + ".");
+		return false;
+	}
+	return true;
+}
 
 GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 	m_MatchStartPending = false;

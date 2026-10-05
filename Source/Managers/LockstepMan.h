@@ -123,9 +123,11 @@ namespace RTE {
 #pragma endregion
 
 #pragma region Match Lifecycle
-		/// Gets whether the Activity about to be started should be set up as a lockstep match: always when hosting, and on clients only when the host started it.
+		/// Gets whether the Activity about to be started should be set up as a lockstep match: when hosting, if it's a kind of Activity co-op supports (otherwise it's
+		/// played on the host only, and the clients keep waiting), and on clients only when the host started it.
+		/// @param activity The Activity about to be started.
 		/// @return Whether ActivityMan should call PrepareMatch and BeginMatch.
-		bool WantsToPrepareMatch() const { return m_Role == Role::Host || (m_Role == Role::Client && m_MatchStartPending); }
+		bool WantsToPrepareMatch(const GameActivity* activity);
 
 		/// Called by ActivityMan when an Activity is about to be (re)started. On the host this adds the connected clients to the Activity as players and
 		/// sends its configuration to them; on every peer it then rebuilds the Activity from that configuration so all peers start exactly the same one.

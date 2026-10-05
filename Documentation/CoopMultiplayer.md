@@ -162,5 +162,5 @@ A later AddressSanitizer sweep over every stock activity found more objects bein
 - **Scripts:**
   - Mods whose scripts read state outside the engine's control (`os.clock`, `io`, `TimerMan:TimeForSimUpdate()`, the mouse position without a player), or keep tables keyed by objects and act on `pairs()` order, can still desync. The desync detector will report it. Mods can use `SortedPairs` from `Base.rte/Utilities.lua` for object-keyed tables.
   - Scripts that read `FrameMan.PlayerScreenWidth` behave as if every player had a full screen at the shared resolution.
-- **Activities:** Conquest (MetaGame) and editor Activities aren't supported.
+- **Activities:** Conquest (MetaGame) battles, the tutorial, editor Activities and saved games aren't supported. Started while hosting, they're played on the host's computer only, and the other players keep waiting in the lobby.
 - **Raw keyboard input in GUIs** (e.g. typing into a text box in the buy menu) isn't sent, so it doesn't work for any player in a match.

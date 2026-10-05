@@ -390,6 +390,10 @@ bool ActivityMan::LoadAndLaunchGame(const std::string& fileName) {
 	// Saved Scenes get their presetname set to their filename to ensure they're separate from the preset Scene they're based off of.
 	// However, saving a game you've already saved will end up with its OriginalScenePresetName set to the filename, which will screw up restarting the Activity, so we set its PresetName here.
 	scene->SetPresetName(originalScenePresetName);
+	if (g_LockstepMan.IsInSession()) {
+		// Started directly rather than through RestartActivity, so it doesn't become a co-op match: the clients couldn't load the saved state.
+		g_ConsoleMan.PrintString("CO-OP: Saved games can't be played in co-op, so this one is only loaded on this computer.");
+	}
 	// For starting Activity, we need to directly clone the Activity we want to start.
 	StartActivity(dynamic_cast<GAScripted*>(activity->Clone()));
 	// When this method exits, our Scene object will be destroyed, which will cause problems if you try to restart it. To avoid this, set the Scene to load to the preset object with the same name.
@@ -575,7 +579,7 @@ bool ActivityMan::RestartActivity() {
 	if (m_StartActivity) {
 		// Need to pass in a clone of the activity because the original will be deleted and re-set during StartActivity.
 		Activity* startActivityToUse = dynamic_cast<Activity*>(m_StartActivity->Clone());
-		if (GameActivity* gameActivity = dynamic_cast<GameActivity*>(startActivityToUse); gameActivity && g_LockstepMan.WantsToPrepareMatch()) {
+		if (GameActivity* gameActivity = dynamic_cast<GameActivity*>(startActivityToUse); gameActivity && g_LockstepMan.WantsToPrepareMatch(gameActivity)) {
 			// Co-op: every peer starts an identical Activity, built from the host's configuration, and runs it in lockstep.
 			startActivityToUse = g_LockstepMan.PrepareMatch(gameActivity);
 			if (!startActivityToUse) {
