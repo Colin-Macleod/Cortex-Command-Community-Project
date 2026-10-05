@@ -555,16 +555,19 @@ void LockstepMan::LeaveSession() {
 	}
 	const bool wasInSession = IsInSession();
 	Destroy();
-	if (m_LocalResX > 0) {
-		if (!g_ActivityMan.IsInActivity()) {
-			g_WindowMan.ChangeResolution(m_LocalResX, m_LocalResY, m_LocalResMultiplier, g_WindowMan.IsFullscreen());
-			m_ChangedResolution = g_WindowMan.ResolutionChanged();
-		}
-		m_LocalResX = 0;
-		m_LocalResY = 0;
-	}
+	// If an Activity is still running, this happens later, from Update.
+	RestoreLocalResolutionIfPossible();
 	if (wasInSession) {
 		g_ConsoleMan.PrintString("CO-OP: Left the session.");
+	}
+}
+
+void LockstepMan::RestoreLocalResolutionIfPossible() {
+	if (m_LocalResX > 0 && m_Role == Role::None && !g_ActivityMan.IsInActivity()) {
+		g_WindowMan.ChangeResolution(m_LocalResX, m_LocalResY, m_LocalResMultiplier, g_WindowMan.IsFullscreen());
+		m_ChangedResolution = g_WindowMan.ResolutionChanged();
+		m_LocalResX = 0;
+		m_LocalResY = 0;
 	}
 }
 
@@ -1675,6 +1678,7 @@ void LockstepMan::RequestLeave() {
 
 void LockstepMan::Update() {
 	if (!m_Peer) {
+		RestoreLocalResolutionIfPossible();
 		return;
 	}
 	FlushDelayedMessages();
@@ -1963,7 +1967,8 @@ void LockstepMan::DrawOverlay(BITMAP* targetBitmap) {
 
 	std::string topLine;
 	if (m_MatchRunning) {
-		topLine = std::string("CO-OP ") + (m_Role == Role::Host ? "HOST" : "CLIENT") + " | Player " + std::to_string(m_LocalPlayer + 1) + " | Sim update " + std::to_string(m_NextSimUpdate) + " | Input delay " + std::to_string(m_InputDelay);
+		const std::string playerText = m_LocalPlayer == Players::NoPlayer ? std::string("Watching (no free player slot)") : "Player " + std::to_string(m_LocalPlayer + 1);
+		topLine = std::string("CO-OP ") + (m_Role == Role::Host ? "HOST" : "CLIENT") + " | " + playerText + " | Sim update " + std::to_string(m_NextSimUpdate) + " | Input delay " + std::to_string(m_InputDelay);
 		if (m_Role == Role::Host && m_ChecksumsCompared > 0) {
 			topLine += " | In sync (" + std::to_string(m_ChecksumsCompared) + " checks)";
 		}

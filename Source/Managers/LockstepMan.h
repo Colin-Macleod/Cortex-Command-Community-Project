@@ -34,10 +34,11 @@ namespace RTE {
 	/// every update with exactly the same input, and (because the simulation is deterministic, see TimerMan::SetDeterministicMode) ends up in exactly
 	/// the same state. Peers periodically exchange hashes of their simulation state so any desync is detected and reported.
 	///
-	/// Session flow: the host clicks Host in the main menu's Co-op screen (or starts the game with -coop-host) and then picks an Activity in the menus as
-	/// usual, or passes -coop-activity to start one automatically once enough players have joined. Clients click Join in the Co-op screen (or start with
+	/// Session flow: the host clicks Host in the main menu's Multiplayer screen (or starts the game with -coop-host) and then picks an Activity in the menus as
+	/// usual, or passes -coop-activity to start one automatically once enough players have joined. Clients click Join in the Multiplayer screen (or start with
 	/// -coop-join <address>). A client whose resolution differs from the host's switches to the host's, as the screen size affects the simulation. When the host starts an Activity, every connected client
-	/// is added to it as an extra human player on the host's team, and the Activity configuration is sent to the clients so they start the same one.
+	/// is added to it as an extra human player on the host's team (or watches, if the Activity has no free player slot left), and the Activity configuration is sent
+	/// to the clients so they start the same one.
 	class LockstepMan : public Singleton<LockstepMan> {
 
 	public:
@@ -88,6 +89,9 @@ namespace RTE {
 
 		/// Leaves the current session, ending any running match (for everyone, when hosting), and restores the resolution if joining changed it.
 		void LeaveSession();
+
+		/// Restores the resolution from before joining, once no Activity is running (the resolution can't change during one).
+		void RestoreLocalResolutionIfPossible();
 
 		/// Gets a description of the session's state, for the menus and overlay.
 		/// @return The status text.

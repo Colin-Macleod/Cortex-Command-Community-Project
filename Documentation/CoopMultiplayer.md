@@ -12,7 +12,7 @@ Everything is in the main menu's **Multiplayer** screen. Enter your name there; 
 
 1. Click **Host Game** (UDP port 7777 by default; change it in the box next to the button).
 2. Wait for the other players to show up under *Players in session*.
-3. Click **Choose Activity** (or go to *Scenario Battle* from the main menu), pick an Activity and scene, put yourself on a team as usual and start it. Every connected player joins your team as an extra human player. Players who connect after the match has started join the next one.
+3. Click **Choose Activity** (or go to *Scenario Battle* from the main menu), pick an Activity and scene, put yourself on a team as usual and start it. Every connected player joins your team as an extra human player, as long as the Activity has free player slots (four in all); anyone left over watches the match instead, and is told so. Players who connect after the match has started join the next one.
 
 Players outside your local network need to reach your UDP port: forward it on your router.
 
