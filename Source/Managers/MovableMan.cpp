@@ -1582,13 +1582,22 @@ void MovableMan::Update() {
 			aIt = partition(m_Actors.begin(), m_Actors.end(), std::not_fn(std::mem_fn(&MovableObject::ToDelete)));
 			amidIt = aIt;
 
-			while (aIt != m_Actors.end()) {
-				// Set brain to 0 to avoid crashes due to brain deletion
-				Activity* pActivity = g_ActivityMan.GetActivity();
-				if (pActivity) {
-					if (pActivity->IsAssignedBrain(*aIt))
-						pActivity->SetPlayerBrain(0, pActivity->IsBrainOfWhichPlayer(*aIt));
+			// Forget a deleted actor as a brain, to avoid crashes due to brain deletion. For every player it's the brain of: several players can share
+			// one (e.g. Keepie Uppie's rocket in co-op). Actors can end up in the item and particle lists too (scripts can add them there), so check those too.
+			auto forgetBrain = [](MovableObject* movableObject) {
+				Activity* activity = g_ActivityMan.GetActivity();
+				if (Actor* actor = activity ? dynamic_cast<Actor*>(movableObject) : nullptr; actor && activity->IsAssignedBrain(actor)) {
+					for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+						if (activity->GetPlayerBrain(player) == actor) {
+							activity->SetPlayerBrain(nullptr, player);
+						}
+					}
+				}
+			};
 
+			while (aIt != m_Actors.end()) {
+				forgetBrain(*aIt);
+				if (Activity* pActivity = g_ActivityMan.GetActivity()) {
 					pActivity->ReportDeath((*aIt)->GetTeam());
 				}
 
@@ -1610,14 +1619,6 @@ void MovableMan::Update() {
 			// Items
 			iIt = stable_partition(m_Items.begin(), m_Items.end(), std::not_fn(std::mem_fn(&MovableObject::ToDelete)));
 			imidIt = iIt;
-
-			// Actors can end up in the item and particle lists too (scripts can add them there, e.g. Keepie Uppie's rockets), so they may be brains.
-			auto forgetBrain = [](MovableObject* movableObject) {
-				Activity* activity = g_ActivityMan.GetActivity();
-				if (Actor* actor = activity ? dynamic_cast<Actor*>(movableObject) : nullptr; actor && activity->IsAssignedBrain(actor)) {
-					activity->SetPlayerBrain(nullptr, activity->IsBrainOfWhichPlayer(actor));
-				}
-			};
 
 			while (iIt != m_Items.end()) {
 				forgetBrain(*iIt);
