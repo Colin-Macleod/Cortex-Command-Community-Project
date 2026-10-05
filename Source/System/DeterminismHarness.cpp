@@ -574,6 +574,10 @@ void DeterminismHarness::CheckSimAccess(const char* what) {
 	if (!audit.Enabled || !audit.Section || std::this_thread::get_id() != audit.MainThread) {
 		return;
 	}
+	if (const Activity* activity = g_ActivityMan.GetActivity(); !activity || activity->GetActivityState() == Activity::ActivityState::Over) {
+		// Ending a match (e.g. when the connection to the host is lost) runs the Activity's end scripts outside a sim update, on purpose.
+		return;
+	}
 	std::string key = std::string(audit.Section) + "/" + what;
 #ifdef __linux__
 	// Report each call site once: key on the return addresses of the few innermost frames.
