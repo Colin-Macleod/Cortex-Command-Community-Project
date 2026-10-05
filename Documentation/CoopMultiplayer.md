@@ -153,6 +153,7 @@ A later AddressSanitizer sweep over every stock activity found more objects bein
 ## Known limitations
 
 - **Mods' scripts that keep objects between updates** and check them with `MovableMan:IsParticle`/`IsActor`/`ValidMO` can still, rarely, act on the wrong object after theirs was deleted, which desyncs. Mods should keep `UniqueID`s and use `MovableMan:FindObjectByUniqueID`. The desync detector reports such cases; `CCCP_DT_DUMP_RING` and `CCCP_DT_LUA_RNG_LOG` (see `Tools/Determinism/README.md`) help pin them down.
+- **AddressSanitizer builds** still show an occasional desync in the *Determinism Chaos* test activity (one of three 1500-update runs in the last check), starting in a single flame particle's velocity with every other object identical. ASan gives every object its own allocation at an address that differs between runs, which the normal build's pools don't; it hasn't been seen in normal builds since the fixes above (the full stress suite, including a 20000-update match, and six further 4000-update chaos matches were identical).
 - **Same build only.** Windows and Linux builds can't play together; neither can different compilers or compiler settings. See the feasibility report for what cross-platform play needs: own RNG distributions and a deterministic math library.
 - **Same game resolution on every computer.** Joining switches to the host's resolution automatically (and back when leaving); the window can still be scaled.
 - **One player per computer.** No local split-screen in a co-op match.
