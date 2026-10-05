@@ -282,9 +282,11 @@ namespace RTE {
 			FillPool((m_PoolAllocBlockCount > 0) ? m_PoolAllocBlockCount : 10);
 		}
 
-		// Get the instance in the top of the pool and pop it off
-		void* foundMemory = m_AllocatedPool.back();
-		m_AllocatedPool.pop_back();
+		// Take the memory that was returned longest ago. Scripts can keep a reference to an object after it's deleted, and its checks of it
+		// (MovableMan:IsParticle and the like) compare addresses, so if the memory were reused right away for a new object (as taking the most
+		// recently returned memory did), the script would mistake the new object for its old one and e.g. move or delete it.
+		void* foundMemory = m_AllocatedPool.front();
+		m_AllocatedPool.pop_front();
 
 		RTEAssert(foundMemory, "Could not find an available instance in the pool, even after increasing its size!");
 #endif

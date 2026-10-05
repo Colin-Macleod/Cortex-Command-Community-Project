@@ -3,6 +3,7 @@
 #include "Serializable.h"
 #include "RTEError.h"
 
+#include <deque>
 #include <mutex>
 #include <list>
 #include <unordered_set>
@@ -177,7 +178,7 @@ namespace RTE {
 
 			ClassInfo* m_NextClass; //!< Next ClassInfo after this one on aforementioned unordered linked list.
 
-			std::vector<void*> m_AllocatedPool; //!< Pool of pre-allocated objects of the type described by this ClassInfo.
+			std::deque<void*> m_AllocatedPool; //!< Pool of pre-allocated objects of the type described by this ClassInfo. First in, first out, see GetPoolMemory.
 			int m_PoolAllocBlockCount; //!< The number of instances to fill up the pool of this type with each time it runs dry.
 			int m_InstancesInUse; //!< The number of allocated instances passed out from the pool.
 
