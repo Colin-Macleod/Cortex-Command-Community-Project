@@ -29,7 +29,10 @@ function ThreadedUpdate(self)
 	self.Throttle = self.Throttle - TimerMan.DeltaTimeMS/self.Lifetime;
 	self.damage = 0;
 
-	if self.target and IsMOSRotating(self.target) and self.target.ID ~= rte.NoMOID and (not self.target.ToDelete) and (self.teamAware == false or self.target.Team ~= self.Team) then
+	-- The target may have been deleted since the last update, and then mustn't be touched at all, so look it up again by its unique ID.
+	local target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID);
+	self.target = target and IsMOSRotating(target) and ToMOSRotating(target) or nil;
+	if self.target and self.target.ID ~= rte.NoMOID and (not self.target.ToDelete) and (self.teamAware == false or self.target.Team ~= self.Team) then
 		self.Vel = Vector();
 		self.Pos = self.target.Pos + Vector(self.stickOffset.X, self.stickOffset.Y):RadRotate(self.target.RotAngle - self.targetStickAngle);
 		local actor = self.target:GetRootParent();
@@ -42,6 +45,7 @@ function ThreadedUpdate(self)
 		end
 	else
 		self.target = nil;
+		self.targetUniqueID = nil;
 		if self.extraParticles then
 			local extraPar = CreateMOPixel("Ground Fire Burn Particle");
 			extraPar.Pos = self.Pos;
@@ -71,6 +75,7 @@ function OnCollideWithMO(self, mo, rootMO)
 		--Stick to objects on collision
 		if not mo.ToDelete and IsMOSRotating(mo) and math.random() < self.ageRatio then
 			self.target = ToMOSRotating(mo);
+			self.targetUniqueID = mo.UniqueID;
 			self.targetStickAngle = mo.RotAngle;
 			local velOffset = self.PrevVel * rte.PxTravelledPerFrame * 0.5;
 			local dist = SceneMan:ShortestDistance(mo.Pos, self.Pos + velOffset, SceneMan.SceneWrapsX);

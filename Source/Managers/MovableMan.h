@@ -493,10 +493,10 @@ namespace RTE {
 		/// @param id Unique Id to look for.
 		/// @return Object found or 0 if not found any.
 		MovableObject* FindObjectByUniqueID(long int id) {
-			if (m_KnownObjects.count(id) > 0)
-				return m_KnownObjects[id];
-			else
-				return 0;
+			// Scripts on other threads may be registering objects at the same time.
+			std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);
+			auto knownObject = m_KnownObjects.find(id);
+			return knownObject != m_KnownObjects.end() ? knownObject->second : nullptr;
 		}
 
 		/// Returns the size of the object registry collection
