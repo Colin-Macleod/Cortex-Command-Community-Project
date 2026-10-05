@@ -585,6 +585,7 @@ void LockstepMan::LeaveSession() {
 
 void LockstepMan::RestoreLocalResolutionIfPossible() {
 	if (m_LocalResX > 0 && m_Role == Role::None && !g_ActivityMan.IsInActivity()) {
+		g_WindowMan.ClearResolutionToSave();
 		g_WindowMan.ChangeResolution(m_LocalResX, m_LocalResY, m_LocalResMultiplier, g_WindowMan.IsFullscreen());
 		m_ChangedResolution = g_WindowMan.ResolutionChanged();
 		m_LocalResX = 0;
@@ -1077,6 +1078,8 @@ bool LockstepMan::SwitchToHostResolution(int resX, int resY) {
 		m_LocalResY = g_WindowMan.GetResY();
 		m_LocalResMultiplier = g_WindowMan.GetResMultiplier();
 	}
+	// Changing the resolution writes the settings file. Keep our own resolution in it.
+	g_WindowMan.SetResolutionToSave(m_LocalResX, m_LocalResY, m_LocalResMultiplier);
 	float multiplier = g_WindowMan.GetResMultiplier();
 	if (!g_WindowMan.IsFullscreen()) {
 		// Keep the window on the screen.

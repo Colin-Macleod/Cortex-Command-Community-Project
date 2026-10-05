@@ -163,6 +163,20 @@ namespace RTE {
 		/// Toggles between windowed and fullscreen mode (single display).
 		void ToggleFullscreen();
 
+		/// Sets the resolution to write to the settings file instead of the current one, while a resolution is only in effect temporarily (a co-op host's).
+		/// @param resX The resolution to save instead of the current one.
+		/// @param resY See resX.
+		/// @param resMultiplier See resX.
+		void SetResolutionToSave(int resX, int resY, float resMultiplier) {
+			m_SaveOtherResolution = true;
+			m_ResXToSave = resX;
+			m_ResYToSave = resY;
+			m_ResMultiplierToSave = resMultiplier;
+		}
+
+		/// Goes back to writing the current resolution to the settings file.
+		void ClearResolutionToSave() { m_SaveOtherResolution = false; }
+
 		/// Completes the resolution change by resetting the flag.
 		void CompleteResolutionChange() { m_ResolutionChanged = false; }
 #pragma endregion
@@ -232,6 +246,10 @@ namespace RTE {
 		int m_ResX; //!< Game window width.
 		int m_ResY; //!< Game window height.
 		float m_ResMultiplier; //!< The number of times the game window and image should be multiplied and stretched across for better visibility.
+		bool m_SaveOtherResolution = false; //!< Whether the settings file gets m_ResXToSave etc. instead of the current resolution, which is only temporary.
+		int m_ResXToSave = 0; //!< See m_SaveOtherResolution.
+		int m_ResYToSave = 0; //!< See m_SaveOtherResolution.
+		float m_ResMultiplierToSave = 1.0F; //!< See m_SaveOtherResolution.
 		float m_MaxResMultiplier; //!< The maximum resolution multiplier before the game starts breaking.
 
 		bool m_Fullscreen; //!< Whether the game window is currently in fullscreen.

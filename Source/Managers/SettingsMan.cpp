@@ -221,9 +221,10 @@ int SettingsMan::Save(Writer& writer) const {
 	writer.NewLineString("// Display Settings", false);
 	writer.NewLine(false);
 	writer.NewPropertyWithValue("PaletteFile", g_FrameMan.m_PaletteFile);
-	writer.NewPropertyWithValue("ResolutionX", g_WindowMan.m_ResX);
-	writer.NewPropertyWithValue("ResolutionY", g_WindowMan.m_ResY);
-	writer.NewPropertyWithValue("ResolutionMultiplier", g_WindowMan.m_ResMultiplier);
+	// A resolution a co-op host's session forced on us isn't ours to keep, also if the game quits or crashes before leaving the session.
+	writer.NewPropertyWithValue("ResolutionX", g_WindowMan.m_SaveOtherResolution ? g_WindowMan.m_ResXToSave : g_WindowMan.m_ResX);
+	writer.NewPropertyWithValue("ResolutionY", g_WindowMan.m_SaveOtherResolution ? g_WindowMan.m_ResYToSave : g_WindowMan.m_ResY);
+	writer.NewPropertyWithValue("ResolutionMultiplier", g_WindowMan.m_SaveOtherResolution ? g_WindowMan.m_ResMultiplierToSave : g_WindowMan.m_ResMultiplier);
 	writer.NewPropertyWithValue("Fullscreen", g_WindowMan.m_Fullscreen);
 	writer.NewPropertyWithValue("EnableVSync", g_WindowMan.m_EnableVSync);
 	writer.NewPropertyWithValue("UseMultiDisplays", g_WindowMan.m_UseMultiDisplays);
