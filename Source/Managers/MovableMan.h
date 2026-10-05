@@ -15,6 +15,7 @@
 #include <shared_mutex>
 #include <map>
 #include <future>
+#include <unordered_map>
 #include <unordered_set>
 #include <array>
 #include <functional>
@@ -494,8 +495,9 @@ namespace RTE {
 		/// @param id Unique Id to look for.
 		/// @return Object found or 0 if not found any.
 		MovableObject* FindObjectByUniqueID(long int id) {
-			// Scripts on other threads may be registering objects at the same time.
-			std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);
+			// Scripts on other threads may be registering objects at the same time. Lookups (by far the most common use, and made from all Lua threads) only
+			// need a shared lock, so they don't wait for each other.
+			std::shared_lock<std::shared_mutex> lock(m_KnownObjectsMutex);
 			auto knownObject = m_KnownObjects.find(id);
 			return knownObject != m_KnownObjects.end() ? knownObject->second : nullptr;
 		}
@@ -509,7 +511,10 @@ namespace RTE {
 
 		/// Returns the size of the object registry collection
 		/// @return Size of the objects registry.
-		unsigned int GetKnownObjectsCount() { return m_KnownObjects.size(); }
+		unsigned int GetKnownObjectsCount() {
+			std::shared_lock<std::shared_mutex> lock(m_KnownObjectsMutex);
+			return m_KnownObjects.size();
+		}
 
 		/// Returns the current sim update frame number
 		/// @return Current sim update frame number.
@@ -623,8 +628,8 @@ namespace RTE {
 		std::mutex m_AddedItemsMutex;
 		std::mutex m_AddedParticlesMutex;
 
-		// Mutex to ensure objects aren't registered/deregistered from separate threads at the same time
-		std::mutex m_ObjectRegisteredMutex;
+		// Guards m_KnownObjects: exclusive for registering and unregistering objects, shared for lookups.
+		std::shared_mutex m_KnownObjectsMutex;
 
 		// Mutex to ensure actors don't change team roster from seperate threads at the same time
 		std::mutex m_ActorRosterMutex;
@@ -668,8 +673,8 @@ namespace RTE {
 
 		unsigned int m_SimUpdateFrameNumber;
 
-		// Global map which stores all objects so they could be foud by their unique ID
-		std::map<long int, MovableObject*> m_KnownObjects;
+		// Global map which stores all objects so they could be found by their unique ID. Only ever looked up by ID, never iterated, so its order doesn't matter.
+		std::unordered_map<long int, MovableObject*> m_KnownObjects;
 
 		/// Private member variable and method declarations
 	private:

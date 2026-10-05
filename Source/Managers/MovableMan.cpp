@@ -184,7 +184,7 @@ void MovableMan::RegisterObject(MovableObject* mo) {
 		idLog << g_TimerMan.GetSimUpdateCount() << " " << mo->GetUniqueID() << " " << mo->GetClassName() << " " << mo->GetPresetName() << std::endl; // Flushed, as the game may not flush it when quitting.
 	}
 
-	std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);
+	std::unique_lock<std::shared_mutex> lock(m_KnownObjectsMutex);
 	m_KnownObjects[mo->GetUniqueID()] = mo;
 }
 
@@ -193,7 +193,7 @@ void MovableMan::UnregisterObject(MovableObject* mo) {
 		return;
 	}
 
-	std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);
+	std::unique_lock<std::shared_mutex> lock(m_KnownObjectsMutex);
 	// Unique IDs start over with every Activity, so an object left over from an earlier one (e.g. a Lua-owned one that's garbage collected later) can have
 	// the same ID as a live object. Only remove the entry if it's this object's, or the live object couldn't be found by its ID anymore.
 	if (auto knownObject = m_KnownObjects.find(mo->GetUniqueID()); knownObject != m_KnownObjects.end() && knownObject->second == mo) {
