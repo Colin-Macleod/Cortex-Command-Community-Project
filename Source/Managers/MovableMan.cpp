@@ -180,7 +180,7 @@ void MovableMan::RegisterObject(MovableObject* mo) {
 		static std::mutex idLogMutex;
 		static std::ofstream idLog(idLogPath, std::ios::out | std::ios::trunc);
 		std::lock_guard<std::mutex> idLogLock(idLogMutex);
-		idLog << g_TimerMan.GetSimUpdateCount() << " " << mo->GetUniqueID() << " " << mo->GetClassName() << " " << mo->GetPresetName() << "\n";
+		idLog << g_TimerMan.GetSimUpdateCount() << " " << mo->GetUniqueID() << " " << mo->GetClassName() << " " << mo->GetPresetName() << std::endl; // Flushed, as the game may not flush it when quitting.
 	}
 
 	std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);

@@ -239,6 +239,7 @@ namespace RTE {
 		LaunchOptions m_Options; //!< Configuration from the command line.
 		bool m_AutoStartDone = false; //!< Host: whether the automatic Activity start has happened.
 		size_t m_AutoChainIndex = 0; //!< Host: which entry of the automatic Activity chain is being played.
+		std::vector<std::pair<MessageType, std::vector<uint8_t>>> m_HeldBackMessages; //!< Client, testing with MatchUpdates: messages for the next match that arrived before this peer finished the current one.
 		std::chrono::steady_clock::time_point m_LastPingTime; //!< Host: when round trip measurements were last sent.
 
 		// Match state

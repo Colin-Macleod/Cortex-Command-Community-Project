@@ -922,6 +922,14 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 }
 
 void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, size_t size) {
+	if (m_Options.MatchUpdates > 0 && (!m_HeldBackMessages.empty() || (m_MatchRunning && m_NextSimUpdate < m_Options.MatchUpdates && (type == MsgStart || type == MsgEndMatch)))) {
+		// Testing with a fixed match length: this peer ends the match itself at the same sim update as the host, so a lagging client mustn't have it cut short
+		// by the host's end of it or start of the next one. Hold everything from then on back until this match is over.
+		if (type != MsgEndMatch) {
+			m_HeldBackMessages.emplace_back(type, std::vector<uint8_t>(data, data + size));
+		}
+		return;
+	}
 	MessageReader reader(data, size);
 	switch (type) {
 		case MsgReject:
@@ -1723,6 +1731,14 @@ void LockstepMan::Update() {
 
 	if (m_DeferredMatchStart && !g_WindowMan.ResolutionChanged()) {
 		FinishMatchStartFromHost();
+	}
+
+	if (!m_MatchRunning && !m_HeldBackMessages.empty()) {
+		std::vector<std::pair<MessageType, std::vector<uint8_t>>> heldBackMessages;
+		heldBackMessages.swap(m_HeldBackMessages);
+		for (const auto& [type, data]: heldBackMessages) {
+			HandleClientMessage(type, data.data(), data.size());
+		}
 	}
 
 	if (m_Role == Role::Client && !m_ConnectedToHost && m_RejectReason.empty() && ElapsedMS(m_WaitingSince) > c_ReconnectIntervalMS) {
