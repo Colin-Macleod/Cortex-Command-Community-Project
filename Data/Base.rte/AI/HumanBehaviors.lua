@@ -624,9 +624,10 @@ function HumanBehaviors.WeaponSearch(AI, Owner, Abort)
 			maxPathLength = 10;
 		end
 		
-		local searchesRemaining = #devices;
+		-- count only the path requests actually made, so devices skipped below aren't waited for
+		local searchesRemaining = 0;
 		local devicesToPickUp = {};
-		for _, deviceEntry in pairs(devices) do
+		for _, deviceEntry in ipairs(devices) do
 			local device = FindByUniqueID(deviceEntry.deviceUID);
 			if device and MovableMan:ValidMO(device) then
 				device = ToHeldDevice(device);
@@ -645,6 +646,7 @@ function HumanBehaviors.WeaponSearch(AI, Owner, Abort)
 
 				if pathMultiplier ~= -1 then
 					local deviceID = device.UniqueID;
+					searchesRemaining = searchesRemaining + 1;
 					SceneMan.Scene:CalculatePathAsync(
 						function(pathRequest)
 							local pathLength = pathRequest.PathLength;
@@ -757,12 +759,14 @@ function HumanBehaviors.ToolSearch(AI, Owner, Abort)
 			maxPathLength = 5;
 		end
 		
-		local searchesRemaining = #devices;
+		-- count only the path requests actually made, so devices skipped below aren't waited for
+		local searchesRemaining = 0;
 		local devicesToPickUp = {};
-		for _, deviceEntry in pairs(devices) do
+		for _, deviceEntry in ipairs(devices) do
 			local device = deviceEntry.device;
 			if MovableMan:ValidMO(device) then
 				local deviceId = device.UniqueID;
+				searchesRemaining = searchesRemaining + 1;
 				SceneMan.Scene:CalculatePathAsync(
 					function(pathRequest)
 						local pathLength = pathRequest.PathLength;
