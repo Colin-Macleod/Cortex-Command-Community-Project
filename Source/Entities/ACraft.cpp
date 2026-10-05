@@ -42,6 +42,7 @@ void ACraft::Exit::Clear() {
 	m_Range = 35;
 	m_Clear = true;
 	m_pIncomingMO = 0;
+	m_IncomingMOUniqueID = 0;
 }
 
 int ACraft::Exit::Create(const Exit& reference) {
@@ -111,8 +112,8 @@ MOSRotating* ACraft::Exit::SuckInMOs(ACraft* pExitOwner) {
 	if (m_pIncomingMO) {
 		const float suckageRange = m_Range * 1.5F;
 
-		// Check that it's still active and valid (not destroyed)
-		if (!(g_MovableMan.IsDevice(m_pIncomingMO) || g_MovableMan.IsActor(m_pIncomingMO))) {
+		// Check that it's still active and valid (not destroyed). Its unique ID is checked as well as its address, since the memory of a deleted object is reused.
+		if (!g_MovableMan.StoredObjectExists(m_pIncomingMO, m_IncomingMOUniqueID) || !(g_MovableMan.IsDevice(m_pIncomingMO) || g_MovableMan.IsActor(m_pIncomingMO))) {
 			m_pIncomingMO = 0;
 		}
 		// See if it's now out of range of suckage
@@ -170,6 +171,7 @@ MOSRotating* ACraft::Exit::SuckInMOs(ACraft* pExitOwner) {
 			// Don't suck in other ACraft!
 			if (dynamic_cast<ACraft*>(m_pIncomingMO))
 				m_pIncomingMO = 0;
+			m_IncomingMOUniqueID = m_pIncomingMO ? m_pIncomingMO->GetUniqueID() : 0;
 		}
 	}
 

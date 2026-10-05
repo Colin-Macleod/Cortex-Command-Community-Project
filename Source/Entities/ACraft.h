@@ -127,6 +127,7 @@ namespace RTE {
 			bool m_Clear;
 			// Movable Object that is being drawn into this exit
 			MOSRotating* m_pIncomingMO;
+			long m_IncomingMOUniqueID; //!< The unique ID of m_pIncomingMO, to tell it from another object that was later given the same memory after it was deleted.
 
 			/// Private member variable and method declarations
 		private:

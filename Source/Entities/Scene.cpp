@@ -1378,8 +1378,8 @@ void Scene::SaveSceneObject(Writer& writer, const SceneObject* sceneObjectToSave
 					writer.NewPropertyWithValue(addWaypointPropertyName, actorToSaveMOMoveTarget->GetPos());
 				} else {
 					writer.NewPropertyWithValue(addWaypointPropertyName, actorToSave->GetMovePathEnd());
-					for (auto& [waypointPosition, waypointObject]: actorToSave->GetWaypointList()) {
-						writer.NewPropertyWithValue(addWaypointPropertyName, waypointPosition);
+					for (const Actor::AIWaypoint& waypoint: actorToSave->GetWaypointList()) {
+						writer.NewPropertyWithValue(addWaypointPropertyName, waypoint.Position);
 					}
 				}
 			}

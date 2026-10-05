@@ -55,6 +55,7 @@ void GameActivity::Clear() {
 		m_ActorSelectTimer[player].Reset();
 		m_ActorCursor[player].Reset();
 		m_pLastMarkedActor[player] = 0;
+		m_LastMarkedActorUniqueID[player] = 0;
 		m_LandingZone[player].Reset();
 		m_AIReturnCraft[player] = true;
 		m_StrategicModePieMenu.at(player) = nullptr;
@@ -141,6 +142,7 @@ int GameActivity::Create(const GameActivity& reference) {
 		m_DeathViewTarget[player] = reference.m_DeathViewTarget[player];
 		m_ActorCursor[player] = reference.m_ActorCursor[player];
 		m_pLastMarkedActor[player] = reference.m_pLastMarkedActor[player];
+		m_LastMarkedActorUniqueID[player] = reference.m_LastMarkedActorUniqueID[player];
 		m_LandingZone[player] = reference.m_LandingZone[player];
 		m_AIReturnCraft[player] = reference.m_AIReturnCraft[player];
 		m_InventoryMenuGUI[player] = new InventoryMenuGUI;
@@ -1181,6 +1183,11 @@ void GameActivity::Update() {
 			}
 		}
 
+		// The last marked actor is kept between updates and may have been deleted since, so forget it then. Its unique ID is checked as well as its address, since the memory of a deleted object is reused.
+		if (m_pLastMarkedActor[player] && !(g_MovableMan.StoredObjectExists(m_pLastMarkedActor[player], m_LastMarkedActorUniqueID[player]) && g_MovableMan.IsActor(m_pLastMarkedActor[player]))) {
+			m_pLastMarkedActor[player] = nullptr;
+		}
+
 		////////////////////////////////////
 		// Update sceneman scroll targets
 
@@ -1260,15 +1267,12 @@ void GameActivity::Update() {
 			g_SceneMan.ForceBounds(m_ActorCursor[player]);
 			g_CameraMan.SetScrollTarget(m_ActorCursor[player], 0.1, ScreenOfPlayer(player));
 
-			if (m_pLastMarkedActor[player]) {
-				if (!g_MovableMan.ValidMO(m_pLastMarkedActor[player])) {
-					m_pLastMarkedActor[player] = nullptr;
-				} else if (m_pLastMarkedActor[player] != pMarkedActor && m_pLastMarkedActor[player]->GetPieMenu()) {
-					m_pLastMarkedActor[player]->GetPieMenu()->SetAnimationModeToNormal();
-				}
+			if (m_pLastMarkedActor[player] && m_pLastMarkedActor[player] != pMarkedActor && m_pLastMarkedActor[player]->GetPieMenu()) {
+				m_pLastMarkedActor[player]->GetPieMenu()->SetAnimationModeToNormal();
 			}
 			if (pMarkedActor) {
 				m_pLastMarkedActor[player] = pMarkedActor;
+				m_LastMarkedActorUniqueID[player] = pMarkedActor->GetUniqueID();
 			}
 		}
 
@@ -1290,6 +1294,7 @@ void GameActivity::Update() {
 				}
 				pTargetActor->GetPieMenu()->FreezeAtRadius(15);
 				m_pLastMarkedActor[player] = pTargetActor;
+				m_LastMarkedActorUniqueID[player] = pTargetActor->GetUniqueID();
 			} else if (m_pLastMarkedActor[player] && m_pLastMarkedActor[player]->GetPieMenu()) {
 				m_pLastMarkedActor[player]->GetPieMenu()->SetAnimationModeToNormal();
 			}

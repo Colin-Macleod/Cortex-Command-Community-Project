@@ -551,6 +551,7 @@ namespace RTE {
 		Vector m_ActorCursor[Players::MaxPlayerCount];
 		// Highlighted actor while cursor switching; will be switched to if switch button is released now
 		Actor* m_pLastMarkedActor[Players::MaxPlayerCount];
+		long m_LastMarkedActorUniqueID[Players::MaxPlayerCount]; //!< The unique IDs of m_pLastMarkedActor, to tell them from other objects that were later given the same memory after they were deleted.
 		// The last selected landing zone
 		Vector m_LandingZone[Players::MaxPlayerCount];
 		// Whether the last craft was set to return or not after delivering

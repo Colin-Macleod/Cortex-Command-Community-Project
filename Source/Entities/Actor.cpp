@@ -100,6 +100,7 @@ void Actor::Clear() {
 	m_Inventory.clear();
 	m_MaxInventoryMass = -1.0F;
 	m_pItemInReach = nullptr;
+	m_ItemInReachUniqueID = 0;
 	m_HotkeyActivated.fill(false);
 	m_HUDStack = 0;
 	m_MovementState = NOMOVE;
@@ -668,9 +669,22 @@ void Actor::RestDetection() {
 }
 
 void Actor::AddAIMOWaypoint(const MovableObject* pMOWaypoint) {
-	if (g_MovableMan.ValidMO(pMOWaypoint) && (m_Waypoints.empty() || m_Waypoints.back().second != pMOWaypoint)) {
-		m_Waypoints.push_back(std::pair<Vector, const MovableObject*>(pMOWaypoint->GetPos(), pMOWaypoint));
+	if (g_MovableMan.ValidMO(pMOWaypoint) && (m_Waypoints.empty() || m_Waypoints.back().Object != pMOWaypoint || m_Waypoints.back().ObjectUniqueID != pMOWaypoint->GetUniqueID())) {
+		m_Waypoints.push_back({pMOWaypoint->GetPos(), pMOWaypoint, pMOWaypoint->GetUniqueID()});
 	}
+}
+
+bool Actor::AIWaypoint::ObjectExists() const {
+	return g_MovableMan.StoredObjectExists(Object, ObjectUniqueID) && g_MovableMan.ValidMO(Object);
+}
+
+void Actor::SetItemInReach(HeldDevice* pItem) {
+	m_pItemInReach = pItem;
+	m_ItemInReachUniqueID = pItem ? pItem->GetUniqueID() : 0;
+}
+
+bool Actor::ItemInReachExists() const {
+	return g_MovableMan.StoredObjectExists(m_pItemInReach, m_ItemInReachUniqueID) && g_MovableMan.IsDevice(m_pItemInReach);
 }
 
 void Actor::AlarmPoint(const Vector& alarmPoint) {
@@ -1009,7 +1023,7 @@ const MovableObject* Actor::GetMOMoveTarget() const {
 }
 
 bool Actor::MOMoveTargetExists() const {
-	return m_pMOMoveTarget && g_MovableMan.FindObjectByUniqueID(m_MOMoveTargetUniqueID) == m_pMOMoveTarget && g_MovableMan.ValidMO(m_pMOMoveTarget);
+	return g_MovableMan.StoredObjectExists(m_pMOMoveTarget, m_MOMoveTargetUniqueID) && g_MovableMan.ValidMO(m_pMOMoveTarget);
 }
 
 MOID Actor::GetAIMOWaypointID() const {
@@ -1037,11 +1051,11 @@ void Actor::UpdateMovePath() {
 			// Ok no path going, so get a new path to the next waypoint, if there is a next waypoint
 			if (!m_Waypoints.empty()) {
 				// Make sure the path starts from the ground and not somewhere up in the air if/when dropped out of ship
-				m_PathRequest = g_SceneMan.GetScene()->CalculatePathAsync(g_SceneMan.MovePointToGround(m_Pos, m_CharHeight * 0.2, 10), m_Waypoints.front().first, jumpHeight, digStrength, static_cast<Activity::Teams>(m_Team));
+				m_PathRequest = g_SceneMan.GetScene()->CalculatePathAsync(g_SceneMan.MovePointToGround(m_Pos, m_CharHeight * 0.2, 10), m_Waypoints.front().Position, jumpHeight, digStrength, static_cast<Activity::Teams>(m_Team));
 
 				// If the waypoint was tied to an MO to pursue, then load it into the current MO target
-				if (g_MovableMan.ValidMO(m_Waypoints.front().second)) {
-					SetMOMoveTarget(m_Waypoints.front().second);
+				if (m_Waypoints.front().ObjectExists()) {
+					SetMOMoveTarget(m_Waypoints.front().Object);
 				} else {
 					SetMOMoveTarget(nullptr);
 				}
@@ -1474,7 +1488,7 @@ void Actor::DrawHUD(BITMAP* pTargetBitmap, const Vector& targetPos, int whichScr
 		// Draw the AI paths, from the ultimate destination back up to the actor's position.
 		// We do this backwards so the lines won't crawl and the dots can be evenly spaced throughout
 		Vector waypoint;
-		std::list<std::pair<Vector, const MovableObject*>>::reverse_iterator vLast, vItr;
+		std::list<AIWaypoint>::reverse_iterator vLast, vItr;
 		std::list<Vector>::reverse_iterator lLast, lItr;
 		int skipPhase = 0;
 
@@ -1489,22 +1503,22 @@ void Actor::DrawHUD(BITMAP* pTargetBitmap, const Vector& targetPos, int whichScr
 			vItr = m_Waypoints.rbegin();
 			for (; vItr != m_Waypoints.rend(); ++vItr) {
 				// Draw the line
-				g_FrameMan.DrawLine(pTargetBitmap, (*vLast).first - targetPos, (*vItr).first - targetPos, g_YellowGlowColor, 0, AILINEDOTSPACING, 0, true);
+				g_FrameMan.DrawLine(pTargetBitmap, (*vLast).Position - targetPos, (*vItr).Position - targetPos, g_YellowGlowColor, 0, AILINEDOTSPACING, 0, true);
 				vLast = vItr;
 
 				// Draw the points
-				waypoint = (*vItr).first - targetPos;
+				waypoint = (*vItr).Position - targetPos;
 				circlefill(pTargetBitmap, waypoint.m_X, waypoint.m_Y, 2, g_YellowGlowColor);
 
 				// Add pixel glow area around it, in scene coordinates
-				g_PostProcessMan.RegisterGlowArea((*vItr).first, 5);
+				g_PostProcessMan.RegisterGlowArea((*vItr).Position, 5);
 			}
 
 			// Draw line from the last movetarget on the current path to the first waypoint in queue after that
 			if (!m_MovePath.empty()) {
-				g_FrameMan.DrawLine(pTargetBitmap, m_MovePath.back() - targetPos, m_Waypoints.front().first - targetPos, g_YellowGlowColor, 0, AILINEDOTSPACING, 0, true);
+				g_FrameMan.DrawLine(pTargetBitmap, m_MovePath.back() - targetPos, m_Waypoints.front().Position - targetPos, g_YellowGlowColor, 0, AILINEDOTSPACING, 0, true);
 			} else {
-				g_FrameMan.DrawLine(pTargetBitmap, m_MoveTarget - targetPos, m_Waypoints.front().first - targetPos, g_YellowGlowColor, 0, AILINEDOTSPACING, 0, true);
+				g_FrameMan.DrawLine(pTargetBitmap, m_MoveTarget - targetPos, m_Waypoints.front().Position - targetPos, g_YellowGlowColor, 0, AILINEDOTSPACING, 0, true);
 			}
 		}
 

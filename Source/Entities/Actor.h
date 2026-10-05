@@ -30,6 +30,17 @@ namespace RTE {
 
 		/// Public member variable, method and friend function declarations
 	public:
+		/// A point an Actor's AI is to go to, optionally tied to an MO to follow.
+		struct AIWaypoint {
+			Vector Position; //!< The scene point to go to. For a waypoint tied to an MO, the MO's position when the waypoint was added.
+			const MovableObject* Object = nullptr; //!< The MO to follow, if any. Not owned. It may have been deleted since the waypoint was added, so check it with ObjectExists() before using it.
+			long ObjectUniqueID = 0; //!< The unique ID of Object, to tell it from another object that was later given the same memory after it was deleted.
+
+			/// Gets whether this waypoint is tied to an MO that still exists and is in the simulation.
+			/// @return Whether Object can be used.
+			bool ObjectExists() const;
+		};
+
 		enum Status {
 			STABLE = 0,
 			UNSTABLE,
@@ -253,7 +264,7 @@ namespace RTE {
 
 		/// Gets the item that is within reach of the Actor at this frame, ready to be be picked up. Ownership is NOT transferred!
 		/// @return A pointer to the item that has been determined to be within reach of this Actor, if any.
-		HeldDevice* GetItemInReach() const { return m_pItemInReach; }
+		HeldDevice* GetItemInReach() const { return ItemInReachExists() ? m_pItemInReach : nullptr; }
 
 		/// Gets the direction where this is looking/aiming.
 		/// @return A Vector with the direction in which this is looking along.
@@ -324,7 +335,7 @@ namespace RTE {
 		/// it may be picked up. Ownership is NOT transferred!
 		/// @param pItem A pointer to the item that has been determined to be within reach of
 		/// this Actor. Ownership is NOT transferred!
-		void SetItemInReach(HeldDevice* pItem) { m_pItemInReach = pItem; }
+		void SetItemInReach(HeldDevice* pItem);
 
 		/// Tells whether a point on the scene is within range of the currently
 		/// used device and aiming status, if applicable.
@@ -385,7 +396,7 @@ namespace RTE {
 		/// go to, in order
 		/// @param m_Waypoints.push_back(std::pair<Vector The new scene point this should try to get to after all other waypoints
 		/// are reached.
-		void AddAISceneWaypoint(const Vector& waypoint) { m_Waypoints.push_back(std::pair<Vector, MovableObject*>(waypoint, (MovableObject*)NULL)); }
+		void AddAISceneWaypoint(const Vector& waypoint) { m_Waypoints.push_back({waypoint, nullptr, 0}); }
 
 		/// Adds an MO in the scene as the next waypoint for this to go to, in order
 		/// @param pMOWaypoint The new MO this should try to get to after all other waypoints are reached.
@@ -407,7 +418,7 @@ namespace RTE {
 		/// @return The furthest set AI waypoint of this.
 		Vector GetLastAIWaypoint() const {
 			if (!m_Waypoints.empty()) {
-				return m_Waypoints.back().first;
+				return m_Waypoints.back().Position;
 			} else if (!m_MovePath.empty()) {
 				return m_MovePath.back();
 			}
@@ -420,7 +431,7 @@ namespace RTE {
 
 		/// Gets the list of waypoints for this Actor.
 		/// @return The list of waypoints for this Actor.
-		const std::list<std::pair<Vector, const MovableObject*>>& GetWaypointList() const { return m_Waypoints; }
+		const std::list<AIWaypoint>& GetWaypointList() const { return m_Waypoints; }
 
 		/// Gets how many waypoints this actor have.
 		/// @return How many waypoints.
@@ -986,6 +997,11 @@ namespace RTE {
 		float m_MaxInventoryMass; //!< The mass limit for this Actor's inventory. -1 means there's no limit.
 		// The device that can/will be picked up
 		HeldDevice* m_pItemInReach;
+		long m_ItemInReachUniqueID; //!< The unique ID of m_pItemInReach, to tell it from another object that was later given the same memory after it was deleted.
+
+		/// Gets whether the item in reach still exists and is a free item in the simulation. Checks its unique ID as well as its address, since the memory of a deleted object is reused.
+		/// @return Whether there's an item in reach and it can be used.
+		bool ItemInReachExists() const;
 		// An array that holds activation states for the various hotkey actions of this Actor.
 		std::array<bool, ACTORHOTKEYTYPECOUNT> m_HotkeyActivated;
 		// HUD positioning aid
@@ -1035,8 +1051,8 @@ namespace RTE {
 		// The current mode the AI is set to perform as
 		AIMode m_AIMode;
 		// The list of waypoints remaining between which the paths are made. If this is empty, the last path is in teh MovePath
-		// The MO pointer in the pair is nonzero if the waypoint is tied to an MO in the scene, and gets updated each UpdateAI. This needs to be checked for validity/existence each UpdateAI
-		std::list<std::pair<Vector, const MovableObject*>> m_Waypoints;
+		// A waypoint's Object is nonzero if the waypoint is tied to an MO in the scene. It must be checked with AIWaypoint::ObjectExists before it's used.
+		std::list<AIWaypoint> m_Waypoints;
 		// Whether to draw the waypoints or not in the HUD
 		bool m_DrawWaypoints;
 		// Absolute target to move to on the scene; this is usually the point at the front of the movepath list

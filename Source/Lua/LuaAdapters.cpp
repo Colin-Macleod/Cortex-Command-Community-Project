@@ -277,9 +277,9 @@ HeldDevice* LuaAdaptersActor::GetItemInReach(const Actor* luaSelfObject) {
 std::vector<Vector>* LuaAdaptersActor::GetSceneWaypoints(Actor* luaSelfObject) {
 	std::vector<Vector>* sceneWaypoints = new std::vector<Vector>();
 	sceneWaypoints->reserve(luaSelfObject->GetWaypointsSize());
-	for (auto& [sceneWaypoint, movableObjectWaypoint]: luaSelfObject->GetWaypointList()) {
-		if (movableObjectWaypoint == nullptr) {
-			sceneWaypoints->emplace_back(sceneWaypoint);
+	for (const Actor::AIWaypoint& waypoint: luaSelfObject->GetWaypointList()) {
+		if (waypoint.Object == nullptr) {
+			sceneWaypoints->emplace_back(waypoint.Position);
 		}
 	}
 	return sceneWaypoints;

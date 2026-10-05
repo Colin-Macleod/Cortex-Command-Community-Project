@@ -2051,14 +2051,14 @@ void AHuman::PreControllerUpdate() {
 
 		if (MovableObject* foundMO = g_MovableMan.GetMOFromID(itemMOID)) {
 			if (HeldDevice* foundDevice = dynamic_cast<HeldDevice*>(foundMO->GetRootParent())) {
-				m_pItemInReach = (m_pFGArm || foundDevice->IsOneHanded()) ? foundDevice : nullptr;
+				SetItemInReach((m_pFGArm || foundDevice->IsOneHanded()) ? foundDevice : nullptr);
 			}
 		}
 	}
 
 	// Item currently set to be within reach has expired or is now out of range
 	// Whether the item still exists first: it may have been deleted since the last update, and then nothing else about it may be read.
-	if (m_pItemInReach && (!g_MovableMan.IsDevice(m_pItemInReach) || m_pItemInReach->ToDelete() || !m_pItemInReach->IsPickupableBy(this) || g_SceneMan.ShortestDistance(reachPoint, m_pItemInReach->GetPos(), g_SceneMan.SceneWrapsX()).MagnitudeIsGreaterThan(reach + m_pItemInReach->GetRadius()))) {
+	if (m_pItemInReach && (!ItemInReachExists() || m_pItemInReach->ToDelete() || !m_pItemInReach->IsPickupableBy(this) || g_SceneMan.ShortestDistance(reachPoint, m_pItemInReach->GetPos(), g_SceneMan.SceneWrapsX()).MagnitudeIsGreaterThan(reach + m_pItemInReach->GetRadius()))) {
 		m_pItemInReach = nullptr;
 	}
 
@@ -2932,7 +2932,7 @@ void AHuman::DrawHUD(BITMAP* pTargetBitmap, const Vector& targetPos, int whichSc
 
 		// Pickup GUI
 		// The item may have been deleted since this actor's update checked it (later in the same sim update).
-		if (!m_Controller.IsState(PIE_MENU_ACTIVE) && m_pItemInReach && g_MovableMan.IsDevice(m_pItemInReach)) {
+		if (!m_Controller.IsState(PIE_MENU_ACTIVE) && ItemInReachExists()) {
 			std::snprintf(str, sizeof(str), " %c %s", -49, m_pItemInReach->GetPresetName().c_str());
 			pSmallFont->DrawAligned(&allegroBitmap, drawPos.GetFloorIntX(), drawPos.GetFloorIntY() + m_HUDStack + 3, str, GUIFont::Centre);
 			m_HUDStack -= 9;
@@ -2964,7 +2964,7 @@ void AHuman::SetLimbPathPushForce(MovementState movementState, float newForce) {
 int AHuman::WhilePieMenuOpenListener(const PieMenu* pieMenu) {
 	int result = Actor::WhilePieMenuOpenListener(pieMenu);
 	// The item may have been deleted since this actor's update last checked it.
-	const HeldDevice* itemInReach = g_MovableMan.IsDevice(m_pItemInReach) ? m_pItemInReach : nullptr;
+	const HeldDevice* itemInReach = GetItemInReach();
 
 	for (PieSlice* pieSlice: GetPieMenu()->GetPieSlices()) {
 		switch (pieSlice->GetType()) {
