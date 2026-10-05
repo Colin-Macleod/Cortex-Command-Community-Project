@@ -98,8 +98,11 @@ namespace {
 
 	static_assert(InputElements::INPUT_COUNT <= 64, "VirtualInputFrame keeps input elements in 64-bit masks.");
 
-	/// Hashes the contents of every file in a module that can affect the simulation, i.e. everything but sounds and music.
+	/// Hashes the contents of every file in a module that can affect the simulation.
 	/// Line endings in text files are ignored, so a checkout with Windows line endings matches one with Unix line endings.
+	/// Sound files only matter for their lengths (in a co-op match, whether a sound is still playing is worked out from its length), so only their size and
+	/// first and last few kilobytes are hashed, where the formats keep what the length is computed from (headers, Ogg's last granule position). Hashing
+	/// them whole would take several times as long as everything else.
 	/// @param modulePath Path to the module's directory.
 	/// @return The hash, or 0 if the directory couldn't be read.
 	uint64_t HashModuleContents(const std::string& modulePath) {
@@ -130,8 +133,8 @@ namespace {
 				continue;
 			}
 			const std::string extension = lowercase(itr->path().extension().string());
-			if (extension == ".flac" || extension == ".ogg" || extension == ".wav" || extension == ".mp3" || extension == ".reapeaks") {
-				continue;
+			if (extension == ".reapeaks") {
+				continue; // Audio editor waveform caches.
 			}
 			files.push_back(std::filesystem::relative(itr->path(), modulePath, typeError).generic_string());
 		}
@@ -151,8 +154,23 @@ namespace {
 		for (const std::string& file: files) {
 			mixBytes(file.data(), file.size() + 1);
 			std::ifstream stream(modulePath + "/" + file, std::ios::binary);
-			contents.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 			const std::string extension = lowercase(std::filesystem::path(file).extension().string());
+			if (extension == ".flac" || extension == ".ogg" || extension == ".wav" || extension == ".mp3") {
+				constexpr std::streamoff c_SoundBytesHashed = 4096;
+				stream.seekg(0, std::ios::end);
+				const std::streamoff fileSize = std::max<std::streamoff>(0, static_cast<std::streamoff>(stream.tellg()));
+				const uint64_t size = static_cast<uint64_t>(fileSize);
+				mixBytes(reinterpret_cast<const char*>(&size), sizeof(size));
+				for (std::streamoff start: {std::streamoff(0), std::max<std::streamoff>(0, fileSize - c_SoundBytesHashed)}) {
+					contents.assign(static_cast<size_t>(std::min(c_SoundBytesHashed, fileSize)), 0);
+					stream.clear();
+					stream.seekg(start);
+					stream.read(contents.data(), static_cast<std::streamsize>(contents.size()));
+					mixBytes(contents.data(), static_cast<size_t>(std::max<std::streamsize>(0, stream.gcount())));
+				}
+				continue;
+			}
+			contents.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 			if (extension == ".ini" || extension == ".lua" || extension == ".txt" || extension == ".frag" || extension == ".vert" || extension == ".json") {
 				contents.erase(std::remove(contents.begin(), contents.end(), '\r'), contents.end());
 			}

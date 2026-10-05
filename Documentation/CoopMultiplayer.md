@@ -56,7 +56,7 @@ Without `-coop-scene`, the Activity's default scene is used, or the first compat
 
 ### What's checked when you join
 
-The host rejects a player whose game version, mods, audio availability, math library results or Lua setup (LuaJIT on or off, string hashing, case-sensitive paths) don't match its own, and says why. Mods (and the official content) are compared by the contents of their files, not by name or version, ignoring sounds, music and line endings; the message names the first module that differs. A player whose resolution differs is switched to the host's (see above). Each player's input device and digital aim speed setting are recorded when they join, and every computer uses those for that player. For the duration of a match, clients use the host's values for settings that affect gameplay:
+The host rejects a player whose game version, mods, audio availability, math library results or Lua setup (LuaJIT on or off, string hashing, case-sensitive paths) don't match its own, and says why. Mods (and the official content) are compared by the contents of their files, not by name or version, ignoring line endings and the files operating systems and editors leave around (sounds and music only by their size and the parts their length is read from, as only their lengths affect gameplay); the message names the first module that differs. A player whose resolution differs is switched to the host's (see above). Each player's input device and digital aim speed setting are recorded when they join, and every computer uses those for that player. For the duration of a match, clients use the host's values for settings that affect gameplay:
 
 - AI update interval
 - automatic gold deposit
@@ -89,7 +89,7 @@ Determinism changes in the engine (see also `LockstepMultiplayerFeasibility.md`)
 - Async pathing results are published at a fixed point, in a fixed order.
 - Threaded Lua scripts run one Lua state after another rather than in parallel. Some scripts read objects owned by other states, which would otherwise race.
 - See rays and MOID drawing finish within the sim update.
-- Sound playback state, which gameplay code checks (e.g. weapon pre-fire sounds), is tracked in sim time instead of asked of the audio system.
+- Sound playback state, which gameplay code checks (e.g. weapon pre-fire sounds), is tracked in sim time instead of asked of the audio system. It's worked out from the sounds' lengths, so those are part of the content check.
 - Camera shake is applied only when drawing, because scripts read camera offsets. Every player's camera is simulated on every computer, although only one is drawn.
 - Every player gets one full-size screen at the shared resolution, so screen-size-dependent gameplay values match.
 - Nothing worked out while drawing this computer's screen feeds back into the simulation (e.g. `AboveHUDPos`, which scripts spawn effects at, and the funds-changed flag).
@@ -158,7 +158,7 @@ A later AddressSanitizer sweep over every stock activity found more objects bein
 - **Same game resolution on every computer.** Joining switches to the host's resolution automatically (and back when leaving); the window can still be scaled.
 - **One player per computer.** No local split-screen in a co-op match.
 - **Joining:** no joining or rejoining mid-match. A player who dropped out can reconnect and join the next match.
-- **Content check:** sounds and music aren't compared (they don't affect gameplay), and neither are user-made scenes and saved games (`Userdata`). A user-made scene with the same name as someone else's will desync.
+- **Content check:** sound and music files are compared by their size and the parts their length is read from, not entirely (their lengths affect gameplay, see above, but nothing else about them does). User-made scenes and saved games (`Userdata`) aren't compared. A user-made scene with the same name as someone else's will desync.
 - **Scripts:**
   - Mods whose scripts read state outside the engine's control (`os.clock`, `io`, `TimerMan:TimeForSimUpdate()`, the mouse position without a player), or keep tables keyed by objects and act on `pairs()` order, can still desync. The desync detector will report it. Mods can use `SortedPairs` from `Base.rte/Utilities.lua` for object-keyed tables.
   - Scripts that read `FrameMan.PlayerScreenWidth` behave as if every player had a full screen at the shared resolution.
