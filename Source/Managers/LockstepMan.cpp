@@ -1248,18 +1248,20 @@ GameActivity* LockstepMan::BuildActivityFromConfig(const std::string& configText
 	activity->ClearPlayers(false);
 	m_MatchPlayers.fill(false);
 	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
-		m_PlayerDevices[player] = static_cast<InputDevice>(ToInt(config, "playerDevice" + std::to_string(player), InputDevice::DEVICE_KEYB_ONLY));
+		// The configuration comes from the network, so keep everything in range.
+		m_PlayerDevices[player] = static_cast<InputDevice>(std::clamp<int>(ToInt(config, "playerDevice" + std::to_string(player), InputDevice::DEVICE_KEYB_ONLY), InputDevice::DEVICE_KEYB_ONLY, InputDevice::DEVICE_GAMEPAD_4));
 		m_PlayerDigitalAimSpeeds[player] = 1.0F;
 		if (std::string bits = ToString(config, "playerAimSpeedBits" + std::to_string(player)); !bits.empty()) {
-			m_PlayerDigitalAimSpeeds[player] = std::bit_cast<float>(static_cast<uint32_t>(std::strtoul(bits.c_str(), nullptr, 10)));
+			const float aimSpeed = std::bit_cast<float>(static_cast<uint32_t>(std::strtoul(bits.c_str(), nullptr, 10)));
+			m_PlayerDigitalAimSpeeds[player] = std::isfinite(aimSpeed) ? std::clamp(aimSpeed, 0.01F, 100.0F) : 1.0F;
 		}
 		if (ToInt(config, "playerActive" + std::to_string(player)) != 0) {
 			bool human = ToInt(config, "playerHuman" + std::to_string(player)) != 0;
-			activity->AddPlayer(player, human, ToInt(config, "playerTeam" + std::to_string(player)), 0);
+			activity->AddPlayer(player, human, std::clamp<int>(ToInt(config, "playerTeam" + std::to_string(player)), Activity::Teams::TeamOne, Activity::Teams::MaxTeamCount - 1), 0);
 			m_MatchPlayers[player] = human;
 		}
 	}
-	activity->SetCPUTeam(ToInt(config, "cpuTeam", Activity::Teams::NoTeam));
+	activity->SetCPUTeam(std::clamp<int>(ToInt(config, "cpuTeam", Activity::Teams::NoTeam), Activity::Teams::NoTeam, Activity::Teams::MaxTeamCount - 1));
 	for (int team = Activity::Teams::TeamOne; team < Activity::Teams::MaxTeamCount; ++team) {
 		if (std::string tech = ToString(config, "tech" + std::to_string(team)); !tech.empty()) {
 			activity->SetTeamTech(team, tech);
