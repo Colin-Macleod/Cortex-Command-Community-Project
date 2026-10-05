@@ -300,6 +300,7 @@ namespace RTE {
 		VirtualInputFrame m_BotHeld; //!< The bot's currently held input.
 		int m_BotHoldUpdates = 0; //!< How many more sim updates the bot holds its current input.
 		float m_BotMousePosition[2] = {0, 0}; //!< The bot's absolute mouse position, for clicking around in menus.
+		bool m_BotDragging = false; //!< Whether the bot's current input is a drag, which moves the mouse until the button is released.
 
 #pragma region Networking
 		/// Sends a message to one connection.

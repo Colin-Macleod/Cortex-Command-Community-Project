@@ -1466,6 +1466,7 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 	bool newHold = false;
 	if (m_BotHoldUpdates <= 0) {
 		m_BotHeld = VirtualInputFrame();
+		m_BotDragging = false;
 		auto chance = [this](int percent) { return static_cast<int>(m_BotRNG() % 100) < percent; };
 		int action = static_cast<int>(m_BotRNG() % 100);
 		// In a build phase there's nothing else to do, and it only ends when everyone has placed a brain and picked Done Building from the pie menu.
@@ -1500,6 +1501,12 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 				m_BotHeld.MouseWheel = chance(50) ? 1 : -1;
 			}
 			m_BotHoldUpdates = 2 + static_cast<int>(m_BotRNG() % 12);
+			if (chance(40)) {
+				// Drag: keep moving the mouse until the button is released, as players do to place objects precisely in the editors.
+				m_BotHeld.MouseMovement[0] = static_cast<float>(static_cast<int>(m_BotRNG() % 13) - 6);
+				m_BotHeld.MouseMovement[1] = static_cast<float>(static_cast<int>(m_BotRNG() % 13) - 6);
+				m_BotDragging = true;
+			}
 		}
 		if (m_BotHoldUpdates <= 0) {
 			int move = static_cast<int>(m_BotRNG() % 3);
@@ -1524,8 +1531,8 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 			if (chance(5)) {
 				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_NEXT;
 			}
-			if (chance(3)) {
-				// Raw keys reach scripts too (e.g. Space in Wave Defense).
+			if (chance(3) && !(activity && activity->GetActivityState() == Activity::ActivityState::Over)) {
+				// Raw keys reach scripts too (e.g. Space in Wave Defense). Not once the game is over, where Space ends the match.
 				m_BotHeld.KeysHeld[SDL_SCANCODE_SPACE / 64] |= 1ULL << (SDL_SCANCODE_SPACE % 64);
 			}
 			m_BotHeld.MouseMovement[0] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
@@ -1547,7 +1554,7 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 		frame.MouseWheel = 0; // Turn the wheel once per hold only.
 	}
 	// Don't move the mouse during the last updates of each hold, otherwise the aim just pins to the edge.
-	if (m_BotHoldUpdates < 5) {
+	if (m_BotHoldUpdates < 5 && !m_BotDragging) {
 		frame.MouseMovement[0] = frame.MouseMovement[1] = 0;
 	}
 	return frame;
