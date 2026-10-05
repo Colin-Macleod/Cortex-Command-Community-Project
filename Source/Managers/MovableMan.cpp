@@ -20,10 +20,13 @@
 #include "SettingsMan.h"
 #include "LuaMan.h"
 #include "ThreadMan.h"
+#include "TimerMan.h"
 
 #include "tracy/Tracy.hpp"
 
 #include <execution>
+#include <cstdlib>
+#include <fstream>
 
 using namespace RTE;
 
@@ -168,6 +171,16 @@ MOID MovableMan::GetMOIDPixel(int pixelX, int pixelY, const std::vector<int>& mo
 void MovableMan::RegisterObject(MovableObject* mo) {
 	if (!mo) {
 		return;
+	}
+
+	// Testing aid: with CCCP_DT_ID_LOG=<path>, every object creation is logged with the sim update, its unique ID and preset, so two co-op peers' logs show
+	// where they started creating different objects (or numbering them differently).
+	static const char* idLogPath = std::getenv("CCCP_DT_ID_LOG");
+	if (idLogPath && g_TimerMan.IsInDeterministicMode()) {
+		static std::mutex idLogMutex;
+		static std::ofstream idLog(idLogPath, std::ios::out | std::ios::trunc);
+		std::lock_guard<std::mutex> idLogLock(idLogMutex);
+		idLog << g_TimerMan.GetSimUpdateCount() << " " << mo->GetUniqueID() << " " << mo->GetClassName() << " " << mo->GetPresetName() << "\n";
 	}
 
 	std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);
