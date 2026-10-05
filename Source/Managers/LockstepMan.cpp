@@ -1227,6 +1227,10 @@ std::string LockstepMan::SerializeMatchConfig(const GameActivity* activity) cons
 	config << "set.EnableCrabBombs=" << g_SettingsMan.CrabBombsEnabled() << "\n";
 	config << "set.CrabBombThreshold=" << g_SettingsMan.GetCrabBombThreshold() << "\n";
 	config << "set.SmartBuyMenuNavigation=" << g_SettingsMan.SmartBuyMenuNavigationEnabled() << "\n";
+	// Faction themes change the buy menu's and object pickers' skins, fonts included, so list rows could be at different heights on different peers.
+	config << "set.DisableFactionBuyMenuThemes=" << g_SettingsMan.FactionBuyMenuThemesDisabled() << "\n";
+	// Scripts can read it (e.g. to limit spawning).
+	config << "set.RecommendedMOIDCount=" << g_SettingsMan.RecommendedMOIDCount() << "\n";
 	config << "set.MaxUnheldItems=" << g_MovableMan.GetMaxDroppedItems() << "\n";
 	config << "set.ScrapCompactingHeight=" << g_SceneMan.GetScrapCompactingHeight() << "\n";
 	config << "set.EnableParticleSettling=" << g_MovableMan.IsParticleSettlingEnabled() << "\n";
@@ -1356,6 +1360,8 @@ void LockstepMan::ApplySessionSettings(const std::map<std::string, std::string>&
 		m_SavedSettings["EnableCrabBombs"] = std::to_string(g_SettingsMan.CrabBombsEnabled());
 		m_SavedSettings["CrabBombThreshold"] = std::to_string(g_SettingsMan.GetCrabBombThreshold());
 		m_SavedSettings["SmartBuyMenuNavigation"] = std::to_string(g_SettingsMan.SmartBuyMenuNavigationEnabled());
+		m_SavedSettings["DisableFactionBuyMenuThemes"] = std::to_string(g_SettingsMan.FactionBuyMenuThemesDisabled());
+		m_SavedSettings["RecommendedMOIDCount"] = std::to_string(g_SettingsMan.RecommendedMOIDCount());
 		m_SavedSettings["MaxUnheldItems"] = std::to_string(g_MovableMan.GetMaxDroppedItems());
 		m_SavedSettings["ScrapCompactingHeight"] = std::to_string(g_SceneMan.GetScrapCompactingHeight());
 		m_SavedSettings["EnableParticleSettling"] = std::to_string(g_MovableMan.IsParticleSettlingEnabled());
@@ -1392,6 +1398,8 @@ void LockstepMan::ApplySessionSettings(const std::map<std::string, std::string>&
 	if (intValue("EnableCrabBombs", value)) { g_SettingsMan.SetCrabBombsEnabled(value != 0); }
 	if (intValue("CrabBombThreshold", value)) { g_SettingsMan.SetCrabBombThreshold(value); }
 	if (intValue("SmartBuyMenuNavigation", value)) { g_SettingsMan.SetSmartBuyMenuNavigation(value != 0); }
+	if (intValue("DisableFactionBuyMenuThemes", value)) { g_SettingsMan.SetFactionBuyMenuThemesDisabled(value != 0); }
+	if (intValue("RecommendedMOIDCount", value)) { g_SettingsMan.m_RecommendedMOIDCount = value; }
 	if (intValue("MaxUnheldItems", value)) { g_MovableMan.SetMaxDroppedItems(value); }
 	if (intValue("ScrapCompactingHeight", value)) { g_SceneMan.SetScrapCompactingHeight(value); }
 	if (intValue("EnableParticleSettling", value)) { g_MovableMan.EnableParticleSettling(value != 0); }

@@ -67,7 +67,8 @@ The host rejects a player whose game version, mods, audio availability, math lib
 - particle settling and MO subtraction
 - sim delta time
 - enabled global scripts
-- buy menu options
+- buy menu options, including whether faction buy menu themes are off (they change the skin and fonts of the buy menu and object pickers, so the same click must hit the same row everywhere)
+- recommended MOID count (scripts can read it)
 - which groups the editors' object pickers always show
 
 Local settings are restored afterwards.
