@@ -251,7 +251,7 @@ namespace RTE {
 		/// Gets whether a key is being held right now, by keycode.
 		/// @param keycodeToTest A keycode to test. See SDL_KeyCode enumeration.
 		/// @return Whether the key is held or not.
-		bool KeyHeld(SDL_Keycode keycodeToTest, int whichPlayer = -1) const { return KeyHeld(SDL_GetScancodeFromKey(keycodeToTest, NULL), whichPlayer); }
+		bool KeyHeld(SDL_Keycode keycodeToTest, int whichPlayer = -1) const { return KeyHeld(ScancodeFromKey(keycodeToTest), whichPlayer); }
 		bool KeyHeldKeycode(SDL_Keycode keycodeToTest) const { return KeyHeld(keycodeToTest); } //!< Lua disambiguation helper.
 
 		/// Gets whether a key was pressed between the last update and the one previous to it, by scancode.
@@ -263,7 +263,7 @@ namespace RTE {
 		/// Gets whether a key was pressed between the last update and the one previous to it, by keycode.
 		/// @param keycodeToTest A keycode to test. See SDL_KeyCode enumeration.
 		/// @return Whether the key is pressed or not.
-		bool KeyPressed(SDL_Keycode keycodeToTest, int whichPlayer = -1) const { return KeyPressed(SDL_GetScancodeFromKey(keycodeToTest, NULL), whichPlayer); }
+		bool KeyPressed(SDL_Keycode keycodeToTest, int whichPlayer = -1) const { return KeyPressed(ScancodeFromKey(keycodeToTest), whichPlayer); }
 		bool KeyPressedKeycode(SDL_Keycode keycodeToTest) const { return KeyPressed(keycodeToTest); } //!< Lua disambiguation helper.
 
 		/// Gets whether a key was released between the last update and the one previous to it, by scancode.
@@ -275,7 +275,7 @@ namespace RTE {
 		/// Gets whether a key was released between the last update and the one previous to it, by keycode.
 		/// @param keycodeToTest A keycode to test. See SDL_KeyCode enumeration.
 		/// @return Whether the key is released or not.
-		bool KeyReleased(SDL_Keycode keycodeToTest, int whichPlayer = -1) const { return KeyReleased(SDL_GetScancodeFromKey(keycodeToTest, NULL), whichPlayer); }
+		bool KeyReleased(SDL_Keycode keycodeToTest, int whichPlayer = -1) const { return KeyReleased(ScancodeFromKey(keycodeToTest), whichPlayer); }
 		bool KeyReleasedKeycode(SDL_Keycode keycodeToTest) const { return KeyReleased(keycodeToTest); } //!< Lua disambiguation helper.
 
 		/// Return true if there are any keyboard button presses at all.
@@ -423,6 +423,12 @@ namespace RTE {
 		/// synced input instead of this machine's devices. True during a lockstep session, except while capturing local input or inside a RawInputScope.
 		/// @return Whether raw device queries are virtualized.
 		bool RawInputVirtualized() const { return m_VirtualInputActive && !m_BypassVirtualInput && m_RawInputScopeDepth == 0; }
+
+		/// Gets the scancode of the key that produces a keycode. Normally that depends on this computer's keyboard layout. While raw input is
+		/// virtualized (a co-op match), keys are compared by scancode on every computer, so the US layout is used instead, the same everywhere.
+		/// @param keycode The keycode to look up.
+		/// @return The scancode of the key, or SDL_SCANCODE_UNKNOWN.
+		SDL_Scancode ScancodeFromKey(SDL_Keycode keycode) const;
 
 		/// While alive, raw device queries read this machine's real devices even during a lockstep session. Only for purely local things like the console
 		/// and screenshot shortcuts, never for anything that can affect the simulation.

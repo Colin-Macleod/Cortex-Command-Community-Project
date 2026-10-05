@@ -1596,6 +1596,43 @@ UInputMan::RawInputScope::~RawInputScope() {
 	--g_UInputMan.m_RawInputScopeDepth;
 }
 
+SDL_Scancode UInputMan::ScancodeFromKey(SDL_Keycode keycode) const {
+	if (!RawInputVirtualized()) {
+		return SDL_GetScancodeFromKey(keycode, nullptr);
+	}
+	// Keys that don't type a character have keycodes made from their scancode, whatever the layout.
+	if (keycode & SDLK_SCANCODE_MASK) {
+		return static_cast<SDL_Scancode>(keycode & ~SDLK_SCANCODE_MASK);
+	}
+	if (keycode >= SDLK_A && keycode <= SDLK_Z) {
+		return static_cast<SDL_Scancode>(SDL_SCANCODE_A + (keycode - SDLK_A));
+	}
+	if (keycode >= SDLK_1 && keycode <= SDLK_9) {
+		return static_cast<SDL_Scancode>(SDL_SCANCODE_1 + (keycode - SDLK_1));
+	}
+	switch (keycode) {
+		case SDLK_0: return SDL_SCANCODE_0;
+		case SDLK_RETURN: return SDL_SCANCODE_RETURN;
+		case SDLK_ESCAPE: return SDL_SCANCODE_ESCAPE;
+		case SDLK_BACKSPACE: return SDL_SCANCODE_BACKSPACE;
+		case SDLK_TAB: return SDL_SCANCODE_TAB;
+		case SDLK_SPACE: return SDL_SCANCODE_SPACE;
+		case SDLK_MINUS: return SDL_SCANCODE_MINUS;
+		case SDLK_EQUALS: return SDL_SCANCODE_EQUALS;
+		case SDLK_LEFTBRACKET: return SDL_SCANCODE_LEFTBRACKET;
+		case SDLK_RIGHTBRACKET: return SDL_SCANCODE_RIGHTBRACKET;
+		case SDLK_BACKSLASH: return SDL_SCANCODE_BACKSLASH;
+		case SDLK_SEMICOLON: return SDL_SCANCODE_SEMICOLON;
+		case SDLK_APOSTROPHE: return SDL_SCANCODE_APOSTROPHE;
+		case SDLK_GRAVE: return SDL_SCANCODE_GRAVE;
+		case SDLK_COMMA: return SDL_SCANCODE_COMMA;
+		case SDLK_PERIOD: return SDL_SCANCODE_PERIOD;
+		case SDLK_SLASH: return SDL_SCANCODE_SLASH;
+		case SDLK_DELETE: return SDL_SCANCODE_DELETE;
+		default: return SDL_SCANCODE_UNKNOWN;
+	}
+}
+
 bool UInputMan::GetVirtualKeyState(int whichPlayer, int scancode, InputState whichState) const {
 	if (scancode < 0 || scancode >= 256) {
 		return false;
