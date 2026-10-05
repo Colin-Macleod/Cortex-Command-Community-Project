@@ -87,9 +87,7 @@ function RefineryAssault:HandleMessage(message, object)
 			table.insert(self.saveTable.buyDoorTables.teamAreas[self.humanTeam], "LC1");
 			self:RemoveStringFromTable("LC1", self.saveTable.buyDoorTables.teamAreas[self.aiTeam]);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.LC1) do
-				v.Team = self.humanTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC1, self.humanTeam);
 		else
 			print("NOTHUMAN CAPPED 1");
 			print(self.humanTeam .. " team vs object: " .. object);
@@ -99,9 +97,7 @@ function RefineryAssault:HandleMessage(message, object)
 			table.insert(self.saveTable.buyDoorTables.teamAreas[self.aiTeam], "LC1");
 			self:RemoveStringFromTable("LC1", self.saveTable.buyDoorTables.teamAreas[self.humanTeam]);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.LC1) do
-				v.Team = self.aiTeam;
-			end		
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC1, self.aiTeam);
 		end
 		
 		-- as soon as any of the hack consoles are captured, we don't wanna bother with the stage 1 counterattack anymore.
@@ -126,9 +122,7 @@ function RefineryAssault:HandleMessage(message, object)
 			table.insert(self.saveTable.buyDoorTables.teamAreas[self.humanTeam], "LC2");
 			self:RemoveStringFromTable("LC2", self.saveTable.buyDoorTables.teamAreas[self.aiTeam]);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.LC2) do
-				v.Team = self.humanTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC2, self.humanTeam);
 		else
 			self.stage2HoldingLC2 = false;
 			self.saveTable.stage2HoldingBothConsoles = false;
@@ -136,9 +130,7 @@ function RefineryAssault:HandleMessage(message, object)
 			table.insert(self.saveTable.buyDoorTables.teamAreas[self.aiTeam], "LC2");
 			self:RemoveStringFromTable("LC2", self.saveTable.buyDoorTables.teamAreas[self.humanTeam]);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.LC2) do
-				v.Team = self.aiTeam;
-			end		
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC2, self.aiTeam);
 		end
 		
 		-- as soon as any of the hack consoles are captured, we don't wanna bother with the stage 1 counterattack anymore.
@@ -168,9 +160,7 @@ function RefineryAssault:HandleMessage(message, object)
 		self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2].S3_1 = nil;
 		self:RemoveStringFromTable("S3_1", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_1) do
-			v.Team = object;
-		end	
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S3_1, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -192,9 +182,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S3_2", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_2) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S3_2, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -216,9 +204,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S3_3", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_3) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S3_3, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -373,25 +359,15 @@ function RefineryAssault:HandleMessage(message, object)
 			
 			-- Start using buy doors
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.S4_2) do
-				v.Team = self.aiTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_2, self.aiTeam);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.S4_3) do
-				v.Team = self.aiTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_3, self.aiTeam);
 
-			for k, v in pairs(self.saveTable.buyDoorTables.S4_4) do
-				v.Team = self.aiTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_4, self.aiTeam);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.S4_5) do
-				v.Team = self.aiTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_5, self.aiTeam);
 			
-			for k, v in pairs(self.saveTable.buyDoorTables.S4_6) do
-				v.Team = self.aiTeam;
-			end
+			self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_6, self.aiTeam);
 			
 			
 			-- Ronin prisoner spawns for the side objective
@@ -447,9 +423,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S4_1", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S4_1) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_1, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -471,9 +445,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S4_2", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S4_2) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_2, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -495,9 +467,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S4_3", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S4_3) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_3, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -519,9 +489,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S4_4", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S4_4) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_4, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -543,9 +511,7 @@ function RefineryAssault:HandleMessage(message, object)
 		-- todo make this team selection better somehow... or maybe It Just Works. dunno. it's ugly.
 		self:RemoveStringFromTable("S4_5", self.saveTable.buyDoorTables.teamAreas[(object + 1) % 2]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S4_5) do
-			v.Team = object;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_5, object);
 		
 		-- dupe code woo
 		if object == self.humanTeam then		
@@ -808,23 +774,20 @@ function RefineryAssault:HandleMessage(message, object)
 		table.insert(self.saveTable.buyDoorTables.teamAreas[self.humanTeam], "LC2");
 		self:RemoveStringFromTable("LC2", self.saveTable.buyDoorTables.teamAreas[self.aiTeam]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.LC2) do
-			v.Team = self.humanTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC2, self.humanTeam);
 		
 		table.insert(self.saveTable.buyDoorTables.teamAreas[self.humanTeam], "LC1");
 		self:RemoveStringFromTable("LC1", self.saveTable.buyDoorTables.teamAreas[self.aiTeam]);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.LC1) do
-			v.Team = self.humanTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC1, self.humanTeam);
 		
 		self.tacticsHandler:RemoveTask("Counterattack", self.aiTeam);
 
 	elseif message == "SkipStage3" then
 	
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_1) do
-			if v.Team == 1 then
+		for buyDoorIndex in pairs(self.saveTable.buyDoorTables.S3_1) do
+			local buyDoor = self.buyDoorHandler:GetBuyDoor(buyDoorIndex);
+			if buyDoor and buyDoor.Team == 1 then
 				self:SendMessage("Captured_RefineryS3BuyDoorConsole1", self.humanTeam);
 			end
 			break;
@@ -1050,7 +1013,7 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 		local taskPos;
 		if task then
 			
-			taskPos = task.Position.PresetName and task.Position.Pos or task.Position; -- ghetto MO check
+			taskPos = self.tacticsHandler:GetTaskPosition(task);
 			if taskPos.Name then -- ghetto-er Area check
 				taskPos = taskPos.RandomPoint;
 			end
@@ -1078,14 +1041,17 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 			if #self.saveTable.buyDoorTables.teamAreas[team] > 0 then
 				for k, area in pairs(self.saveTable.buyDoorTables.teamAreas[team]) do
 					--print(area)
-					for k, buyDoor in pairs(self.saveTable.buyDoorTables[area]) do
-						local dist = SceneMan:ShortestDistance(taskPos, buyDoor.Pos, SceneMan.SceneWrapsX).Magnitude;
-						if not closestDist then
-							closestDist = dist;
-							areaThisIsIn = area;
-						elseif dist < closestDist then
-							closestDist = dist;
-							areaThisIsIn = area;
+					for buyDoorIndex in pairs(self.saveTable.buyDoorTables[area]) do
+						local buyDoor = self.buyDoorHandler:GetBuyDoor(buyDoorIndex);
+						if buyDoor then
+							local dist = SceneMan:ShortestDistance(taskPos, buyDoor.Pos, SceneMan.SceneWrapsX).Magnitude;
+							if not closestDist then
+								closestDist = dist;
+								areaThisIsIn = area;
+							elseif dist < closestDist then
+								closestDist = dist;
+								areaThisIsIn = area;
+							end
 						end
 					end
 				end
@@ -1261,9 +1227,7 @@ function RefineryAssault:SetupFirstStage()
 	
 	-- Disable all buy doors, not using them quite yet
 	
-	for k, v in pairs(self.saveTable.buyDoorTables.All) do
-		v.Team = -1
-	end
+	self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.All, -1);
 	
 	-- Set up stage 1 enemy actors
 	
@@ -1439,13 +1403,9 @@ function RefineryAssault:MonitorStage1()
 		
 		-- Start using buydoors
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.LC1) do
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC1, self.aiTeam);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.LC2) do
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.LC2, self.aiTeam);
 		
 		-- Capturable setup
 		
@@ -1631,21 +1591,13 @@ function RefineryAssault:MonitorStage2()
 		
 		-- Start using buy doors
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_1) do
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S3_1, self.aiTeam);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_2) do
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S3_2, self.aiTeam);
 
-		for k, v in pairs(self.saveTable.buyDoorTables.S3_3) do
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S3_3, self.aiTeam);
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.S4_1) do
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.S4_1, self.aiTeam);
 		
 		-- HUD handler
 		

@@ -56,6 +56,17 @@
 
 local TacticsHandler = {};
 
+-- A task whose position is an MO keeps the MO's unique ID (task.PositionMOUniqueID) and its position when the task was added (task.Position), and
+-- looks the MO up whenever it's used: it can be deleted at any time, and its memory then reused by another object. If it's gone, the task goes to
+-- where it was. Unique IDs change on load, so the MO is saved as an object (task.PositionMO, only while saving).
+local function FindTaskPositionMO(task)
+	local mo = task.PositionMOUniqueID and MovableMan:FindObjectByUniqueID(task.PositionMOUniqueID);
+	if mo and MovableMan:ValidMO(mo) then
+		return mo;
+	end
+	return nil;
+end
+
 function TacticsHandler:Create()
 	local Members = {};
 
@@ -128,6 +139,18 @@ function TacticsHandler:OnLoad(saveLoadHandler)
 	print("INFO: TacticsHandler loading...");
 	
 	self.saveTable = saveLoadHandler:ReadSavedStringAsTable("tacticsHandlerSaveTable");
+	for team = 0, #self.saveTable.teamList do
+		for _, task in ipairs(self.saveTable.teamList[team].taskList) do
+			-- Older saves have the MO itself as the position.
+			if type(task.Position) == "userdata" and task.Position.PresetName then
+				task.PositionMO = task.Position;
+				task.Position = Vector(task.Position.Pos.X, task.Position.Pos.Y);
+			end
+			-- The saved MO, if it could be found on load (otherwise it's left as a string).
+			task.PositionMOUniqueID = type(task.PositionMO) == "userdata" and task.PositionMO.UniqueID or nil;
+			task.PositionMO = nil;
+		end
+	end
 	for team = 0, #self.saveTable.teamList do
 		for squad = 1, #self.saveTable.teamList[team].squadList do
 			for actorIndex = 1, #self.saveTable.teamList[team].squadList[squad].Actors do	
@@ -202,7 +225,23 @@ function TacticsHandler:OnSave(saveLoadHandler)
 		-- end
 	-- end
 					
+	for team = 0, #self.saveTable.teamList do
+		for _, task in ipairs(self.saveTable.teamList[team].taskList) do
+			local positionMO = FindTaskPositionMO(task);
+			task.PositionMO = positionMO and IsMOSRotating(positionMO) and ToMOSRotating(positionMO) or nil;
+			if positionMO then
+				task.Position = Vector(positionMO.Pos.X, positionMO.Pos.Y);
+			end
+		end
+	end
+
 	saveLoadHandler:SaveTableAsString("tacticsHandlerSaveTable", self.saveTable);
+
+	for team = 0, #self.saveTable.teamList do
+		for _, task in ipairs(self.saveTable.teamList[team].taskList) do
+			task.PositionMO = nil;
+		end
+	end
 	
 	-- and now so we can actually keep playing...
 	-- turn them back, lol
@@ -218,6 +257,15 @@ function TacticsHandler:OnSave(saveLoadHandler)
 	end
 
 	print("INFO: TacticsHandler saved!");
+end
+
+-- Gets where a task is: the current position of its MO if it has one that still exists, otherwise its Vector or Area.
+function TacticsHandler:GetTaskPosition(task)
+	local positionMO = FindTaskPositionMO(task);
+	if positionMO then
+		return positionMO.Pos;
+	end
+	return task.Position;
 end
 
 function TacticsHandler:ReapplyAllTasks()
@@ -317,8 +365,9 @@ function TacticsHandler:ApplyTaskToSquadActors(squad, task)
 				actor:ClearAIWaypoints();
 				if task.Type == "Defend" or task.Type == "Attack" then
 					actor.AIMode = Actor.AIMODE_GOTO;
-					if task.Position.PresetName then -- ghetto check if this is an MO, IsMOSRotating wigs out
-						actor:AddAIMOWaypoint(task.Position);
+					local positionMO = FindTaskPositionMO(task);
+					if positionMO then
+						actor:AddAIMOWaypoint(positionMO);
 					else
 						actor:AddAISceneWaypoint(task.Position);
 						if task.Type == "Defend" then
@@ -500,7 +549,10 @@ function TacticsHandler:AddTask(name, team, taskPos, taskType, priority, retaskT
 		task.Name = name;
 		task.Type = taskType;
 		task.Position = taskPos;
-		if task.Position.Name and not taskType == "PatrolArea" then -- ghetto isarea check	
+		if task.Position.PresetName then -- ghetto check if this is an MO, IsMOSRotating wigs out
+			task.PositionMOUniqueID = taskPos.UniqueID;
+			task.Position = Vector(taskPos.Pos.X, taskPos.Pos.Y);
+		elseif task.Position.Name and not taskType == "PatrolArea" then -- ghetto isarea check	
 			-- non-patrol task types have no applicable behavior for areas, so just pick a point and stick with it.
 			task.Position = task.Position.RandomPoint;
 		end
@@ -658,7 +710,7 @@ function TacticsHandler:UpdateSquads(team)
 
 							-- all is well, update task
 							
-							local pos = not task.Position.PresetName and task.Position or task.Position.Pos; -- severely ghetto MO check
+							local pos = self:GetTaskPosition(task);
 							
 							if task.Type == "Attack" then
 							

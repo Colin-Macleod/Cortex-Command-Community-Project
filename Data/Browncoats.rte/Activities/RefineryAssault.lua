@@ -102,10 +102,12 @@ function RefineryAssault:SetupBuyDoorAreaTable(self, area)
 		-- end
 	-- end
 	
+	-- The area tables' keys are indexes in the All table, which the buy door handler gets the doors by (looking them up by unique ID, as they can be
+	-- destroyed and their memory reused). The values don't matter.
 	for mo in MovableMan.AddedActors do
 		if mo.PresetName == "Reinforcement Door" and area:IsInside(mo.Pos) then
 			table.insert(self.saveTable.buyDoorTables.All, mo)
-			self.saveTable.buyDoorTables[areaKey][tonumber(#self.saveTable.buyDoorTables.All)] = mo;
+			self.saveTable.buyDoorTables[areaKey][tonumber(#self.saveTable.buyDoorTables.All)] = true;
 		end
 	end
 end
@@ -345,10 +347,7 @@ function RefineryAssault:StartActivity(newGame)
 		self.saveTable.buyDoorTables.teamAreas[self.humanTeam] = {};
 		self.saveTable.buyDoorTables.teamAreas[self.aiTeam] = {"LC1", "LC2", "S3_1", "S3_2", "S3_3", "S4_1", "S4_2", "S4_3", "S4_4", "S4_5", "S4_6"};
 		
-		for k, v in pairs(self.saveTable.buyDoorTables.All) do
-			--print(v)
-			v.Team = self.aiTeam;
-		end
+		self.buyDoorHandler:SetBuyDoorsTeam(self.saveTable.buyDoorTables.All, self.aiTeam);
 		
 		-- Stage function table
 		
@@ -443,6 +442,14 @@ function RefineryAssault:ResumeLoadedGame()
 	self.GameIntensityCalculator:OnLoad(self.saveLoadHandler);
 	
 	self.buyDoorHandler:ReplaceBuyDoorTable(self.saveTable.buyDoorTables.All);
+	-- Older saves have the buy door objects as the area tables' values; only the keys are used, and the objects mustn't be kept (or saved again).
+	for areaKey, areaTable in pairs(self.saveTable.buyDoorTables) do
+		if areaKey ~= "All" and areaKey ~= "teamAreas" then
+			for buyDoorIndex in pairs(areaTable) do
+				areaTable[buyDoorIndex] = true;
+			end
+		end
+	end
 	
 	-- Resume music
 	MusicMan:ResetMusicState()
@@ -451,6 +458,7 @@ end
 
 function RefineryAssault:OnSave()
 	ReplaceAllDeletedSavedMOs(self);
+	self.buyDoorHandler:ReplaceDeletedBuyDoors(); -- The save table's All buy door table is the buy door handler's table.
 	self.saveLoadHandler:SaveTableAsString("saveTable", self.saveTable);
 	
 	self:SaveNumber("stage", self.Stage);
