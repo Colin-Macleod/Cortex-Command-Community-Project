@@ -180,7 +180,11 @@ void MovableMan::UnregisterObject(MovableObject* mo) {
 	}
 
 	std::lock_guard<std::mutex> guard(m_ObjectRegisteredMutex);
-	m_KnownObjects.erase(mo->GetUniqueID());
+	// Unique IDs start over with every Activity, so an object left over from an earlier one (e.g. a Lua-owned one that's garbage collected later) can have
+	// the same ID as a live object. Only remove the entry if it's this object's, or the live object couldn't be found by its ID anymore.
+	if (auto knownObject = m_KnownObjects.find(mo->GetUniqueID()); knownObject != m_KnownObjects.end() && knownObject->second == mo) {
+		m_KnownObjects.erase(knownObject);
+	}
 }
 
 const std::vector<MovableObject*>* MovableMan::GetMOsInBox(const Box& box, int ignoreTeam, bool getsHitByMOsOnly) const {
