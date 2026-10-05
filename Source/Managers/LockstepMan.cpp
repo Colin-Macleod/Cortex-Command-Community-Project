@@ -845,6 +845,9 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 				peer.Player = Players::NoPlayer;
 				HostBuildBundles();
 			}
+			if (matchId == m_MatchId) {
+				peer.InMatch = false;
+			}
 			return;
 		}
 		default:
@@ -953,7 +956,8 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 					reader.Read(frames[player]);
 				}
 			}
-			if (reader.Ok() && matchId == m_MatchId) {
+			// Only while in (or about to start) the match: a client that reconnected during one isn't in it, and would otherwise collect its ticks until it ends.
+			if (reader.Ok() && matchId == m_MatchId && (m_MatchRunning || m_MatchStartPending || m_DeferredMatchStart)) {
 				m_UpdateInputs[simUpdate] = frames;
 			}
 			return;
@@ -1450,6 +1454,7 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 		for (size_t peerIndex = 0; peerIndex < m_Peers.size(); ++peerIndex) {
 			Peer& peer = m_Peers[peerIndex];
 			peer.Player = Players::NoPlayer;
+			peer.InMatch = peer.Accepted && peer.Connected;
 			if (!peer.Accepted || !peer.Connected) {
 				continue;
 			}
@@ -1774,7 +1779,11 @@ void LockstepMan::HostBuildBundles() {
 				tick.Write(frames[player]);
 			}
 		}
-		Broadcast(tick.Data());
+		for (const Peer& peer: m_Peers) {
+			if (peer.InMatch && peer.Accepted && peer.Connected) {
+				Send(tick.Data(), peer.Guid);
+			}
+		}
 		++m_NextBundleUpdate;
 		if (missing) {
 			// After a timeout, restart the wait so the next late bundle gets the full timeout too.

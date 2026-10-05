@@ -189,6 +189,7 @@ namespace RTE {
 			InputDevice Device = InputDevice::DEVICE_KEYB_ONLY; //!< The input device the client plays with.
 			float DigitalAimSpeed = 1.0F; //!< The client's digital aim speed setting.
 			int Player = Players::NoPlayer; //!< The player the client controls in the current match.
+			bool InMatch = false; //!< Whether the client was sent the current match's start (it may have no player and be watching), and hasn't left it.
 			bool Connected = true; //!< Whether the client is still connected.
 			float RoundTripMS = 0; //!< Smoothed round trip time to this client, as seen by the game loop (includes waiting for the next frame to process messages).
 			int RoundTripSamples = 0; //!< How many round trip measurements have been made.
