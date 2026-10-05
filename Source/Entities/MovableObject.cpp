@@ -64,6 +64,7 @@ void MovableObject::Clear() {
 	m_CheckTerrIntersection = false;
 	m_HitsMOs = false;
 	m_pMOToNotHit = 0;
+	m_MOToNotHitUniqueID = 0;
 	m_MOIgnoreTimer.Reset();
 	m_GetsHitByMOs = false;
 	m_IgnoresTeamHits = false;
@@ -226,6 +227,7 @@ int MovableObject::Create(const MovableObject& reference) {
 	m_IgnoresAGHitsWhenSlowerThan = reference.m_IgnoresAGHitsWhenSlowerThan;
 	m_IgnoresActorHits = reference.m_IgnoresActorHits;
 	m_pMOToNotHit = reference.m_pMOToNotHit;
+	m_MOToNotHitUniqueID = reference.m_MOToNotHitUniqueID;
 	m_MOIgnoreTimer = reference.m_MOIgnoreTimer;
 	m_MissionCritical = reference.m_MissionCritical;
 	m_CanBeSquished = reference.m_CanBeSquished;
@@ -515,6 +517,22 @@ void MovableObject::DestroyScriptState() {
 		m_ThreadedLuaState->UnregisterMO(this);
 		m_ThreadedLuaState = nullptr;
 	}
+}
+
+const MovableObject* MovableObject::GetWhichMOToNotHit() const {
+	return g_MovableMan.StoredObjectExists(m_pMOToNotHit, m_MOToNotHitUniqueID) ? m_pMOToNotHit : nullptr;
+}
+
+const MovableObject* MovableObject::GetMOToNotHitForTravel() {
+	if (!m_pMOToNotHit || m_MOIgnoreTimer.IsPastSimTimeLimit()) {
+		return nullptr;
+	}
+	if (!g_MovableMan.StoredObjectExists(m_pMOToNotHit, m_MOToNotHitUniqueID)) {
+		m_pMOToNotHit = nullptr;
+		m_MOToNotHitUniqueID = 0;
+		return nullptr;
+	}
+	return g_MovableMan.ValidMO(m_pMOToNotHit) ? m_pMOToNotHit : nullptr;
 }
 
 void MovableObject::Destroy(bool notInherited) {

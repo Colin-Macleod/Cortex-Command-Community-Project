@@ -156,9 +156,9 @@ void MOPixel::Travel() {
 	}
 
 	// Set the atom to ignore a certain MO, if set and applicable.
-	if (m_HitsMOs && m_pMOToNotHit && g_MovableMan.ValidMO(m_pMOToNotHit) && !m_MOIgnoreTimer.IsPastSimTimeLimit()) {
+	if (const MovableObject* moToNotHit = m_HitsMOs ? GetMOToNotHitForTravel() : nullptr) {
 		std::vector<MOID> MOIDsNotToHit;
-		m_pMOToNotHit->GetMOIDs(MOIDsNotToHit);
+		moToNotHit->GetMOIDs(MOIDsNotToHit);
 		for (const MOID& MOIDNotToHit: MOIDsNotToHit) {
 			m_Atom->AddMOIDToIgnore(MOIDNotToHit);
 		}

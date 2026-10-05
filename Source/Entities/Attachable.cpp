@@ -531,8 +531,10 @@ void Attachable::SetParent(MOSRotating* newParent) {
 			const MovableObject* rootParentMOToNotHit = rootParent->GetWhichMOToNotHit();
 			if ((whichMOToNotHit && whichMOToNotHit != rootParent) || (rootParentMOToNotHit && rootParentMOToNotHit != this)) {
 				m_pMOToNotHit = nullptr;
+				m_MOToNotHitUniqueID = 0;
 			} else {
 				m_pMOToNotHit = rootParent;
+				m_MOToNotHitUniqueID = rootParent->GetUniqueID();
 				rootParent->SetWhichMOToNotHit(this);
 			}
 

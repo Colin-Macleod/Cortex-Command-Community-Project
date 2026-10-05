@@ -489,14 +489,15 @@ namespace RTE {
 		void SetToGetHitByMOs(bool getHitByMOs = true) { m_GetsHitByMOs = getHitByMOs; }
 
 		/// Gets the MO this MO is set not to hit even when MO hitting is enabled on this MO.
-		/// @return The MO this MO is set not to hit.
-		const MovableObject* GetWhichMOToNotHit() const { return m_pMOToNotHit; }
+		/// @return The MO this MO is set not to hit, or nullptr if there's none or it has been deleted since.
+		const MovableObject* GetWhichMOToNotHit() const;
 
 		/// Sets this MO to not hit a specific other MO and all its children even when MO hitting is enabled on this MO.
 		/// @param moToNotHit A pointer to the MO to not be hitting. Null pointer means don't ignore anyhting. Ownership is NOT transferred!
 		/// @param forHowLong How long, in seconds, to ignore the specified MO. A negative number means forever.
 		virtual void SetWhichMOToNotHit(MovableObject* moToNotHit = nullptr, float forHowLong = -1) {
 			m_pMOToNotHit = moToNotHit;
+			m_MOToNotHitUniqueID = moToNotHit ? moToNotHit->GetUniqueID() : 0;
 			m_MOIgnoreTimer.Reset();
 			m_MOIgnoreTimer.SetSimTimeLimitS(forHowLong);
 		}
@@ -1189,8 +1190,14 @@ namespace RTE {
 		bool m_HitsMOs;
 		// Another MovableObject that this should not be hitting even if it is set to hit MOs.
 		MovableObject* m_pMOToNotHit;
+		long m_MOToNotHitUniqueID; //!< The unique ID of m_pMOToNotHit, to tell it from another object that was later given the same memory after it was deleted.
 		// For how long to not hit specific MO above
 		Timer m_MOIgnoreTimer;
+
+		/// Gets the MO this is currently set not to hit, if it's still to be ignored and is in the simulation, for use when travelling. Forgets it if it has been deleted.
+		/// The MO used to be checked by its address only, so after it was deleted, a new MO given its memory could be ignored instead, which differed between computers.
+		/// @return The MO not to hit right now, or nullptr if none.
+		const MovableObject* GetMOToNotHitForTravel();
 		// Whether or not this MovableObject can get hit by other MOs.
 		bool m_GetsHitByMOs;
 		// Whether this ignores collisions with other MOs of the same Team as this.
