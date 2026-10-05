@@ -264,6 +264,16 @@ void LuaAdaptersEntity::SetPresetName(Entity* luaSelfObject, const std::string& 
 	luaSelfObject->SetPresetName(presetName, true);
 }
 
+const MovableObject* LuaAdaptersActor::GetMOMoveTarget(const Actor* luaSelfObject) {
+	const MovableObject* target = luaSelfObject->GetMOMoveTarget();
+	return g_MovableMan.ValidMO(target) ? target : nullptr;
+}
+
+HeldDevice* LuaAdaptersActor::GetItemInReach(const Actor* luaSelfObject) {
+	HeldDevice* item = luaSelfObject->GetItemInReach();
+	return g_MovableMan.IsDevice(item) ? item : nullptr;
+}
+
 std::vector<Vector>* LuaAdaptersActor::GetSceneWaypoints(Actor* luaSelfObject) {
 	std::vector<Vector>* sceneWaypoints = new std::vector<Vector>();
 	sceneWaypoints->reserve(luaSelfObject->GetWaypointsSize());

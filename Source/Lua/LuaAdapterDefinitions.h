@@ -316,6 +316,11 @@ namespace RTE {
 #pragma region Actor Lua Adapters
 	struct LuaAdaptersActor {
 		static std::vector<Vector>* GetSceneWaypoints(Actor* luaSelfObject);
+
+		/// Actors keep these pointers after the object is deleted. Handing a deleted object to Lua crashes in the binding (before any
+		/// MovableMan:ValidMO check in the script can run), so these give nil for objects that no longer exist.
+		static const MovableObject* GetMOMoveTarget(const Actor* luaSelfObject);
+		static HeldDevice* GetItemInReach(const Actor* luaSelfObject);
 	};
 #pragma endregion
 

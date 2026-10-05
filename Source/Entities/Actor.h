@@ -492,6 +492,10 @@ namespace RTE {
 		/// @return A pointer to the MovableObject move target of this Actor.
 		const MovableObject* GetMOMoveTarget() const { return m_pMOMoveTarget; }
 
+		/// Sets the MovableObject this Actor is moving towards, if any.
+		/// @param newTarget The new target, or nullptr for none. Not owned.
+		void SetMOMoveTarget(const MovableObject* newTarget) { m_pMOMoveTarget = newTarget; }
+
 		/// Sets this' perceptiveness to alarming events going on around him.
 		/// @param newPerceptiveness The current perceptiveness, 0.0 - 1.0
 		void SetPerceptiveness(float newPerceptiveness) { m_Perceptiveness = newPerceptiveness; }
