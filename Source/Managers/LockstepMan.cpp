@@ -347,6 +347,12 @@ void LockstepMan::Destroy() {
 }
 
 void LockstepMan::ResetSessionState() {
+	// The host's settings are applied as soon as its match configuration arrives, before the match begins, so leaving in between must restore ours too.
+	RestoreLocalSettings();
+	if (m_Role == Role::Client && (m_MatchStartPending || m_DeferredMatchStart)) {
+		// Don't start the host's Activity on our own after leaving.
+		g_ActivityMan.SetRestartActivity(false);
+	}
 	m_Role = Role::None;
 	m_HostGuid = 0;
 	m_HostAddress.clear();
@@ -360,6 +366,7 @@ void LockstepMan::ResetSessionState() {
 	m_ResolutionRequests = 0;
 	m_AutoStartDone = false;
 	m_MatchStartPending = false;
+	m_DeferredMatchStart = false;
 	m_DelayedMessages.clear();
 }
 
@@ -506,11 +513,7 @@ bool LockstepMan::JoinSession(const std::string& address) {
 
 void LockstepMan::LeaveSession() {
 	if (m_MatchRunning) {
-		if (m_Role == Role::Client && m_ConnectedToHost) {
-			MessageWriter leave(MsgLeave);
-			leave.Write(m_MatchId);
-			SendNow(leave.Data(), m_HostGuid);
-		}
+		// Destroy ends the match, which tells the host we left.
 		g_ActivityMan.EndActivity();
 		g_ActivityMan.SetInActivity(false);
 	}
@@ -683,6 +686,7 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 			m_StatusMessage = m_RejectReason.empty() ? "Lost connection to the host, retrying..." : m_RejectReason;
 			g_ConsoleMan.PrintString("CO-OP: " + m_StatusMessage);
 			if (m_MatchRunning) {
+				m_MatchEndedByHost = true;
 				g_ActivityMan.EndActivity();
 				g_ActivityMan.SetInActivity(false);
 				EndMatch();
@@ -904,6 +908,8 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 				return;
 			}
 			if (m_MatchRunning) {
+				// The host restarted the match.
+				m_MatchEndedByHost = true;
 				EndMatch();
 			}
 			m_MatchId = matchId;
@@ -980,6 +986,7 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			}
 			if (m_MatchRunning) {
 				g_ConsoleMan.PrintString("CO-OP: The host ended the match.");
+				m_MatchEndedByHost = true;
 				g_ActivityMan.EndActivity();
 				g_ActivityMan.SetInActivity(false);
 				EndMatch();
@@ -1507,6 +1514,12 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 	int unusedLocalPlayer = Players::NoPlayer;
 	matchActivity = BuildActivityFromConfig(m_MatchConfig, unusedLocalPlayer);
 	m_LocalPlayer = localPlayer;
+	if (!matchActivity && m_Role == Role::Client && m_ConnectedToHost) {
+		// Otherwise the host would wait for this player to finish loading forever.
+		MessageWriter leave(MsgLeave);
+		leave.Write(m_MatchId);
+		Send(leave.Data(), m_HostGuid);
+	}
 	return matchActivity;
 }
 
@@ -1521,6 +1534,7 @@ void LockstepMan::BeginMatch() {
 	g_UInputMan.BeginVirtualInput(m_LocalPlayer, m_PlayerDevices, m_PlayerDigitalAimSpeeds);
 
 	m_MatchRunning = true;
+	m_MatchEndedByHost = false;
 	m_NextSimUpdate = 0;
 	m_Waiting = false;
 	m_Desynced = false;
@@ -1545,6 +1559,12 @@ void LockstepMan::EndMatch() {
 		MessageWriter endMatch(MsgEndMatch);
 		endMatch.Write(m_MatchId);
 		Broadcast(endMatch.Data());
+	} else if (m_Role == Role::Client && m_ConnectedToHost && !m_MatchEndedByHost) {
+		// However a client's match ended (leaving, the Activity failing to start, the game over screen), tell the host, which would otherwise wait for
+		// this player's input (or, while it's still loading, forever).
+		MessageWriter leave(MsgLeave);
+		leave.Write(m_MatchId);
+		SendNow(leave.Data(), m_HostGuid);
 	}
 	g_TimerMan.SetDeterministicMode(false);
 	g_UInputMan.EndVirtualInput();
@@ -1573,11 +1593,7 @@ void LockstepMan::RequestLeave() {
 		m_LeaveRequestTime = std::chrono::steady_clock::now();
 		return;
 	}
-	if (m_Role == Role::Client) {
-		MessageWriter leave(MsgLeave);
-		leave.Write(m_MatchId);
-		Send(leave.Data(), m_HostGuid);
-	}
+	// EndMatch tells the host, if we're a client.
 	g_ActivityMan.EndActivity();
 	g_ActivityMan.SetInActivity(false);
 	EndMatch();

@@ -234,6 +234,7 @@ namespace RTE {
 		bool m_MatchRunning = false; //!< Whether a lockstep match is running.
 		bool m_MatchStartPending = false; //!< Client: whether a match start was received but not yet acted on.
 		bool m_DeferredMatchStart = false; //!< Client: whether a match start was received that waits for the switch to the host's resolution to complete.
+		bool m_MatchEndedByHost = false; //!< Client: whether the host ended the current match (or the connection to it was lost), so leaving it needn't be reported.
 		GameActivity* m_PendingMatchActivity = nullptr; //!< Client: the Activity built from the host's match configuration. Not owned once handed to ActivityMan.
 		uint32_t m_MatchId = 0; //!< Identifies the current match, so stale messages from a previous one are ignored.
 		std::string m_MatchConfig; //!< The current match's configuration, as sent by the host.
