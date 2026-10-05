@@ -20,7 +20,7 @@ Players outside your local network need to reach your UDP port: forward it on yo
 
 Enter the host's address (e.g. `192.168.1.20`, or `192.168.1.20:7778` for another port) and click **Join Game**. The game keeps retrying until the host is up, and starts the match by itself when the host starts one, whichever menu you're in.
 
-If your game resolution differs from the host's, the game switches to the host's resolution when you join (the screen size affects gameplay, e.g. how far actors can see) and switches back when you leave. If the host's resolution is bigger than your screen, the window is scaled down to fit. If switching fails, the game says so; set a matching resolution in the video settings and join again.
+If your game resolution differs from the host's, the game switches to the host's resolution when you join (the screen size affects gameplay, e.g. how far actors can see), checks it again whenever the host starts a match (in case either of you changed it in the video settings meanwhile), and switches back when you leave. If the host's resolution is bigger than your screen, the window is scaled down to fit. If switching fails, the game says so; set a matching resolution in the video settings and join again.
 
 **Leave Session** disconnects. Leaving the main menu screen doesn't.
 

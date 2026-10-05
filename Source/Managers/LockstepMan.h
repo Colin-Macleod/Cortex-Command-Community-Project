@@ -233,6 +233,7 @@ namespace RTE {
 		// Match state
 		bool m_MatchRunning = false; //!< Whether a lockstep match is running.
 		bool m_MatchStartPending = false; //!< Client: whether a match start was received but not yet acted on.
+		bool m_DeferredMatchStart = false; //!< Client: whether a match start was received that waits for the switch to the host's resolution to complete.
 		GameActivity* m_PendingMatchActivity = nullptr; //!< Client: the Activity built from the host's match configuration. Not owned once handed to ActivityMan.
 		uint32_t m_MatchId = 0; //!< Identifies the current match, so stale messages from a previous one are ignored.
 		std::string m_MatchConfig; //!< The current match's configuration, as sent by the host.
@@ -311,6 +312,15 @@ namespace RTE {
 
 		/// Client: sends the hello message, which the host checks before accepting us.
 		void SendHello();
+
+		/// Client: switches to the host's resolution, remembering the local one to restore when leaving. Not possible while in an Activity.
+		/// @param resX The host's horizontal resolution.
+		/// @param resY The host's vertical resolution.
+		/// @return Whether the resolution was changed to the host's.
+		bool SwitchToHostResolution(int resX, int resY);
+
+		/// Client: builds the Activity from the match configuration the host sent (m_MatchConfig) and sets it to start.
+		void FinishMatchStartFromHost();
 
 		/// Forgets all session and connection state, after the network peer has been shut down.
 		void ResetSessionState();

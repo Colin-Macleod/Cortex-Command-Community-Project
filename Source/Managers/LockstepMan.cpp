@@ -90,6 +90,8 @@ namespace {
 	constexpr int c_StalledEscapeDelayMS = 3000; //!< How long the sim must have been stalled before Esc is read outside the sim update.
 
 	constexpr int c_MaxResolutionRequests = 2; //!< How many times a client tries switching to the host's resolution before giving up.
+	constexpr int c_MinResolution = 200; //!< Smallest resolution (each way) a client accepts switching to.
+	constexpr int c_MaxResolution = 16384; //!< Largest resolution (each way) a client accepts switching to.
 
 	static_assert(InputElements::INPUT_COUNT <= 64, "VirtualInputFrame keeps input elements in 64-bit masks.");
 
@@ -880,7 +882,7 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 				return;
 			}
 			const std::string resolutionText = std::to_string(resX) + "x" + std::to_string(resY);
-			if (++m_ResolutionRequests > c_MaxResolutionRequests) {
+			if (++m_ResolutionRequests > c_MaxResolutionRequests || !SwitchToHostResolution(resX, resY)) {
 				m_RejectReason = "Could not switch to the host's resolution (" + resolutionText + "). Set it in the video settings and join again.";
 				m_StatusMessage = m_RejectReason;
 				g_ConsoleMan.PrintString("CO-OP: " + m_RejectReason);
@@ -888,20 +890,6 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 				m_ConnectedToHost = false;
 				return;
 			}
-			if (m_LocalResX == 0) {
-				m_LocalResX = g_WindowMan.GetResX();
-				m_LocalResY = g_WindowMan.GetResY();
-				m_LocalResMultiplier = g_WindowMan.GetResMultiplier();
-			}
-			float multiplier = g_WindowMan.GetResMultiplier();
-			if (!g_WindowMan.IsFullscreen()) {
-				// Keep the window on the screen.
-				const float fitMultiplier = std::min(static_cast<float>(g_WindowMan.GetMaxResX()) / static_cast<float>(resX), static_cast<float>(g_WindowMan.GetMaxResY()) / static_cast<float>(resY));
-				multiplier = std::max(0.25F, std::min(multiplier, fitMultiplier));
-			}
-			g_ConsoleMan.PrintString("CO-OP: Switching to the host's resolution, " + resolutionText + ".");
-			g_WindowMan.ChangeResolution(resX, resY, multiplier, g_WindowMan.IsFullscreen());
-			m_ChangedResolution = g_WindowMan.ResolutionChanged();
 			SendHello();
 			return;
 		}
@@ -921,26 +909,29 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			m_MatchId = matchId;
 			m_MatchConfig = config;
 			m_UpdateInputs.clear();
+			m_MatchStartPending = false;
+			m_DeferredMatchStart = false;
+			m_LocalPlayer = (yourPlayer >= Players::PlayerOne && yourPlayer < Players::MaxPlayerCount) ? yourPlayer : Players::NoPlayer;
 
-			int localPlayer = Players::NoPlayer;
-			GameActivity* activity = BuildActivityFromConfig(config, localPlayer);
-			m_LocalPlayer = yourPlayer;
-			if (!activity) {
-				m_StatusMessage = "Could not create the host's activity. Are the same mods installed?";
-				g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_StatusMessage);
-				// Otherwise the host would wait for this player to finish loading forever.
-				MessageWriter leave(MsgLeave);
-				leave.Write(m_MatchId);
-				Send(leave.Data(), m_HostGuid);
+			// The screen size affects the simulation, and the host's may have changed since we joined (or ours may have), so it's checked for every match.
+			const std::map<std::string, std::string> values = ParseKeyValues(config);
+			const int resX = ToInt(values, "resX");
+			const int resY = ToInt(values, "resY");
+			if (resX > 0 && resY > 0 && (resX != g_WindowMan.GetResX() || resY != g_WindowMan.GetResY())) {
+				if (!SwitchToHostResolution(resX, resY)) {
+					m_StatusMessage = "Could not switch to the host's resolution (" + std::to_string(resX) + "x" + std::to_string(resY) + ") for the match. Set it in the video settings.";
+					g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_StatusMessage);
+					// Otherwise the host would wait for this player to finish loading forever.
+					MessageWriter leave(MsgLeave);
+					leave.Write(m_MatchId);
+					Send(leave.Data(), m_HostGuid);
+					return;
+				}
+				// The menus finish the resolution change at the start of the next frame; the match starts after that (see Update).
+				m_DeferredMatchStart = true;
 				return;
 			}
-			for (long long simUpdate = 0; simUpdate < m_InputDelay; ++simUpdate) {
-				m_UpdateInputs[simUpdate] = {};
-			}
-			g_ActivityMan.SetStartActivity(activity);
-			g_ActivityMan.SetRestartActivity();
-			m_MatchStartPending = true;
-			g_ConsoleMan.PrintString("CO-OP: The host started \"" + activity->GetPresetName() + "\". You are player " + std::to_string(m_LocalPlayer + 1) + ".");
+			FinishMatchStartFromHost();
 			return;
 		}
 		case MsgTick: {
@@ -998,6 +989,53 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 		}
 		default:
 			return;
+	}
+}
+
+bool LockstepMan::SwitchToHostResolution(int resX, int resY) {
+	if (resX < c_MinResolution || resY < c_MinResolution || resX > c_MaxResolution || resY > c_MaxResolution || g_ActivityMan.IsInActivity()) {
+		return false;
+	}
+	if (m_LocalResX == 0) {
+		m_LocalResX = g_WindowMan.GetResX();
+		m_LocalResY = g_WindowMan.GetResY();
+		m_LocalResMultiplier = g_WindowMan.GetResMultiplier();
+	}
+	float multiplier = g_WindowMan.GetResMultiplier();
+	if (!g_WindowMan.IsFullscreen()) {
+		// Keep the window on the screen.
+		const float fitMultiplier = std::min(static_cast<float>(g_WindowMan.GetMaxResX()) / static_cast<float>(resX), static_cast<float>(g_WindowMan.GetMaxResY()) / static_cast<float>(resY));
+		multiplier = std::max(0.25F, std::min(multiplier, fitMultiplier));
+	}
+	g_ConsoleMan.PrintString("CO-OP: Switching to the host's resolution, " + std::to_string(resX) + "x" + std::to_string(resY) + ".");
+	g_WindowMan.ChangeResolution(resX, resY, multiplier, g_WindowMan.IsFullscreen());
+	m_ChangedResolution = g_WindowMan.ResolutionChanged();
+	return g_WindowMan.GetResX() == resX && g_WindowMan.GetResY() == resY;
+}
+
+void LockstepMan::FinishMatchStartFromHost() {
+	m_DeferredMatchStart = false;
+	int unusedLocalPlayer = Players::NoPlayer;
+	GameActivity* activity = BuildActivityFromConfig(m_MatchConfig, unusedLocalPlayer);
+	if (!activity) {
+		m_StatusMessage = "Could not create the host's activity. Are the same mods installed?";
+		g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_StatusMessage);
+		// Otherwise the host would wait for this player to finish loading forever.
+		MessageWriter leave(MsgLeave);
+		leave.Write(m_MatchId);
+		Send(leave.Data(), m_HostGuid);
+		return;
+	}
+	for (long long simUpdate = 0; simUpdate < m_InputDelay; ++simUpdate) {
+		m_UpdateInputs[simUpdate] = {};
+	}
+	g_ActivityMan.SetStartActivity(activity);
+	g_ActivityMan.SetRestartActivity();
+	m_MatchStartPending = true;
+	if (m_LocalPlayer == Players::NoPlayer) {
+		g_ConsoleMan.PrintString("CO-OP: The host started \"" + activity->GetPresetName() + "\", which has no free player slot for you. You're watching this match.");
+	} else {
+		g_ConsoleMan.PrintString("CO-OP: The host started \"" + activity->GetPresetName() + "\". You are player " + std::to_string(m_LocalPlayer + 1) + ".");
 	}
 }
 
@@ -1086,6 +1124,9 @@ std::string LockstepMan::SerializeMatchConfig(const GameActivity* activity) cons
 		config << "playerAimSpeedBits" << player << "=" << std::bit_cast<uint32_t>(m_PlayerDigitalAimSpeeds[player]) << "\n";
 	}
 	config << "inputDelay=" << m_InputDelay << "\n";
+	// The screen size affects the simulation. Clients switch to it before starting the match.
+	config << "resX=" << g_WindowMan.GetResX() << "\n";
+	config << "resY=" << g_WindowMan.GetResY() << "\n";
 
 	// Settings that affect the simulation. Clients use the host's values for the duration of the match.
 	config << "set.AIUpdateInterval=" << g_SettingsMan.GetAIUpdateInterval() << "\n";
@@ -1555,6 +1596,10 @@ void LockstepMan::Update() {
 		if (packet->length > 0) {
 			HandlePacket(packet);
 		}
+	}
+
+	if (m_DeferredMatchStart && !g_WindowMan.ResolutionChanged()) {
+		FinishMatchStartFromHost();
 	}
 
 	if (m_Role == Role::Client && !m_ConnectedToHost && m_RejectReason.empty() && ElapsedMS(m_WaitingSince) > c_ReconnectIntervalMS) {
