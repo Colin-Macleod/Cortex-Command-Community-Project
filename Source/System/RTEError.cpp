@@ -36,6 +36,8 @@
 
 #include "backward/backward.hpp"
 
+#include <new>
+
 
 using namespace RTE;
 
@@ -53,16 +55,35 @@ namespace {
 
 	/// Says which Lua script was running, with a Lua stack traceback, before handing a crash on to the previous handler (backward's stack trace).
 	/// A crash inside a script binding (e.g. a script touching an object that was deleted) otherwise only shows a C++ stack through LuaJIT.
-	void LuaCrashContextHandler(int signalNumber, siginfo_t* info, void* context) {
+	/// Prints which Lua script is running on this thread, if any, with a Lua stack traceback.
+	void PrintLuaContext(const char* what) {
 		if (LuaStateWrapper* luaState = g_LuaMan.GetThreadCurrentLuaState()) {
 			const std::string_view scriptPath = luaState->GetCurrentlyRunningScriptFilePath();
-			std::fprintf(stderr, "Crashed while running Lua script \"%.*s\"\n", static_cast<int>(scriptPath.size()), scriptPath.data());
+			std::fprintf(stderr, "%s while running Lua script \"%.*s\"\n", what, static_cast<int>(scriptPath.size()), scriptPath.data());
 			lua_State* state = luaState->GetLuaState();
 			luaL_traceback(state, state, nullptr, 0);
 			const char* traceback = lua_tostring(state, -1);
 			std::fprintf(stderr, "%s\n", traceback ? traceback : "(no Lua traceback)");
 			std::fflush(stderr);
 		}
+	}
+
+	/// Called when an allocation fails, before std::bad_alloc is thrown: says where, which the exception can't once it has unwound the stack.
+	/// Usually a request for an absurd amount of memory computed from a bad size, rather than actually running out.
+	void AllocationFailureHandler() {
+		std::set_new_handler(nullptr);
+		std::fprintf(stderr, "Memory allocation failed. Stack trace:\n");
+		PrintLuaContext("Allocation failed");
+		backward::StackTrace stackTrace;
+		stackTrace.load_here(48);
+		backward::Printer printer;
+		printer.print(stackTrace, stderr);
+		std::fflush(stderr);
+		// Returning with no handler set makes the allocation throw std::bad_alloc as usual.
+	}
+
+	void LuaCrashContextHandler(int signalNumber, siginfo_t* info, void* context) {
+		PrintLuaContext("Crashed");
 		const struct sigaction& previous = s_PreviousCrashHandlers[signalNumber];
 		if (previous.sa_flags & SA_SIGINFO) {
 			previous.sa_sigaction(signalNumber, info, context);
@@ -234,6 +255,7 @@ void RTEError::SetExceptionHandlers() {
 	// Constructed here rather than as a global, so it's certainly installed before the handler below chains to it (globals in different files are
 	// constructed in no particular order, and SetExceptionHandlers runs during static initialization).
 	static backward::SignalHandling backwardSignalHandling;
+	std::set_new_handler(AllocationFailureHandler);
 	for (int signalNumber: {SIGSEGV, SIGBUS, SIGFPE, SIGILL}) {
 		struct sigaction action {};
 		action.sa_sigaction = LuaCrashContextHandler;
