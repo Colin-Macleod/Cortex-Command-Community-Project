@@ -100,6 +100,7 @@ Always on:
 
 - A fixed number of Lua states.
 - Per-state RNGs and unique ID ranges.
+- Each scripted object runs in the Lua state picked by its unique ID. It used to be whichever state's turn it was, and every object loading scripts on the main thread took a turn, including ones outside the simulation, so the same object could run in a different state (and draw from a different random generator) on another computer.
 - Ordered script registration.
 - Terrain cleaning and fog-of-war reveal processing done in the sim update instead of when drawing.
 - LuaJIT built without randomised string hashing, and with string IDs (which Lua tables hash string keys by) computed from the string's content instead of the order strings were created in. Otherwise `pairs()` over string keys would depend on everything a Lua state had ever done, which differs between computers.
@@ -146,6 +147,8 @@ All on one Linux machine, two to three game instances, bots driving every player
 The stress test suite (`Tools/Determinism/stress/stress.py`, see `Tools/Determinism/README.md`) then passed every scenario: identical on every peer for 2000-4000 sim updates of constant war in the *Determinism Chaos* test activity (2 and 4 players), with the client's math library on its non-FMA code paths, with one peer starved onto a single CPU core, with random frame pacing, with scrambled memory and no ASLR, under a different locale, over a bad network with a client frozen for 5 seconds, in eight stock activities, and for a 20000-update (about 5.5 minutes) chaos match. The negative tests were caught: a deliberately perturbed peer (desync reported in game) and a mismatched math library (refused at join).
 
 Getting there, the suite found and the fixes cover: LuaJIT ordering string-keyed tables by creation history, a heap-corrupting use-after-free in the audio code when objects were deleted mid-sound (found with an AddressSanitizer build), a crash on a missing sound channel entry, actors reading items and move targets that had been deleted, and flames reading the object they stuck to after it was deleted.
+
+A later AddressSanitizer sweep over every stock activity found more objects being read after deletion: a brain deleted from the item or particle list (and, in co-op, a brain shared by two players), a drop ship in Decision Day, and about 40 shipped scripts that kept objects across updates (homing and sticky projectiles, the grapple gun, self-healing, the medic drone, objectives that follow objects, and more). These now look objects up by unique ID each update. Under heavy CPU load it also showed rare desyncs that start in the Lua random generators while every object is still identical; the Lua state assignment described above is the likely cause and was changed. `CCCP_DT_DUMP_RING` and `CCCP_DT_LUA_RNG_LOG` (see `Tools/Determinism/README.md`) were added to pin such cases down.
 
 ## Known limitations
 

@@ -137,7 +137,7 @@ LuaStateWrapper& MovableObject::GetAndLockStateForScript(const std::string& scri
 	}
 
 	if (m_ThreadedLuaState == nullptr) {
-		m_ThreadedLuaState = g_LuaMan.GetAndLockFreeScriptState();
+		m_ThreadedLuaState = g_LuaMan.GetAndLockFreeScriptState(m_UniqueID);
 	} else {
 		m_ThreadedLuaState->GetMutex().lock();
 	}
@@ -233,6 +233,8 @@ int MovableObject::Create(const MovableObject& reference) {
 	m_PostEffectEnabled = reference.m_PostEffectEnabled;
 
 	m_ForceIntoMasterLuaState = reference.m_ForceIntoMasterLuaState;
+	// Before loading scripts, which pick this object's Lua state by its unique ID.
+	m_UniqueID = MovableObject::GetNextUniqueID();
 	for (const auto& scriptPath: reference.m_AllLoadedScripts) {
 		LoadScript(scriptPath, reference.m_EnabledScripts.at(scriptPath));
 	}
@@ -274,7 +276,6 @@ int MovableObject::Create(const MovableObject& reference) {
 	m_NumberValueMap = reference.m_NumberValueMap;
 	m_ObjectValueMap = reference.m_ObjectValueMap;
 
-	m_UniqueID = MovableObject::GetNextUniqueID();
 	g_MovableMan.RegisterObject(this);
 
 	return 0;

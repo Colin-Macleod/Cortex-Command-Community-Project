@@ -351,8 +351,9 @@ namespace RTE {
 
 		/// Returns a free threaded script states to assign a movableobject to.
 		/// This will be locked to our thread and safe to use - ensure that it'll be unlocked after use!
+		/// @param uniqueID The unique ID of the object the state is for, which picks the state, so it's the same on every co-op peer. 0 to take turns instead.
 		/// @return A script state.
-		LuaStateWrapper* GetAndLockFreeScriptState();
+		LuaStateWrapper* GetAndLockFreeScriptState(long uniqueID = 0);
 
 		/// Clears internal Lua package tables from all user-defined modules. Those must be reloaded with ReloadAllScripts().
 		void ClearUserModuleCache();

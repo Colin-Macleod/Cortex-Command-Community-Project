@@ -411,7 +411,7 @@ LuaStateWrapper* LuaMan::GetThreadCurrentLuaState() const {
 	return s_currentLuaState;
 }
 
-LuaStateWrapper* LuaMan::GetAndLockFreeScriptState() {
+LuaStateWrapper* LuaMan::GetAndLockFreeScriptState(long uniqueID) {
 	if (s_luaStateOverride) {
 		// We're creating this object in a multithreaded environment, ensure that it's assigned to the same script state as us
 		bool success = s_luaStateOverride->GetMutex().try_lock();
@@ -429,8 +429,16 @@ LuaStateWrapper* LuaMan::GetAndLockFreeScriptState() {
 
 	return &(*itr);*/
 
-	int ourState = m_LastAssignedLuaState;
-	m_LastAssignedLuaState = (m_LastAssignedLuaState + 1) % m_ScriptStates.size();
+	// By the object's unique ID when it has one, rather than taking turns: the turn counter is shared by every object loading scripts on this
+	// thread, including ones that aren't part of the simulation (e.g. objects shown in menus) and so may differ between co-op peers. An object
+	// that ran its scripts in a different Lua state on another peer would draw different random numbers from that state's generator.
+	int ourState;
+	if (uniqueID > 0) {
+		ourState = static_cast<int>(uniqueID % static_cast<long>(m_ScriptStates.size()));
+	} else {
+		ourState = m_LastAssignedLuaState;
+		m_LastAssignedLuaState = (m_LastAssignedLuaState + 1) % m_ScriptStates.size();
+	}
 
 	bool success = m_ScriptStates[ourState].GetMutex().try_lock();
 	RTEAssert(success, "Script mutex was already locked while in a non-multithreaded environment!");
