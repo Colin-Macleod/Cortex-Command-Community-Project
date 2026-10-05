@@ -801,7 +801,8 @@ FMOD_RESULT AudioMan::UpdatePositionalEffectsForSoundChannel(FMOD::Channel* soun
 
 	float panLevel;
 	result = result == FMOD_OK ? soundChannel->get3DLevel(&panLevel) : result;
-	if (result == FMOD_OK && (panLevel < 1.0F || attenuatedVolume == 0.0F)) {
+	// A sound whose SoundContainer was deleted while it played keeps its last volume.
+	if (result == FMOD_OK && channelSoundContainer && (panLevel < 1.0F || attenuatedVolume == 0.0F)) {
 		result = soundChannel->setVolume(attenuatedVolume * channelSoundContainer->GetVolume());
 	}
 
