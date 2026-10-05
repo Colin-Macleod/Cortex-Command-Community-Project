@@ -385,6 +385,19 @@ uint64_t LuaMan::GetNextDeterministicOrderKey() {
 }
 
 void LuaMan::ResetStatesForNewActivity() {
+	// Collect all the garbage left over from before this Activity (menus, an earlier Activity, single player), so Lua-owned engine objects from then are freed now,
+	// before unique IDs start over, rather than at some point during the Activity. How much is left over differs between computers in a co-op match.
+	m_GarbageCollectionTask.wait();
+	auto collectAllGarbage = [](LuaStateWrapper& luaState) {
+		std::lock_guard<std::recursive_mutex> lock(luaState.GetMutex());
+		lua_gc(luaState.GetLuaState(), LUA_GCCOLLECT, 0);
+		lua_gc(luaState.GetLuaState(), LUA_GCSTOP, 0);
+	};
+	collectAllGarbage(m_MasterScriptState);
+	for (LuaStateWrapper& luaState: m_ScriptStates) {
+		collectAllGarbage(luaState);
+	}
+
 	m_MasterScriptState.m_RandomGenerator.Seed(0x9E3779B97F4A7C15ULL);
 	m_MainThreadOrderKeyCounter = 0;
 	const long long uniqueIDRangeSize = (static_cast<long long>(std::numeric_limits<int32_t>::max()) - MovableObject::c_FirstThreadedUniqueID) / std::max<long long>(1, m_ScriptStates.size());
