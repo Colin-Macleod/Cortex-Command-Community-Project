@@ -4,9 +4,13 @@
 #include "LuaBindingRegisterDefinitions.h"
 #include "ThreadMan.h"
 #include "System.h"
+#include "TimerMan.h"
 
 #include "tracy/Tracy.hpp"
 #include "tracy/TracyLua.hpp"
+
+#include <fstream>
+#include <mutex>
 
 using namespace RTE;
 
@@ -281,19 +285,45 @@ void LuaStateWrapper::Destroy() {
 	lua_close(m_State);
 }
 
+namespace {
+	/// Testing aid: with CCCP_DT_LUA_RNG_LOG=<path>, every draw scripts make from a Lua state's generator is logged with the sim update and the
+	/// Lua call stack, so the logs of two co-op peers show which script drew differently.
+	void LogLuaRandomDraw(lua_State* state, const char* kind) {
+		static const char* logPath = std::getenv("CCCP_DT_LUA_RNG_LOG");
+		if (!logPath) {
+			return;
+		}
+		static std::mutex logMutex;
+		static std::ofstream log(logPath, std::ios::out | std::ios::trunc);
+		std::string line = std::to_string(g_TimerMan.GetSimUpdateCount()) + " " + kind;
+		lua_Debug debugInfo;
+		for (int level = 1; level <= 4 && lua_getstack(state, level, &debugInfo); ++level) {
+			if (lua_getinfo(state, "Sl", &debugInfo)) {
+				line += std::string(" ") + debugInfo.short_src + ":" + std::to_string(debugInfo.currentline);
+			}
+		}
+		std::lock_guard<std::mutex> lock(logMutex);
+		log << line << "\n";
+	}
+} // namespace
+
 int LuaStateWrapper::SelectRand(int minInclusive, int maxInclusive) {
+	LogLuaRandomDraw(m_State, "select");
 	return m_RandomGenerator.RandomNum<int>(minInclusive, maxInclusive);
 }
 
 double LuaStateWrapper::RangeRand(double minInclusive, double maxInclusive) {
+	LogLuaRandomDraw(m_State, "range");
 	return m_RandomGenerator.RandomNum<double>(minInclusive, maxInclusive);
 }
 
 double LuaStateWrapper::NormalRand() {
+	LogLuaRandomDraw(m_State, "normal");
 	return m_RandomGenerator.RandomNormalNum<double>();
 }
 
 double LuaStateWrapper::PosRand() {
+	LogLuaRandomDraw(m_State, "pos");
 	return m_RandomGenerator.RandomNum<double>();
 }
 

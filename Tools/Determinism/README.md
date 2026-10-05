@@ -23,7 +23,7 @@ Tools/Determinism/compare_logs.py /tmp/a.log /tmp/b.log
 
 Headless on Linux: `xvfb-run -a -s "-screen 0 1280x720x24" ./CortexCommand`.
 
-The other `CCCP_DT_*` variables are documented in `DeterminismHarness.h`. They select the activity, scene and fog of war, request per-object dumps at chosen ticks, and set how often the terrain is hashed.
+The other `CCCP_DT_*` variables are documented in `DeterminismHarness.h`. They select the activity, scene and fog of war, request per-object dumps at chosen ticks, and set how often the terrain is hashed. For desyncs that don't reproduce on demand, `CCCP_DT_DUMP_RING=<N>` keeps per-object dumps of the last N ticks in memory and writes them (`Userdata/CoopDesync_*.txt.ring<tick>`) when a co-op desync is detected, so both peers' dumps of the first diverging tick (from the hash logs) can be diffed.
 
 ### Finding the call site that diverged (RNG tracing)
 

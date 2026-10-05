@@ -46,6 +46,8 @@ bool DeterminismHarness::s_SyncBeforeTerrainHash = false;
 std::string DeterminismHarness::s_ActivityName = "Bunker Breach";
 std::string DeterminismHarness::s_SceneName = "Zekarra Mining Outpost";
 std::set<long long> DeterminismHarness::s_DumpTicks;
+size_t DeterminismHarness::s_DumpRingSize = 0;
+std::deque<std::pair<long long, std::string>> DeterminismHarness::s_DumpRing;
 uint64_t DeterminismHarness::s_LastTerrainHash = 0;
 bool DeterminismHarness::s_ObserveOnly = false;
 bool DeterminismHarness::s_RandomTicksPerFrame = false;
@@ -258,6 +260,9 @@ void DeterminismHarness::Initialize() {
 		}
 		g_TimerMan.SetDeterministicMode(deterministic);
 	}
+	if (const char* value = std::getenv("CCCP_DT_DUMP_RING")) {
+		s_DumpRingSize = static_cast<size_t>(std::max(0, std::atoi(value)));
+	}
 	if (const char* value = std::getenv("CCCP_DT_DUMP_TICKS")) {
 		std::stringstream stream(value);
 		std::string item;
@@ -412,9 +417,34 @@ void DeterminismHarness::EndOfSimUpdate() {
 	if (s_DumpTicks.count(s_Tick)) {
 		WriteStateDump(s_LogPath + ".dump" + std::to_string(s_Tick));
 	}
+	if (s_DumpRingSize > 0) {
+		std::string dump = "# tick " + std::to_string(s_Tick) + "\n# actors\n";
+		for (const Actor* actor: g_MovableMan.m_Actors) {
+			dump += FormatMO(actor) + "\n";
+		}
+		dump += "# items\n";
+		for (const MovableObject* item: g_MovableMan.m_Items) {
+			dump += FormatMO(item) + "\n";
+		}
+		dump += "# particles\n";
+		for (const MovableObject* particle: g_MovableMan.m_Particles) {
+			dump += FormatMO(particle) + "\n";
+		}
+		s_DumpRing.emplace_back(s_Tick, std::move(dump));
+		while (s_DumpRing.size() > s_DumpRingSize) {
+			s_DumpRing.pop_front();
+		}
+	}
 	if (s_Tick >= s_TicksToRun) {
 		s_Log.flush();
 		System::SetQuit(true);
+	}
+}
+
+void DeterminismHarness::WriteDumpRing(const std::string& pathPrefix) {
+	for (const auto& [tick, dump]: s_DumpRing) {
+		std::ofstream file(pathPrefix + ".ring" + std::to_string(tick), std::ios::out | std::ios::trunc);
+		file << dump;
 	}
 }
 

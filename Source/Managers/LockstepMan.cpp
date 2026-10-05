@@ -45,6 +45,7 @@ namespace {
 	constexpr int c_InputTimeoutMS = 3000; //!< How long the host waits for a player's late input before repeating their previous input.
 	constexpr int c_WaitingOverlayDelayMS = 250; //!< How long to wait for input before showing "waiting for players".
 	constexpr int c_LeaveConfirmMS = 3000; //!< How long a first Esc press stays armed.
+	constexpr int c_ConnectionTimeoutMS = 30000; //!< How long a connection may go silent before it's considered lost. Generous, as loading a big scene on a slow machine can starve the network thread.
 	constexpr int c_ReconnectIntervalMS = 2000; //!< How often a client retries connecting to a host that isn't up yet.
 	constexpr int c_LagIdleMS = 10000; //!< After lagging this long, a player's held input is no longer repeated, so their actor stops instead of e.g. firing forever.
 	constexpr long long c_MaxInputLead = 600; //!< Input or checksums for sim updates further ahead than this are ignored (a buggy or malicious peer could otherwise grow the queues without bound).
@@ -402,7 +403,7 @@ bool LockstepMan::StartHosting(unsigned short port) {
 		return false;
 	}
 	m_Peer->SetMaximumIncomingConnections(c_MaxClients);
-	m_Peer->SetTimeoutTime(10000, RakNet::UNASSIGNED_SYSTEM_ADDRESS);
+	m_Peer->SetTimeoutTime(c_ConnectionTimeoutMS, RakNet::UNASSIGNED_SYSTEM_ADDRESS);
 	m_Role = Role::Host;
 	m_StatusMessage = "Hosting co-op on port " + std::to_string(port);
 	g_ConsoleMan.PrintString("CO-OP: " + m_StatusMessage);
@@ -418,7 +419,7 @@ bool LockstepMan::StartJoining(const std::string& address, unsigned short port) 
 		m_Peer = nullptr;
 		return false;
 	}
-	m_Peer->SetTimeoutTime(10000, RakNet::UNASSIGNED_SYSTEM_ADDRESS);
+	m_Peer->SetTimeoutTime(c_ConnectionTimeoutMS, RakNet::UNASSIGNED_SYSTEM_ADDRESS);
 	m_Role = Role::Client;
 	m_HostAddress = address + ":" + std::to_string(port);
 	m_WaitingSince = std::chrono::steady_clock::now() - std::chrono::milliseconds(c_ReconnectIntervalMS);
@@ -1327,6 +1328,7 @@ void LockstepMan::ReportDesync(long long simUpdate, const std::string& descripti
 	g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_DesyncMessage);
 	std::string dumpPath = System::GetWorkingDirectory() + System::GetUserdataDirectory() + "CoopDesync_" + (m_Role == Role::Host ? std::string("Host") : std::string("Client")) + "_" + std::to_string(simUpdate) + ".txt";
 	DeterminismHarness::WriteStateDump(dumpPath);
+	DeterminismHarness::WriteDumpRing(dumpPath);
 	g_ConsoleMan.PrintString("CO-OP: Wrote state dump to " + dumpPath);
 }
 

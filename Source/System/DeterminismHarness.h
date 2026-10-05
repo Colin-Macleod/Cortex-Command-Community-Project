@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <fstream>
 #include <random>
 #include <set>
 #include <string>
+#include <utility>
 
 namespace RTE {
 
@@ -24,6 +26,8 @@ namespace RTE {
 	///   CCCP_DT_SCENE       Scene preset name (default "Zekarra Mining Outpost").
 	///   CCCP_DT_FOG         1 to enable fog of war, 0 to disable (default 1).
 	///   CCCP_DT_DUMP_TICKS  Comma-separated list of ticks at which to write a full per-MO dump to "<log>.dump<tick>".
+	///   CCCP_DT_DUMP_RING   Keep a per-MO dump of each of the last N ticks in memory, and write them all ("<path>.ring<tick>") when a co-op desync is
+	///                       reported, so both peers' dumps of the first diverging tick can be compared.
 	///   CCCP_DT_TERRAIN_EVERY  Hash the terrain material layer every N ticks (default 10, 0 disables).
 	///   CCCP_DT_OBSERVE     1 to only log hashes: don't launch an Activity or control sim stepping (e.g. to log a co-op session on each peer).
 	///   CCCP_DT_DETERMINISTIC  0 to run without TimerMan deterministic mode (default 1, as in lockstep sessions). Ignored in observe mode.
@@ -86,6 +90,10 @@ namespace RTE {
 		/// @param path The file to write the dump to.
 		static void WriteStateDump(const std::string& path);
 
+		/// Writes the dumps kept for CCCP_DT_DUMP_RING, if any, to "<pathPrefix>.ring<tick>".
+		/// @param pathPrefix The start of the dump file paths.
+		static void WriteDumpRing(const std::string& pathPrefix);
+
 	private:
 		static bool s_Enabled; //!< Whether the harness is active.
 		static std::ofstream s_Log; //!< The per-tick hash log.
@@ -98,6 +106,8 @@ namespace RTE {
 		static std::string s_ActivityName; //!< The GAScripted preset to launch.
 		static std::string s_SceneName; //!< The Scene preset to launch.
 		static std::set<long long> s_DumpTicks; //!< Ticks at which to write a full per-MO dump.
+		static size_t s_DumpRingSize; //!< How many recent ticks' per-MO dumps to keep in memory. 0 for none.
+		static std::deque<std::pair<long long, std::string>> s_DumpRing; //!< The recent ticks' per-MO dumps, oldest first.
 		static uint64_t s_LastTerrainHash; //!< Most recently computed terrain hash.
 		static bool s_ObserveOnly; //!< Whether the harness only logs hashes, without launching an Activity or controlling stepping.
 		static bool s_RandomTicksPerFrame; //!< Whether to run a random number of sim updates per frame.
