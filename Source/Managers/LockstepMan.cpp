@@ -830,10 +830,14 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			reader.Read(matchId);
 			reader.Read(simUpdate);
 			reader.Read(hashes);
-			if (!reader.Ok() || matchId != m_MatchId || peer.Player == Players::NoPlayer || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
+			// Only for sim updates checksums are made at, not far ahead, and once per player and update, so a buggy or malicious client can't grow the map.
+			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || peer.Player == Players::NoPlayer || simUpdate < 0 || (simUpdate + 1) % c_ChecksumInterval != 0 || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
 				return;
 			}
-			m_ClientChecksums[simUpdate].emplace_back(peer.Player, hashes);
+			std::vector<std::pair<int, std::array<uint64_t, 8>>>& checksumsForUpdate = m_ClientChecksums[simUpdate];
+			if (std::none_of(checksumsForUpdate.begin(), checksumsForUpdate.end(), [&peer](const auto& entry) { return entry.first == peer.Player; })) {
+				checksumsForUpdate.emplace_back(peer.Player, hashes);
+			}
 			return;
 		}
 		case MsgLeave: {
@@ -1662,7 +1666,12 @@ void LockstepMan::Update() {
 		for (auto itr = m_ClientChecksums.begin(); itr != m_ClientChecksums.end();) {
 			auto own = m_HostChecksums.find(itr->first);
 			if (own == m_HostChecksums.end()) {
-				++itr;
+				if (!m_HostChecksums.empty() && itr->first < m_HostChecksums.begin()->first) {
+					// Older than the oldest of our own that's kept, so it can never be compared. The client is far behind.
+					itr = m_ClientChecksums.erase(itr);
+				} else {
+					++itr;
+				}
 				continue;
 			}
 			for (const auto& [player, hashes]: itr->second) {
@@ -1686,7 +1695,7 @@ void LockstepMan::Update() {
 			}
 			itr = m_ClientChecksums.erase(itr);
 		}
-		while (m_HostChecksums.size() > 64) {
+		while (m_HostChecksums.size() > c_HostChecksumsKept) {
 			m_HostChecksums.erase(m_HostChecksums.begin());
 		}
 	}
