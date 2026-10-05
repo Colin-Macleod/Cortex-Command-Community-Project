@@ -2,11 +2,35 @@ require("Constants");
 require("Utilities")
 require("Scripts/Shared/Activity_SpeedrunHelper")
 
--- The initial drop ships are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+-- Objects kept between updates (the initial drop ships, popout turrets, display screens, internal reinforcement doors and their targets) are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
 local function FindValidDropShip(uniqueID)
 	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
 	if mo and IsACDropShip(mo) and MovableMan:ValidMO(mo) then
 		return ToACDropShip(mo);
+	end
+	return nil;
+end
+
+local function FindValidActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) and MovableMan:ValidMO(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
+local function FindValidMOSRotating(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsMOSRotating(mo) and MovableMan:ValidMO(mo) then
+		return ToMOSRotating(mo);
+	end
+	return nil;
+end
+
+local function FindValidMOSParticle(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsMOSParticle(mo) and MovableMan:ValidMO(mo) then
+		return ToMOSParticle(mo);
 	end
 	return nil;
 end
@@ -1426,8 +1450,11 @@ function DecisionDay:UpdateRegionCapturing()
 						bunkerRegionData.ownerTeam = capturingTeam;
 						bunkerRegionData.captureCount = 0;
 
-						for _, captureDisplayScreen in ipairs(bunkerRegionData.captureDisplayScreens) do
-							captureDisplayScreen.Lifetime = 2000;
+						for _, captureDisplayScreenUID in ipairs(bunkerRegionData.captureDisplayScreens) do
+							local captureDisplayScreen = FindValidMOSParticle(captureDisplayScreenUID);
+							if captureDisplayScreen then
+								captureDisplayScreen.Lifetime = 2000;
+							end
 						end
 
 						local useLeftReplacementComputer = captureBox.Center.X >= bunkerRegionData.totalArea.Center.X;
@@ -1456,8 +1483,9 @@ function DecisionDay:UpdateRegionCapturing()
 								end
 							end
 							for box, boxData in SortedPairs(self.popoutTurretsData[bunkerRegionData.bunkerId].boxData, SortKeyBox) do
-								if boxData.actor and MovableMan:ValidMO(boxData.actor) then
-									boxData.actor:GibThis();
+								local popoutTurret = FindValidActor(boxData.actorUID);
+								if popoutTurret then
+									popoutTurret:GibThis();
 								end
 							end
 						elseif bunkerRegionName:find("Vault") and bunkerRegionData.ownerTeam == self.humanTeam and not bunkerRegionData.hasBeenCapturedAtLeastOnceByHumanTeam then
@@ -1524,15 +1552,21 @@ function DecisionDay:UpdateRegionScreens()
 						local fauxdanDisplayScreen = self.fauxdanDisplayScreenTemplate:Clone();
 						fauxdanDisplayScreen.Pos = boxCenterPos;
 						MovableMan:AddParticle(fauxdanDisplayScreen);
-						bunkerRegionData.fauxdanDisplayScreens[fauxdanDisplayScreenKey] = fauxdanDisplayScreen;
+						bunkerRegionData.fauxdanDisplayScreens[fauxdanDisplayScreenKey] = fauxdanDisplayScreen.UniqueID;
 					elseif boxBlockedByCaptureDisplay and bunkerRegionData.fauxdanDisplayScreens[fauxdanDisplayScreenKey] ~= nil then
-						bunkerRegionData.fauxdanDisplayScreens[fauxdanDisplayScreenKey].ToDelete = true;
+						local fauxdanDisplayScreen = FindValidMOSParticle(bunkerRegionData.fauxdanDisplayScreens[fauxdanDisplayScreenKey]);
+						if fauxdanDisplayScreen then
+							fauxdanDisplayScreen.ToDelete = true;
+						end
 						bunkerRegionData.fauxdanDisplayScreens[fauxdanDisplayScreenKey] = nil;
 					end
 				end
 			elseif next(bunkerRegionData.fauxdanDisplayScreens) ~= nil then
-				for _, fauxdanDisplayScreen in pairs(bunkerRegionData.fauxdanDisplayScreens) do
-					fauxdanDisplayScreen.ToDelete = true;
+				for _, fauxdanDisplayScreenUID in pairs(bunkerRegionData.fauxdanDisplayScreens) do
+					local fauxdanDisplayScreen = FindValidMOSParticle(fauxdanDisplayScreenUID);
+					if fauxdanDisplayScreen then
+						fauxdanDisplayScreen.ToDelete = true;
+					end
 				end
 				bunkerRegionData.fauxdanDisplayScreens = {};
 			end
@@ -1543,11 +1577,12 @@ function DecisionDay:UpdateRegionScreens()
 						local captureDisplayScreen = self.captureDisplayScreenTemplate:Clone();
 						captureDisplayScreen.Pos = box.Center;
 						MovableMan:AddParticle(captureDisplayScreen);
-						bunkerRegionData.captureDisplayScreens[#bunkerRegionData.captureDisplayScreens + 1] = captureDisplayScreen;
+						bunkerRegionData.captureDisplayScreens[#bunkerRegionData.captureDisplayScreens + 1] = captureDisplayScreen.UniqueID;
 					end
 				end
-				for index, captureDisplayScreen in ipairs(bunkerRegionData.captureDisplayScreens) do
-					if MovableMan:ValidMO(captureDisplayScreen) then
+				for index, captureDisplayScreenUID in ipairs(bunkerRegionData.captureDisplayScreens) do
+					local captureDisplayScreen = FindValidMOSParticle(captureDisplayScreenUID);
+					if captureDisplayScreen then
 						captureDisplayScreen.Frame = math.floor((bunkerRegionData.captureCount / bunkerRegionData.captureLimit) * (captureDisplayScreen.FrameCount));
 						captureDisplayScreen.Age = 0;
 					end
@@ -1580,7 +1615,8 @@ function DecisionDay:UpdateAndCleanupDataTables(teamToCleanup)
 	local cleanupDataTables = function(actorsSupertable)
 		for actorsTableName, actorsTable in pairs(actorsSupertable) do
 			for key, actor in pairs(actorsTable) do
-				if key ~= "count" and actor.UniqueID ~= key then
+				-- The tables are keyed by unique ID; look the actor up by it rather than reading the stored one, which may have been deleted. It may be in a craft's inventory, so it isn't required to be in MovableMan's lists.
+				if key ~= "count" and not MovableMan:FindObjectByUniqueID(key) then
 					actorsTable[key] = nil;
 					actorsTable.count = actorsTable.count - 1;
 				end
@@ -1660,9 +1696,9 @@ function DecisionDay:UpdateAIInternalReinforcements(forceInstantSpawning)
 	local doorsAndActorsToSpawn = self.internalReinforcementsData.doorsAndActorsToSpawn;
 	local doorIndex = 1;
 	while doorIndex <= #doorsAndActorsToSpawn do
-		local internalReinforcementDoor = doorsAndActorsToSpawn[doorIndex].door;
+		local internalReinforcementDoor = FindValidMOSRotating(doorsAndActorsToSpawn[doorIndex].doorUID);
 		local actorsToSpawn = doorsAndActorsToSpawn[doorIndex].actors;
-		if MovableMan:ValidMO(internalReinforcementDoor) and (forceInstantSpawning or internalReinforcementDoor.Frame == internalReinforcementDoor.FrameCount - 1) then
+		if internalReinforcementDoor and (forceInstantSpawning or internalReinforcementDoor.Frame == internalReinforcementDoor.FrameCount - 1) then
 			for _, actorToSpawn in ipairs(actorsToSpawn) do
 				actorToSpawn.Team = internalReinforcementDoor.Team;
 				actorToSpawn:AddToGroup("AI Internal Reinforcements");
@@ -2041,14 +2077,14 @@ function DecisionDay:UpdateMainBunkerExternalPopoutTurrets()
 	local bunkerId = self.bunkerIds.mainBunker;
 	if self.popoutTurretsData[bunkerId].enabled then
 		for box, boxData in SortedPairs(self.popoutTurretsData[bunkerId].boxData, SortKeyBox) do
-			if boxData.actor and not MovableMan:ValidMO(boxData.actor) then
-				boxData.actor = nil;
+			if boxData.actorUID and not FindValidActor(boxData.actorUID) then
+				boxData.actorUID = nil;
 				boxData.respawnTimer:Reset();
-			elseif not boxData.actor and boxData.respawnTimer:IsPastSimTimeLimit() then
+			elseif not boxData.actorUID and boxData.respawnTimer:IsPastSimTimeLimit() then
 				local popoutTurret = self.popoutTurretTemplate:Clone();
 				popoutTurret.Status = Actor.INACTIVE;
 				popoutTurret.Pos = box.Center;
-				boxData.actor = popoutTurret;
+				boxData.actorUID = popoutTurret.UniqueID;
 				boxData.movementTimer:Reset();
 				MovableMan:AddActor(popoutTurret);
 			end
@@ -2078,15 +2114,16 @@ function DecisionDay:UpdateMainBunkerExternalPopoutTurrets()
 		end
 
 		for box, boxData in SortedPairs(self.popoutTurretsData[bunkerId].boxData, SortKeyBox) do
-			if not boxData.movementTimer:IsPastSimTimeLimit() and boxData.actor then
+			local popoutTurret = FindValidActor(boxData.actorUID);
+			if not boxData.movementTimer:IsPastSimTimeLimit() and popoutTurret then
 				local startPos = self.popoutTurretsData[bunkerId].turretsActivated and box.Center or box.Center + Vector(25, 25);
 				local endPos = self.popoutTurretsData[bunkerId].turretsActivated and box.Center + Vector(25, 25) or box.Center;
-				boxData.actor.Pos.X = Lerp(0, 1, startPos.X, endPos.X, boxData.movementTimer.SimTimeLimitProgress);
-				boxData.actor.Pos.Y = Lerp(0, 1, startPos.Y, endPos.Y, boxData.movementTimer.SimTimeLimitProgress);
+				popoutTurret.Pos.X = Lerp(0, 1, startPos.X, endPos.X, boxData.movementTimer.SimTimeLimitProgress);
+				popoutTurret.Pos.Y = Lerp(0, 1, startPos.Y, endPos.Y, boxData.movementTimer.SimTimeLimitProgress);
 				if boxData.movementSound:IsBeingPlayed() then
-					boxData.movementSound.Pos = boxData.actor.Pos;
+					boxData.movementSound.Pos = popoutTurret.Pos;
 				else
-					boxData.movementSound:Play(boxData.actor.Pos);
+					boxData.movementSound:Play(popoutTurret.Pos);
 				end
 			elseif boxData.movementTimer:IsPastSimTimeLimit() then
 				boxData.movementSound:Stop();
@@ -2336,10 +2373,11 @@ function DecisionDay:SpawnCraft(team, avoidPreviousCraftPos, useRocketsInsteadOf
 end
 
 function DecisionDay:CalculateInternalReinforcementPositionsToEnemyTargets(bunkerId, maxNumberOfInternalReinforcementsToCreate, maxFundsForInternalReinforcements)
+	-- The enemies are kept by unique ID, as this runs over several updates (enemiesInsideBunkers was just filled, so they're valid now).
 	local enemiesToTarget = {};
 	for i = 1, maxNumberOfInternalReinforcementsToCreate do
 		if enemiesToTarget[i] == nil then
-			enemiesToTarget[i] = self.aiData.enemiesInsideBunkers[bunkerId][math.random(1, #self.aiData.enemiesInsideBunkers[bunkerId])];
+			enemiesToTarget[i] = self.aiData.enemiesInsideBunkers[bunkerId][math.random(1, #self.aiData.enemiesInsideBunkers[bunkerId])].UniqueID;
 		end
 	end
 	local internalReinforcementPositionsToEnemyTargets = {};
@@ -2348,12 +2386,14 @@ function DecisionDay:CalculateInternalReinforcementPositionsToEnemyTargets(bunke
 		coroutine.yield(); -- Yield after initial setup, so we can set up our coroutines separately from running them.
 	end
 
-	for _, enemyToTarget in ipairs(enemiesToTarget) do
-		if MovableMan:ValidMO(enemyToTarget) then
+	for _, enemyToTargetUID in ipairs(enemiesToTarget) do
+		local enemyToTarget = FindValidActor(enemyToTargetUID);
+		if enemyToTarget then
 			local internalReinforcementPositionForEnemy;
+			local enemyPos = Vector(enemyToTarget.Pos.X, enemyToTarget.Pos.Y);
 			local shortestPathCoroutine = coroutine.create(FindStartPositionWithShortestPathToEndPosition);
 			while coroutine.status(shortestPathCoroutine) ~= "dead" do
-				local _, result = coroutine.resume(shortestPathCoroutine, self.internalReinforcementsData[bunkerId].positions, enemyToTarget.Pos, self.aiTeam);
+				local _, result = coroutine.resume(shortestPathCoroutine, self.internalReinforcementsData[bunkerId].positions, enemyPos, self.aiTeam);
 				if result then
 					internalReinforcementPositionForEnemy = result.position;
 				else
@@ -2365,7 +2405,7 @@ function DecisionDay:CalculateInternalReinforcementPositionsToEnemyTargets(bunke
 				if not internalReinforcementPositionsToEnemyTargets[internalReinforcementPositionForEnemy] then
 					internalReinforcementPositionsToEnemyTargets[internalReinforcementPositionForEnemy] = {};
 				end
-				table.insert(internalReinforcementPositionsToEnemyTargets[internalReinforcementPositionForEnemy], enemyToTarget);
+				table.insert(internalReinforcementPositionsToEnemyTargets[internalReinforcementPositionForEnemy], enemyToTargetUID);
 			end
 		end
 	end
@@ -2397,7 +2437,7 @@ function DecisionDay:CreateInternalReinforcements(loadout, internalReinforcement
 			doorParticle.Team = self.aiTeam;
 			MovableMan:AddParticle(doorParticle);
 			local actorsToSpawnAtDoor = {};
-			table.insert(self.internalReinforcementsData.doorsAndActorsToSpawn, {door = doorParticle, actors = actorsToSpawnAtDoor});
+			table.insert(self.internalReinforcementsData.doorsAndActorsToSpawn, {doorUID = doorParticle.UniqueID, actors = actorsToSpawnAtDoor});
 
 			local numberOfInternalReinforcementsToCreateAtPosition = math.min(#enemyTargetsForPosition, 5);
 			if numberOfInternalReinforcementsToCreateAtPosition == 1 and math.random() < (self.difficultyRatio * 0.5) then
@@ -2427,11 +2467,15 @@ function DecisionDay:CreateInternalReinforcements(loadout, internalReinforcement
 					internalReinforcement.AIMode = Actor.AIMODE_SENTRY;
 				else
 					internalReinforcement.AIMode = Actor.AIMODE_GOTO;
+					-- Targets are scene positions, or unique IDs of actors to follow.
 					local internalReinforcementTarget = enemyTargetsForPosition[math.random(#enemyTargetsForPosition)];
-					if internalReinforcementTarget.ClassName == "Vector" then
-						internalReinforcement:AddAISceneWaypoint(internalReinforcementTarget);
+					if type(internalReinforcementTarget) == "number" then
+						local targetActor = FindValidActor(internalReinforcementTarget);
+						if targetActor then
+							internalReinforcement:AddAIMOWaypoint(targetActor);
+						end
 					else
-						internalReinforcement:AddAIMOWaypoint(internalReinforcementTarget);
+						internalReinforcement:AddAISceneWaypoint(internalReinforcementTarget);
 					end
 				end
 
