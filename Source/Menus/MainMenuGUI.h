@@ -5,6 +5,7 @@
 #include "SaveLoadMenuGUI.h"
 #include "SettingsGUI.h"
 #include "ModManagerGUI.h"
+#include "CoopMenuGUI.h"
 
 #include <array>
 
@@ -66,6 +67,7 @@ namespace RTE {
 			SaveOrLoadGameScreen,
 			SettingsScreen,
 			ModManagerScreen,
+			CoopScreen,
 			EditorScreen,
 			CreditsScreen,
 			QuitScreen,
@@ -76,6 +78,7 @@ namespace RTE {
 		enum MenuButton {
 			MetaGameButton,
 			ScenarioButton,
+			CoopButton,
 			SaveOrLoadGameButton,
 			SettingsButton,
 			ModManagerButton,
@@ -114,6 +117,7 @@ namespace RTE {
 		std::unique_ptr<SaveLoadMenuGUI> m_SaveLoadMenu; //!< The save/load menu screen.
 		std::unique_ptr<SettingsGUI> m_SettingsMenu; //!< The settings menu screen.
 		std::unique_ptr<ModManagerGUI> m_ModManagerMenu; //!< The mod manager menu screen.
+		std::unique_ptr<CoopMenuGUI> m_CoopMenu; //!< The online co-op menu screen.
 
 		// TODO: Rework this hacky garbage implementation when setting button font at runtime without loading a different skin is fixed. Would eliminate the need for a second GUIControlManager as well.
 		// Right now the way this works is the font graphic has different character visuals for uppercase and lowercase and the visual change happens by applying the appropriate case string when hovering/unhovering.

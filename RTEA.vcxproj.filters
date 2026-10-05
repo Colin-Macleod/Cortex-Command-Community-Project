@@ -520,6 +520,9 @@
     <ClInclude Include="Source\Menus\ModManagerGUI.h">
       <Filter>Menus</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Menus\CoopMenuGUI.h">
+      <Filter>Menus</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Menus\SettingsGUI.h">
       <Filter>Menus</Filter>
     </ClInclude>
@@ -1116,6 +1119,9 @@
       <Filter>Menus</Filter>
     </ClCompile>
     <ClCompile Include="Source\Menus\ModManagerGUI.cpp">
+      <Filter>Menus</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Menus\CoopMenuGUI.cpp">
       <Filter>Menus</Filter>
     </ClCompile>
     <ClCompile Include="Source\Menus\SettingsGUI.cpp">

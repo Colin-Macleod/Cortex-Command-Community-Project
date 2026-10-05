@@ -3,6 +3,7 @@ sources += files(
 'AreaPickerGUI.cpp',
 'AssemblyEditorGUI.cpp',
 'BuyMenuGUI.cpp',
+'CoopMenuGUI.cpp',
 'GibEditorGUI.cpp',
 'InventoryMenuGUI.cpp',
 'LoadingScreen.cpp',

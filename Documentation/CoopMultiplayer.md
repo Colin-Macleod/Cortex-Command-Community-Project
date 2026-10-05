@@ -2,42 +2,49 @@
 
 Online co-op lets 2–4 players play an Activity together, each on their own computer. It uses **deterministic lockstep**: every computer runs the whole simulation, and only the players' inputs are sent over the network. A match uses a few kilobytes per second per player, however big the battle gets.
 
-> **Status: experimental.** All players need the **same build** of the game, the **same mods**, and the **same game resolution**. Only Scenario-style Activities (started from the Scenario menu) are supported.
+> **Status: experimental.** All players need the **same build** of the game and the **same mods**. Only Scenario-style Activities (started from the Scenario menu) are supported.
 
 ## Playing
 
+Everything is in the main menu's **Multiplayer** screen. Enter your name there; it's shown in the lobby.
+
 ### Host
 
-Start the game with:
+1. Click **Host Game** (UDP port 7777 by default; change it in the box next to the button).
+2. Wait for the other players to show up under *Players in session*.
+3. Click **Choose Activity** (or go to *Scenario Battle* from the main menu), pick an Activity and scene, put yourself on a team as usual and start it. Every connected player joins your team as an extra human player. Players who connect after the match has started join the next one.
+
+Players outside your local network need to reach your UDP port: forward it on your router.
+
+### Clients
+
+Enter the host's address (e.g. `192.168.1.20`, or `192.168.1.20:7778` for another port) and click **Join Game**. The game keeps retrying until the host is up, and starts the match by itself when the host starts one, whichever menu you're in.
+
+If your game resolution differs from the host's, the game switches to the host's resolution when you join (the screen size affects gameplay, e.g. how far actors can see) and switches back when you leave. If the host's resolution is bigger than your screen, the window is scaled down to fit. If switching fails, the game says so; set a matching resolution in the video settings and join again.
+
+**Leave Session** disconnects. Leaving the main menu screen doesn't.
+
+### Command line
+
+Sessions can also be started from the command line, which skips the intro:
 
 ```
-CortexCommand -coop-host [port]          # default port 7777 (UDP)
+CortexCommand -coop-host [port]                     # host, default port 7777 (UDP)
+CortexCommand -coop-join <host address>[:port]      # join
 ```
 
-Pick an Activity in the Scenario menu as usual, with yourself as the only human player. When you start it, every connected player joins your team as an extra human player. Players who connect after the match has started join the next one.
-
-To start a specific Activity automatically once everyone has joined, use:
+To start a specific Activity automatically once everyone has joined:
 
 ```
 CortexCommand -coop-host 7777 -coop-players 2 -coop-activity "Bunker Breach" -coop-scene "Zekarra Mining Outpost"
 ```
 
-Optional host settings:
+Without `-coop-scene`, the Activity's default scene is used, or the first compatible scene by name if it has none. Optional host settings:
 
 - `-coop-difficulty <0-100>`: difficulty of the automatic Activity.
 - `-coop-gold <amount>`: starting gold of the automatic Activity.
 - `-coop-fog <0|1>`: fog of war for the automatic Activity.
 - `-coop-delay <sim updates>`: fixed input delay; see below. By default the host picks it when the match starts, from the slowest player's measured round trip time (between 3 and 20 sim updates, i.e. 50–333 ms at the default sim speed).
-
-The host needs to forward the UDP port, or be on the same LAN as the other players.
-
-### Clients
-
-```
-CortexCommand -coop-join <host address>[:port]
-```
-
-The game goes straight to the main menu and waits for the host to start a match. A status line at the top of the screen shows the connection state. The client keeps retrying until the host is up.
 
 ### During a match
 
@@ -45,11 +52,11 @@ The game goes straight to the main menu and waits for the host to start a match.
 - **Esc twice** leaves the match, also while the game is waiting for other players. If the host leaves, the match ends for everyone.
 - Pausing, restarting, quick save/load and script reloading are disabled, because doing them on one computer only would break the sync. For the same reason the console doesn't run commands during a match.
 - The buy menu offers the built-in loadouts only, not the ones you saved yourself (each computer would otherwise use its own file for every player). Your saved loadouts are kept for single player.
-- On Linux the game restarts itself once when started with `-coop-host` or `-coop-join`, to use the same math library code on every CPU (see below).
+- On Linux the game restarts itself once at start-up, to use the same math library code on every CPU (see below). `-no-math-restart` skips that, e.g. when debugging, at the risk of being refused when joining.
 
 ### What's checked when you join
 
-The host rejects a player whose game version, loaded mods, audio availability, game resolution, math library results or Lua setup (LuaJIT on or off, string hashing, case-sensitive paths) don't match its own, and says why. Each player's input device and digital aim speed setting are recorded when they join, and every computer uses those for that player. For the duration of a match, clients use the host's values for settings that affect gameplay:
+The host rejects a player whose game version, mods, audio availability, math library results or Lua setup (LuaJIT on or off, string hashing, case-sensitive paths) don't match its own, and says why. Mods (and the official content) are compared by the contents of their files, not by name or version, ignoring sounds, music and line endings; the message names the first module that differs. A player whose resolution differs is switched to the host's (see above). Each player's input device and digital aim speed setting are recorded when they join, and every computer uses those for that player. For the duration of a match, clients use the host's values for settings that affect gameplay:
 
 - AI update interval
 - automatic gold deposit
@@ -99,7 +106,7 @@ Always on:
 - Folder scans (module `.ini` files, Lua's `GetDirectoryList`/`GetFileList`) sorted by name, instead of file system order.
 - Uninitialised fields that could carry leftover memory from a previous object (path nodes, atoms, actors' movement state) are initialised.
 - Shipped scripts that looped over tables keyed by objects (`pairs()` order follows memory addresses, which differ between computers) now use `SortedPairs` from `Base.rte/Utilities.lua`, ordered arrays, or tie-breaks on `UniqueID`.
-- **The same math library code on every CPU.** The x86-64 math libraries choose faster FMA-based versions of double-precision `sin`, `cos`, `exp`, `log`, `pow`, `atan2` and others on CPUs that support FMA. These give a slightly different result for a fraction of a percent of inputs, enough to desync a Haswell-or-newer PC from an older one (or a low-end Pentium/Celeron) over time; Lua's `math` functions and `^` use them. On Windows the game switches the FMA versions off at start-up. On Linux it restarts itself once with FMA hidden from glibc (`GLIBC_TUNABLES`) when started for co-op. A fingerprint of the math library's results is part of the join check, so any remaining difference is refused instead of desyncing.
+- **The same math library code on every CPU.** The x86-64 math libraries choose faster FMA-based versions of double-precision `sin`, `cos`, `exp`, `log`, `pow`, `atan2` and others on CPUs that support FMA. These give a slightly different result for a fraction of a percent of inputs, enough to desync a Haswell-or-newer PC from an older one (or a low-end Pentium/Celeron) over time; Lua's `math` functions and `^` use them. On Windows the game switches the FMA versions off at start-up. On Linux it restarts itself once at start-up with FMA hidden from glibc (`GLIBC_TUNABLES`), since a session can be hosted or joined at any time. A fingerprint of the math library's results is part of the join check, so any remaining difference is refused instead of desyncing.
 
 ## Testing
 
@@ -143,10 +150,10 @@ Getting there, the suite found and the fixes cover: LuaJIT ordering string-keyed
 ## Known limitations
 
 - **Same build only.** Windows and Linux builds can't play together; neither can different compilers or compiler settings. See the feasibility report for what cross-platform play needs: own RNG distributions and a deterministic math library.
-- **Same game resolution on every computer.** The window can still be scaled with the resolution multiplier.
+- **Same game resolution on every computer.** Joining switches to the host's resolution automatically (and back when leaving); the window can still be scaled.
 - **One player per computer.** No local split-screen in a co-op match.
 - **Joining:** no joining or rejoining mid-match. A player who dropped out can reconnect and join the next match.
-- **Content check:** the join check compares module names and versions, not file contents. A locally edited `.ini` or `.lua` file, a mod updated without changing its version, or a user-made scene with the same name as someone else's will desync.
+- **Content check:** sounds and music aren't compared (they don't affect gameplay), and neither are user-made scenes and saved games (`Userdata`). A user-made scene with the same name as someone else's will desync.
 - **Scripts:**
   - Mods whose scripts read state outside the engine's control (`os.clock`, `io`, `TimerMan:TimeForSimUpdate()`, the mouse position without a player), or keep tables keyed by objects and act on `pairs()` order, can still desync. The desync detector will report it. Mods can use `SortedPairs` from `Base.rte/Utilities.lua` for object-keyed tables.
   - Scripts that read `FrameMan.PlayerScreenWidth` behave as if every player had a full screen at the shared resolution.

@@ -37,6 +37,10 @@ void SettingsMan::Clear() {
 	m_NATServerPassword = "DefaultServerPassword";
 	m_UseExperimentalMultiplayerSpeedBoosts = true;
 
+	m_CoopPlayerName = "Player";
+	m_CoopJoinAddress = "127.0.0.1";
+	m_CoopHostPort = 7777;
+
 	m_AllowSavingToBase = false;
 	m_ShowForeignItems = true;
 	m_ShowMetaScenes = false;
@@ -170,6 +174,9 @@ int SettingsMan::ReadProperty(const std::string_view& propName, Reader& reader) 
 	MatchProperty("EnableParticleSettling", { reader >> g_MovableMan.m_SettlingEnabled; });
 	MatchProperty("EnableMOSubtraction", { reader >> g_MovableMan.m_MOSubtractionEnabled; });
 	MatchProperty("DeltaTime", { g_TimerMan.SetDeltaTimeSecs(std::stof(reader.ReadPropValue())); });
+	MatchProperty("CoopPlayerName", { SetCoopPlayerName(reader.ReadPropValue()); });
+	MatchProperty("CoopJoinAddress", { SetCoopJoinAddress(reader.ReadPropValue()); });
+	MatchProperty("CoopHostPort", { reader >> m_CoopHostPort; });
 	MatchProperty("AllowSavingToBase", { reader >> m_AllowSavingToBase; });
 	MatchProperty("ShowMetaScenes", { reader >> m_ShowMetaScenes; });
 	MatchProperty("SkipIntro", { reader >> m_SkipIntro; });
@@ -304,6 +311,14 @@ int SettingsMan::Save(Writer& writer) const {
 	// writer.NewLineString("// Engine Settings - EXPERIMENTAL", false);
 	// writer.NewLineString("// These settings are experimental! They may break mods, crash the game, corrupt saves or worse. Use at your own risk.", false);
 	// writer.NewLine(false);
+
+	writer.NewLine(false, 2);
+	writer.NewDivider(false);
+	writer.NewLineString("// Online Co-op Settings", false);
+	writer.NewLine(false);
+	writer.NewPropertyWithValue("CoopPlayerName", m_CoopPlayerName);
+	writer.NewPropertyWithValue("CoopJoinAddress", m_CoopJoinAddress);
+	writer.NewPropertyWithValue("CoopHostPort", m_CoopHostPort);
 
 	writer.NewLine(false, 2);
 	writer.NewDivider(false);

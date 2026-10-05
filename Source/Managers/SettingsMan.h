@@ -214,6 +214,30 @@ namespace RTE {
 		/// @return The current LAN server address to connect to.
 		const std::string& GetNetworkServerAddress() const { return m_NetworkServerAddress; }
 
+		/// Gets the name shown for this player in online co-op lobbies.
+		/// @return The player name.
+		const std::string& GetCoopPlayerName() const { return m_CoopPlayerName; }
+
+		/// Sets the name shown for this player in online co-op lobbies. Trimmed to 24 characters; empty becomes "Player".
+		/// @param newName The new name.
+		void SetCoopPlayerName(const std::string& newName) { m_CoopPlayerName = newName.empty() ? "Player" : newName.substr(0, 24); }
+
+		/// Gets the address last used to join an online co-op game.
+		/// @return The address, with an optional :port.
+		const std::string& GetCoopJoinAddress() const { return m_CoopJoinAddress; }
+
+		/// Sets the address last used to join an online co-op game.
+		/// @param newAddress The address, with an optional :port.
+		void SetCoopJoinAddress(const std::string& newAddress) { m_CoopJoinAddress = newAddress; }
+
+		/// Gets the UDP port to host online co-op games on.
+		/// @return The port.
+		int GetCoopHostPort() const { return m_CoopHostPort; }
+
+		/// Sets the UDP port to host online co-op games on.
+		/// @param newPort The port.
+		void SetCoopHostPort(int newPort) { m_CoopHostPort = newPort; }
+
 		/// Sets the LAN server address to connect to.
 		/// @param newName New LAN server address to connect to.
 		void SetNetworkServerAddress(const std::string& newAddress) { m_NetworkServerAddress = newAddress.empty() ? "127.0.0.1:8000" : newAddress; }
@@ -381,6 +405,9 @@ namespace RTE {
 
 		std::string m_PlayerNetworkName; //!< Player name used in network multiplayer matches.
 		std::string m_NetworkServerAddress; //!< LAN server address to connect to.
+		std::string m_CoopPlayerName; //!< Name shown for this player in online co-op lobbies.
+		std::string m_CoopJoinAddress; //!< Address last used to join an online co-op game.
+		int m_CoopHostPort; //!< UDP port to host online co-op games on.
 		std::string m_NATServiceAddress; //!< NAT punch-through server address.
 		std::string m_NATServerName; //!< Server name to use when connecting via NAT punch-through service.
 		std::string m_NATServerPassword; //!< Server password to use when connecting via NAT punch-through service.

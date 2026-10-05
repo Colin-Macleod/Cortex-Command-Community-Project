@@ -26,7 +26,11 @@
 #include "RakPeerInterface.h"
 #include "RakNetTypes.h"
 
+#include <algorithm>
 #include <bit>
+#include <filesystem>
+#include <fstream>
+#include <list>
 #include <cinttypes>
 #include <cmath>
 #include <cstring>
@@ -35,7 +39,7 @@
 using namespace RTE;
 
 namespace {
-	constexpr uint32_t c_ProtocolVersion = 2; //!< Bump whenever the message format changes.
+	constexpr uint32_t c_ProtocolVersion = 3; //!< Bump whenever the message format changes.
 	constexpr unsigned short c_DefaultPort = 7777; //!< Default UDP port.
 	constexpr int c_MaxClients = Players::MaxPlayerCount - 1; //!< At most one player per peer.
 	constexpr int c_InputTimeoutMS = 3000; //!< How long the host waits for a player's late input before repeating their previous input.
@@ -46,7 +50,67 @@ namespace {
 	constexpr long long c_MaxInputLead = 600; //!< Input or checksums for sim updates further ahead than this are ignored (a buggy or malicious peer could otherwise grow the queues without bound).
 	constexpr int c_StalledEscapeDelayMS = 3000; //!< How long the sim must have been stalled before Esc is read outside the sim update.
 
+	constexpr int c_MaxResolutionRequests = 2; //!< How many times a client tries switching to the host's resolution before giving up.
+
 	static_assert(InputElements::INPUT_COUNT <= 64, "VirtualInputFrame keeps input elements in 64-bit masks.");
+
+	/// Hashes the contents of every file in a module that can affect the simulation, i.e. everything but sounds and music.
+	/// Line endings in text files are ignored, so a checkout with Windows line endings matches one with Unix line endings.
+	/// @param modulePath Path to the module's directory.
+	/// @return The hash, or 0 if the directory couldn't be read.
+	uint64_t HashModuleContents(const std::string& modulePath) {
+		auto lowercase = [](std::string text) {
+			std::transform(text.begin(), text.end(), text.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+			return text;
+		};
+		std::vector<std::string> files;
+		std::error_code error;
+		for (auto itr = std::filesystem::recursive_directory_iterator(modulePath, error); !error && itr != std::filesystem::recursive_directory_iterator(); itr.increment(error)) {
+			std::error_code typeError;
+			if (!itr->is_regular_file(typeError)) {
+				continue;
+			}
+			const std::string extension = lowercase(itr->path().extension().string());
+			if (extension == ".flac" || extension == ".ogg" || extension == ".wav" || extension == ".mp3" || extension == ".reapeaks") {
+				continue;
+			}
+			files.push_back(std::filesystem::relative(itr->path(), modulePath, typeError).generic_string());
+		}
+		if (error) {
+			return 0;
+		}
+		// Directory iteration order differs between file systems.
+		std::sort(files.begin(), files.end());
+
+		uint64_t hash = 1469598103934665603ULL;
+		auto mixBytes = [&hash](const char* bytes, size_t size) {
+			for (size_t i = 0; i < size; ++i) {
+				hash = (hash ^ static_cast<unsigned char>(bytes[i])) * 1099511628211ULL;
+			}
+		};
+		std::vector<char> contents;
+		for (const std::string& file: files) {
+			mixBytes(file.data(), file.size() + 1);
+			std::ifstream stream(modulePath + "/" + file, std::ios::binary);
+			contents.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+			const std::string extension = lowercase(std::filesystem::path(file).extension().string());
+			if (extension == ".ini" || extension == ".lua" || extension == ".txt" || extension == ".frag" || extension == ".vert" || extension == ".json") {
+				contents.erase(std::remove(contents.begin(), contents.end(), '\r'), contents.end());
+			}
+			const uint64_t size = contents.size();
+			mixBytes(reinterpret_cast<const char*>(&size), sizeof(size));
+			// Eight bytes at a time; byte by byte would take seconds for the official content.
+			size_t offset = 0;
+			for (; offset + 8 <= contents.size(); offset += 8) {
+				uint64_t word;
+				std::memcpy(&word, contents.data() + offset, 8);
+				hash = (hash ^ word) * 1099511628211ULL;
+				hash ^= hash >> 29;
+			}
+			mixBytes(contents.data() + offset, contents.size() - offset);
+		}
+		return hash;
+	}
 	constexpr int c_MinAutoInputDelay = 3; //!< Smallest input delay (in sim updates) the host picks automatically.
 	constexpr int c_MaxAutoInputDelay = 20; //!< Largest input delay (in sim updates) the host picks automatically.
 
@@ -139,6 +203,42 @@ namespace {
 		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
 	}
 
+	/// Names the first module that differs between two compatibility strings, e.g. "Ronin.rte is different" or "Host has MyMod.rte, you don't".
+	std::string FirstModuleMismatch(const std::string& hostCompatibility, const std::string& clientCompatibility) {
+		auto parseModules = [](const std::string& compatibility) {
+			std::map<std::string, std::string> modules;
+			const size_t start = compatibility.find("|modules=");
+			if (start == std::string::npos) {
+				return modules;
+			}
+			std::istringstream stream(compatibility.substr(start + 9));
+			std::string entry;
+			while (std::getline(stream, entry, ';')) {
+				if (!entry.empty()) {
+					const size_t colon = entry.find(':');
+					modules[entry.substr(0, colon)] = colon == std::string::npos ? "" : entry.substr(colon + 1);
+				}
+			}
+			return modules;
+		};
+		const std::map<std::string, std::string> hostModules = parseModules(hostCompatibility);
+		const std::map<std::string, std::string> clientModules = parseModules(clientCompatibility);
+		for (const auto& [name, hash]: hostModules) {
+			auto itr = clientModules.find(name);
+			if (itr == clientModules.end()) {
+				return "the host has " + name + " enabled, you don't";
+			} else if (itr->second != hash) {
+				return name + " is different";
+			}
+		}
+		for (const auto& [name, hash]: clientModules) {
+			if (hostModules.find(name) == hostModules.end()) {
+				return "you have " + name + " enabled, the host doesn't";
+			}
+		}
+		return "load order differs";
+	}
+
 	/// Makes a frame received from the network safe to use: no NaNs or infinities, and values in range. Done by the host before bundling, so every peer gets the same values.
 	void SanitizeFrame(VirtualInputFrame& frame) {
 		auto clean = [](float& value, float limit) {
@@ -202,7 +302,24 @@ void LockstepMan::Destroy() {
 		RakNet::RakPeerInterface::DestroyInstance(m_Peer);
 		m_Peer = nullptr;
 	}
+	ResetSessionState();
+}
+
+void LockstepMan::ResetSessionState() {
 	m_Role = Role::None;
+	m_HostGuid = 0;
+	m_HostAddress.clear();
+	m_ConnectedToHost = false;
+	m_HelloSent = false;
+	m_StatusMessage.clear();
+	m_RejectReason.clear();
+	m_Peers.clear();
+	m_LobbyPeerCount = 0;
+	m_LobbyNames.clear();
+	m_ResolutionRequests = 0;
+	m_AutoStartDone = false;
+	m_MatchStartPending = false;
+	m_DelayedMessages.clear();
 }
 
 #pragma region Session Setup
@@ -310,6 +427,80 @@ bool LockstepMan::StartJoining(const std::string& address, unsigned short port) 
 	return true;
 }
 
+bool LockstepMan::HostSession(unsigned short port) {
+	LeaveSession();
+	if (!StartHosting(port)) {
+		m_StatusMessage = "Could not host on port " + std::to_string(port) + ". Is another program using it?";
+		return false;
+	}
+	// Computed now rather than when the first player says hello, as hashing the modules takes a moment.
+	GetCompatibilityString();
+	BroadcastLobbyStatus();
+	return true;
+}
+
+bool LockstepMan::JoinSession(const std::string& address) {
+	LeaveSession();
+	std::string host = address;
+	unsigned short port = c_DefaultPort;
+	// An IPv6 address has colons of its own, so only take a port from [address]:port or address:port with a single colon.
+	if (size_t colon = host.rfind(':'); colon != std::string::npos && (host.find(':') == colon || (host.front() == '[' && colon > 0 && host[colon - 1] == ']'))) {
+		port = static_cast<unsigned short>(std::atoi(host.substr(colon + 1).c_str()));
+		host = host.substr(0, colon);
+	}
+	if (host.size() > 1 && host.front() == '[' && host.back() == ']') {
+		host = host.substr(1, host.size() - 2);
+	}
+	if (host.empty() || port == 0) {
+		m_StatusMessage = "Enter the host's address, e.g. 192.168.1.20 or 192.168.1.20:" + std::to_string(c_DefaultPort) + ".";
+		return false;
+	}
+	GetCompatibilityString();
+	if (!StartJoining(host, port)) {
+		m_StatusMessage = "Could not start networking.";
+		return false;
+	}
+	return true;
+}
+
+void LockstepMan::LeaveSession() {
+	if (m_MatchRunning) {
+		if (m_Role == Role::Client && m_ConnectedToHost) {
+			MessageWriter leave(MsgLeave);
+			leave.Write(m_MatchId);
+			SendNow(leave.Data(), m_HostGuid);
+		}
+		g_ActivityMan.EndActivity();
+		g_ActivityMan.SetInActivity(false);
+	}
+	const bool wasInSession = IsInSession();
+	Destroy();
+	if (m_LocalResX > 0) {
+		if (!g_ActivityMan.IsInActivity()) {
+			g_WindowMan.ChangeResolution(m_LocalResX, m_LocalResY, m_LocalResMultiplier, g_WindowMan.IsFullscreen());
+			m_ChangedResolution = g_WindowMan.ResolutionChanged();
+		}
+		m_LocalResX = 0;
+		m_LocalResY = 0;
+	}
+	if (wasInSession) {
+		g_ConsoleMan.PrintString("CO-OP: Left the session.");
+	}
+}
+
+std::vector<std::string> LockstepMan::GetLobbyPlayerNames() const {
+	if (m_Role != Role::Host) {
+		return m_LobbyNames;
+	}
+	std::vector<std::string> names{g_SettingsMan.GetCoopPlayerName()};
+	for (const Peer& peer: m_Peers) {
+		if (peer.Accepted && peer.Connected) {
+			names.push_back(peer.Name);
+		}
+	}
+	return names;
+}
+
 #pragma endregion
 
 #pragma region Networking
@@ -368,8 +559,24 @@ void LockstepMan::BroadcastLobbyStatus() {
 	}
 	MessageWriter message(MsgLobby);
 	message.Write(static_cast<uint8_t>(accepted));
+	for (const std::string& name: GetLobbyPlayerNames()) {
+		message.WriteString(name);
+	}
 	Broadcast(message.Data());
 	m_StatusMessage = "Hosting co-op: " + std::to_string(accepted) + " player" + (accepted == 1 ? "" : "s") + " connected";
+}
+
+void LockstepMan::SendHello() {
+	MessageWriter hello(MsgHello);
+	hello.Write(c_ProtocolVersion);
+	hello.WriteString(GetCompatibilityString());
+	hello.Write(static_cast<uint8_t>(g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDevice()));
+	hello.Write(static_cast<uint16_t>(g_WindowMan.GetResX()));
+	hello.Write(static_cast<uint16_t>(g_WindowMan.GetResY()));
+	hello.Write(g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDigitalAimSpeed());
+	hello.WriteString(g_SettingsMan.GetCoopPlayerName());
+	Send(hello.Data(), m_HostGuid);
+	m_HelloSent = true;
 }
 
 void LockstepMan::HandlePacket(RakNet::Packet* packet) {
@@ -417,17 +624,10 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 		case ID_CONNECTION_REQUEST_ACCEPTED: {
 			m_ConnectedToHost = true;
 			m_HostGuid = guid;
-			m_StatusMessage = "Connected to host, waiting for the host to start an activity...";
-			g_ConsoleMan.PrintString("CO-OP: " + m_StatusMessage);
-			MessageWriter hello(MsgHello);
-			hello.Write(c_ProtocolVersion);
-			hello.WriteString(GetCompatibilityString());
-			hello.Write(static_cast<uint8_t>(g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDevice()));
-			hello.Write(static_cast<uint16_t>(g_WindowMan.GetResX()));
-			hello.Write(static_cast<uint16_t>(g_WindowMan.GetResY()));
-			hello.Write(g_UInputMan.GetControlScheme(Players::PlayerOne)->GetDigitalAimSpeed());
-			Send(hello.Data(), m_HostGuid);
-			m_HelloSent = true;
+			m_ResolutionRequests = 0;
+			m_StatusMessage = "Connected to host, waiting to be let in...";
+			g_ConsoleMan.PrintString("CO-OP: Connected to host.");
+			SendHello();
 			return;
 		}
 		case ID_CONNECTION_ATTEMPT_FAILED:
@@ -438,7 +638,8 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 		case ID_CONNECTION_LOST:
 			m_ConnectedToHost = false;
 			m_HelloSent = false;
-			m_StatusMessage = m_RejectReason.empty() ? "Lost connection to the host." : m_RejectReason;
+			m_LobbyNames.clear();
+			m_StatusMessage = m_RejectReason.empty() ? "Lost connection to the host, retrying..." : m_RejectReason;
 			g_ConsoleMan.PrintString("CO-OP: " + m_StatusMessage);
 			if (m_MatchRunning) {
 				g_ActivityMan.EndActivity();
@@ -464,12 +665,17 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			uint16_t resX = 0;
 			uint16_t resY = 0;
 			float digitalAimSpeed = 1.0F;
+			std::string name;
 			reader.Read(protocol);
 			reader.ReadString(compatibility);
 			reader.Read(device);
 			reader.Read(resX);
 			reader.Read(resY);
 			reader.Read(digitalAimSpeed);
+			reader.ReadString(name);
+			if (peer.Accepted) {
+				return;
+			}
 
 			std::string rejectReason;
 			if (!reader.Ok() || protocol != c_ProtocolVersion) {
@@ -492,11 +698,21 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 						break;
 					}
 				}
-				rejectReason = "Game version, loaded mods or settings don't match the host's (" + mismatch + ").";
+				if (mismatch == "modules") {
+					rejectReason = "Installed or enabled mods don't match the host's (" + FirstModuleMismatch(GetCompatibilityString(), compatibility) + ").";
+				} else {
+					rejectReason = "Game version or settings don't match the host's (" + mismatch + ").";
+				}
 				g_ConsoleMan.PrintString("CO-OP: Host: " + GetCompatibilityString());
 				g_ConsoleMan.PrintString("CO-OP: Client: " + compatibility);
 			} else if (resX != g_WindowMan.GetResX() || resY != g_WindowMan.GetResY()) {
-				rejectReason = "Game resolution must match the host's (" + std::to_string(g_WindowMan.GetResX()) + "x" + std::to_string(g_WindowMan.GetResY()) + ").";
+				// The screen size affects the simulation (e.g. how far actors see), so the client switches to ours and says hello again.
+				MessageWriter resolution(MsgResolution);
+				resolution.Write(static_cast<uint16_t>(g_WindowMan.GetResX()));
+				resolution.Write(static_cast<uint16_t>(g_WindowMan.GetResY()));
+				Send(resolution.Data(), peer.Guid);
+				g_ConsoleMan.PrintString("CO-OP: Asked " + peer.Address + " to switch from " + std::to_string(resX) + "x" + std::to_string(resY) + " to our resolution.");
+				return;
 			}
 			if (!rejectReason.empty()) {
 				MessageWriter reject(MsgReject);
@@ -510,7 +726,16 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			peer.Accepted = true;
 			peer.Device = static_cast<InputDevice>(std::clamp<int>(device, InputDevice::DEVICE_KEYB_ONLY, InputDevice::DEVICE_GAMEPAD_4));
 			peer.DigitalAimSpeed = std::isfinite(digitalAimSpeed) ? std::clamp(digitalAimSpeed, 0.01F, 100.0F) : 1.0F;
-			g_ConsoleMan.PrintString("CO-OP: " + peer.Address + " joined.");
+			peer.Name.clear();
+			for (char character: name.substr(0, 24)) {
+				if (character >= 32 && character < 127) {
+					peer.Name += character;
+				}
+			}
+			if (peer.Name.empty()) {
+				peer.Name = "Player";
+			}
+			g_ConsoleMan.PrintString("CO-OP: " + peer.Name + " (" + peer.Address + ") joined.");
 			BroadcastLobbyStatus();
 			return;
 		}
@@ -595,10 +820,50 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 			uint8_t count = 0;
 			if (reader.Read(count)) {
 				m_LobbyPeerCount = count;
+				std::vector<std::string> names;
+				std::string name;
+				for (int i = 0; i < count && reader.ReadString(name); ++i) {
+					names.push_back(name);
+				}
+				m_LobbyNames = names.empty() ? std::vector<std::string>{"?"} : names;
 				if (!m_MatchRunning) {
-					m_StatusMessage = "Connected to host (" + std::to_string(count) + " players), waiting for the host to start an activity...";
+					m_StatusMessage = "In the host's lobby (" + std::to_string(count) + " player" + (count == 1 ? "" : "s") + "), waiting for the host to start an activity...";
 				}
 			}
+			return;
+		}
+		case MsgResolution: {
+			uint16_t resX = 0;
+			uint16_t resY = 0;
+			reader.Read(resX);
+			reader.Read(resY);
+			if (!reader.Ok() || m_MatchRunning || g_ActivityMan.IsInActivity()) {
+				return;
+			}
+			const std::string resolutionText = std::to_string(resX) + "x" + std::to_string(resY);
+			if (++m_ResolutionRequests > c_MaxResolutionRequests) {
+				m_RejectReason = "Could not switch to the host's resolution (" + resolutionText + "). Set it in the video settings and join again.";
+				m_StatusMessage = m_RejectReason;
+				g_ConsoleMan.PrintString("CO-OP: " + m_RejectReason);
+				m_Peer->CloseConnection(RakNet::AddressOrGUID(RakNet::RakNetGUID(m_HostGuid)), true);
+				m_ConnectedToHost = false;
+				return;
+			}
+			if (m_LocalResX == 0) {
+				m_LocalResX = g_WindowMan.GetResX();
+				m_LocalResY = g_WindowMan.GetResY();
+				m_LocalResMultiplier = g_WindowMan.GetResMultiplier();
+			}
+			float multiplier = g_WindowMan.GetResMultiplier();
+			if (!g_WindowMan.IsFullscreen()) {
+				// Keep the window on the screen.
+				const float fitMultiplier = std::min(static_cast<float>(g_WindowMan.GetMaxResX()) / static_cast<float>(resX), static_cast<float>(g_WindowMan.GetMaxResY()) / static_cast<float>(resY));
+				multiplier = std::max(0.25F, std::min(multiplier, fitMultiplier));
+			}
+			g_ConsoleMan.PrintString("CO-OP: Switching to the host's resolution, " + resolutionText + ".");
+			g_WindowMan.ChangeResolution(resX, resY, multiplier, g_WindowMan.IsFullscreen());
+			m_ChangedResolution = g_WindowMan.ResolutionChanged();
+			SendHello();
 			return;
 		}
 		case MsgStart: {
@@ -729,11 +994,27 @@ std::string LockstepMan::GetCompatibilityString() const {
 	// scripts can see through the jit library.
 	stream << "|caseSensitivePaths=" << System::FilePathsCaseSensitive() << "|luaJIT=" << !g_SettingsMan.DisableLuaJIT();
 	stream << "|luaStringOrder=" << GetLuaStringOrderFingerprint();
+	// By contents rather than name and version, as a mod can be changed without its version changing (and the official content often is).
+	// Userdata (saved games and editor scenes) differs between machines and doesn't matter unless used, so only names are compared for it.
+	static std::map<std::string, uint64_t> s_ModuleHashes;
+	const auto hashingStartTime = std::chrono::steady_clock::now();
+	const size_t modulesHashedBefore = s_ModuleHashes.size();
 	stream << "|modules=";
 	for (int module = 0; module < g_PresetMan.GetTotalModuleCount(); ++module) {
 		if (const DataModule* dataModule = g_PresetMan.GetDataModule(module)) {
-			stream << dataModule->GetFileName() << ":" << dataModule->GetVersionNumber() << ";";
+			stream << dataModule->GetFileName();
+			if (!dataModule->IsUserdata()) {
+				auto [hash, inserted] = s_ModuleHashes.try_emplace(dataModule->GetFileName(), 0);
+				if (inserted) {
+					hash->second = HashModuleContents(g_PresetMan.GetFullModulePath(dataModule->GetFileName()));
+				}
+				stream << ":" << std::hex << hash->second << std::dec;
+			}
+			stream << ";";
 		}
+	}
+	if (s_ModuleHashes.size() != modulesHashedBefore) {
+		g_ConsoleMan.PrintString("CO-OP: Hashed the contents of " + std::to_string(s_ModuleHashes.size() - modulesHashedBefore) + " modules in " + std::to_string(ElapsedMS(hashingStartTime)) + " ms.");
 	}
 	return stream.str();
 }
@@ -868,12 +1149,23 @@ GameActivity* LockstepMan::BuildAutoActivity() const {
 	activity->SetStartingGold(m_Options.AutoGold);
 	activity->SetRequireClearPathToOrbit(false);
 	activity->SetFogOfWarEnabled(m_Options.AutoFog);
-	// Without -coop-scene, the Activity's own default scene.
+	// Without -coop-scene, the Activity's own default scene, or failing that the first compatible scene the scenario menu would offer, by name.
 	const std::string sceneName = m_Options.AutoScene.empty() ? activity->GetSceneName() : m_Options.AutoScene;
-	if (!sceneName.empty()) {
-		if (const Scene* scene = dynamic_cast<const Scene*>(g_PresetMan.GetEntityPreset("Scene", sceneName))) {
-			g_SceneMan.SetSceneToLoad(scene, true, m_Options.AutoDeployUnits);
+	const Scene* scene = sceneName.empty() ? nullptr : dynamic_cast<const Scene*>(g_PresetMan.GetEntityPreset("Scene", sceneName));
+	if (!scene && m_Options.AutoScene.empty()) {
+		std::list<Entity*> scenePresets;
+		g_PresetMan.GetAllOfType(scenePresets, "Scene");
+		for (Entity* preset: scenePresets) {
+			Scene* candidate = dynamic_cast<Scene*>(preset);
+			if (candidate && !candidate->GetLocation().IsZero() && !candidate->IsMetagameInternal() && !candidate->IsSavedGameInternal() && candidate->GetMetasceneParent().empty() && activity->SceneIsCompatible(candidate) &&
+			    (!scene || candidate->GetPresetName() < scene->GetPresetName())) {
+				scene = candidate;
+			}
 		}
+	}
+	if (scene) {
+		g_SceneMan.SetSceneToLoad(scene, true, m_Options.AutoDeployUnits);
+		g_ConsoleMan.PrintString("CO-OP: Automatic start on scene \"" + scene->GetPresetName() + "\".");
 	}
 	// The host is player one on team one against a CPU team. Clients are added to the host's team when the match is prepared.
 	activity->ClearPlayers(false);

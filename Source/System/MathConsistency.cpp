@@ -17,12 +17,14 @@ void MathConsistency::PrepareForLockstep(int argc, char** argv) {
 	// Harmless outside co-op too, and must happen before any math library call whose results could be compared.
 	_set_FMA3_enable(0);
 #elif defined(RTE_MATH_REEXEC_WITH_TUNABLES)
-	bool startsSession = false;
+	// Always, not only when the command line starts a co-op session, because a session can also be hosted or joined from the menus, long after
+	// the math library was loaded. -no-math-restart opts out, e.g. for debugging, at the cost of possibly being refused when joining.
+	bool optOut = false;
 	for (int i = 1; i < argc; ++i) {
-		startsSession = startsSession || std::strcmp(argv[i], "-coop-host") == 0 || std::strcmp(argv[i], "-coop-join") == 0;
+		optOut = optOut || std::strcmp(argv[i], "-no-math-restart") == 0;
 	}
 	const char* restartMarker = "CCCP_MATH_RESTARTED";
-	if (!startsSession || std::getenv(restartMarker)) {
+	if (optOut || std::getenv(restartMarker)) {
 		return;
 	}
 

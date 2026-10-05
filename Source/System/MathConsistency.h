@@ -13,8 +13,8 @@ namespace RTE {
 
 	public:
 		/// Makes this process use the math library implementation that works the same on every x86-64 CPU. Call first thing in main.
-		/// On Windows this switches off the FMA code paths. On Linux with glibc the choice is made when the program loads, so if the command line
-		/// starts a co-op session, the program restarts itself once with FMA masked from glibc's CPU feature detection (GLIBC_TUNABLES).
+		/// On Windows this switches off the FMA code paths. On Linux with glibc the choice is made when the program loads, so the program restarts
+		/// itself once with FMA masked from glibc's CPU feature detection (GLIBC_TUNABLES), unless -no-math-restart is passed.
 		/// @param argc Command line argument count, as passed to main.
 		/// @param argv Command line arguments, as passed to main.
 		static void PrepareForLockstep(int argc, char** argv);

@@ -10,6 +10,7 @@
 #include <map>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #define g_LockstepMan LockstepMan::Instance()
@@ -33,8 +34,9 @@ namespace RTE {
 	/// every update with exactly the same input, and (because the simulation is deterministic, see TimerMan::SetDeterministicMode) ends up in exactly
 	/// the same state. Peers periodically exchange hashes of their simulation state so any desync is detected and reported.
 	///
-	/// Session flow: the host starts the game with -coop-host and either picks an Activity in the menus as usual, or passes -coop-activity to start one
-	/// automatically once enough players have joined. Clients start with -coop-join <address>. When the host starts an Activity, every connected client
+	/// Session flow: the host clicks Host in the main menu's Co-op screen (or starts the game with -coop-host) and then picks an Activity in the menus as
+	/// usual, or passes -coop-activity to start one automatically once enough players have joined. Clients click Join in the Co-op screen (or start with
+	/// -coop-join <address>). A client whose resolution differs from the host's switches to the host's, as the screen size affects the simulation. When the host starts an Activity, every connected client
 	/// is added to it as an extra human player on the host's team, and the Activity configuration is sent to the clients so they start the same one.
 	class LockstepMan : public Singleton<LockstepMan> {
 
@@ -73,6 +75,35 @@ namespace RTE {
 		/// @param port The host's UDP port.
 		/// @return Whether the connection attempt started.
 		bool StartJoining(const std::string& address, unsigned short port);
+
+		/// Starts hosting a co-op session, leaving any current session first. For the menus.
+		/// @param port The UDP port to listen on.
+		/// @return Whether hosting started successfully.
+		bool HostSession(unsigned short port);
+
+		/// Starts joining a co-op session, leaving any current session first. For the menus.
+		/// @param address The host's address, optionally followed by :port.
+		/// @return Whether the connection attempt started.
+		bool JoinSession(const std::string& address);
+
+		/// Leaves the current session, ending any running match (for everyone, when hosting), and restores the resolution if joining changed it.
+		void LeaveSession();
+
+		/// Gets a description of the session's state, for the menus and overlay.
+		/// @return The status text.
+		const std::string& GetStatusMessage() const { return m_StatusMessage; }
+
+		/// Gets the names of the players in the session, the host's first. Empty on a client that hasn't been accepted yet.
+		/// @return The player names.
+		std::vector<std::string> GetLobbyPlayerNames() const;
+
+		/// Gets whether the last resolution change was made by joining or leaving a session, and forgets it. Lets the menus go back to the co-op screen.
+		/// @return Whether this changed the resolution since the last call.
+		bool TakeResolutionChangedFlag() { return std::exchange(m_ChangedResolution, false); }
+
+		/// Gets whether this client has been accepted into the host's session.
+		/// @return Whether this machine is an accepted client.
+		bool IsClientAccepted() const { return m_Role == Role::Client && m_ConnectedToHost && !m_LobbyNames.empty(); }
 
 		/// Gets what this machine is doing in a co-op session.
 		/// @return The role of this machine.
@@ -145,13 +176,15 @@ namespace RTE {
 			MsgEndMatch, //!< Host -> clients: the host left the match.
 			MsgPing, //!< Host -> client: round trip time measurement.
 			MsgPong, //!< Client -> host: reply to MsgPing.
-			MsgLeave //!< Client -> host: this client left the match, or couldn't start it.
+			MsgLeave, //!< Client -> host: this client left the match, or couldn't start it.
+			MsgResolution //!< Host -> client: switch to this resolution and say hello again.
 		};
 
 		/// A connected client, as seen by the host.
 		struct Peer {
 			uint64_t Guid = 0; //!< RakNet GUID of the connection.
 			std::string Address; //!< Network address, for messages.
+			std::string Name; //!< The player's name, from their settings.
 			bool Accepted = false; //!< Whether the client passed the version checks.
 			InputDevice Device = InputDevice::DEVICE_KEYB_ONLY; //!< The input device the client plays with.
 			float DigitalAimSpeed = 1.0F; //!< The client's digital aim speed setting.
@@ -187,6 +220,12 @@ namespace RTE {
 		std::string m_RejectReason; //!< Client: why the host rejected us, if it did.
 		std::vector<Peer> m_Peers; //!< Host: connected clients.
 		int m_LobbyPeerCount = 0; //!< Client: number of peers in the session, as last reported by the host.
+		std::vector<std::string> m_LobbyNames; //!< Client: the names of the players in the session, as last reported by the host.
+		int m_ResolutionRequests = 0; //!< Client: how many times the host asked us to switch resolution since connecting.
+		int m_LocalResX = 0; //!< Client: the resolution before switching to the host's, to restore when leaving. 0 if not switched.
+		int m_LocalResY = 0; //!< Client: see m_LocalResX.
+		float m_LocalResMultiplier = 1.0F; //!< Client: see m_LocalResX.
+		bool m_ChangedResolution = false; //!< Whether joining or leaving changed the resolution and the menus haven't been rebuilt for it yet.
 		LaunchOptions m_Options; //!< Configuration from the command line.
 		bool m_AutoStartDone = false; //!< Host: whether the automatic Activity start has happened.
 		std::chrono::steady_clock::time_point m_LastPingTime; //!< Host: when round trip measurements were last sent.
@@ -269,6 +308,12 @@ namespace RTE {
 
 		/// Host: sends the lobby status to all clients.
 		void BroadcastLobbyStatus();
+
+		/// Client: sends the hello message, which the host checks before accepting us.
+		void SendHello();
+
+		/// Forgets all session and connection state, after the network peer has been shut down.
+		void ResetSessionState();
 
 		/// Host: finds a peer by GUID.
 		Peer* FindPeer(uint64_t guid);

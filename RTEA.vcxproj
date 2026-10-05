@@ -776,6 +776,7 @@
     <ClInclude Include="Source\Managers\WindowMan.h" />
     <ClInclude Include="Source\Menus\LoadingScreen.h" />
     <ClInclude Include="Source\Menus\ModManagerGUI.h" />
+    <ClInclude Include="Source\Menus\CoopMenuGUI.h" />
     <ClInclude Include="Source\Menus\PauseMenuGUI.h" />
     <ClInclude Include="Source\Menus\SaveLoadMenuGUI.h" />
     <ClInclude Include="Source\Menus\ScenarioActivityConfigGUI.h" />
@@ -1038,6 +1039,7 @@
     <ClCompile Include="Source\Managers\WindowMan.cpp" />
     <ClCompile Include="Source\Menus\LoadingScreen.cpp" />
     <ClCompile Include="Source\Menus\ModManagerGUI.cpp" />
+    <ClCompile Include="Source\Menus\CoopMenuGUI.cpp" />
     <ClCompile Include="Source\Menus\PauseMenuGUI.cpp" />
     <ClCompile Include="Source\Menus\SaveLoadMenuGUI.cpp" />
     <ClCompile Include="Source\Menus\ScenarioActivityConfigGUI.cpp" />

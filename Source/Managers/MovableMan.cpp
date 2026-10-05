@@ -1611,7 +1611,16 @@ void MovableMan::Update() {
 			iIt = stable_partition(m_Items.begin(), m_Items.end(), std::not_fn(std::mem_fn(&MovableObject::ToDelete)));
 			imidIt = iIt;
 
+			// Actors can end up in the item and particle lists too (scripts can add them there, e.g. Keepie Uppie's rockets), so they may be brains.
+			auto forgetBrain = [](MovableObject* movableObject) {
+				Activity* activity = g_ActivityMan.GetActivity();
+				if (Actor* actor = activity ? dynamic_cast<Actor*>(movableObject) : nullptr; actor && activity->IsAssignedBrain(actor)) {
+					activity->SetPlayerBrain(nullptr, activity->IsBrainOfWhichPlayer(actor));
+				}
+			};
+
 			while (iIt != m_Items.end()) {
+				forgetBrain(*iIt);
 				(*iIt)->DestroyScriptState();
 				delete (*iIt);
 				m_ValidItems.erase(*iIt);
@@ -1624,6 +1633,7 @@ void MovableMan::Update() {
 			midIt = parIt;
 
 			while (parIt != m_Particles.end()) {
+				forgetBrain(*parIt);
 				(*parIt)->DestroyScriptState();
 				delete (*parIt);
 				m_ValidParticles.erase(*parIt);
