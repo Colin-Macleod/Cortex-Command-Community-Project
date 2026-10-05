@@ -37,6 +37,10 @@ void SoundContainer::Clear() {
 	m_TopLevelSoundSet = std::make_shared<SoundSet>();
 	m_TopLevelSoundSet->Destroy();
 
+	// Sounds still playing keep going, but must forget this (it may be about to be deleted, e.g. as part of an object being reset or destroyed).
+	if (!m_PlayingChannels.empty()) {
+		g_AudioMan.DetachSoundContainerChannels(this);
+	}
 	m_PlayingChannels.clear();
 	m_SimPlaybackEndTicks = 0;
 	m_SimPlaybackLoopsForever = false;
@@ -69,6 +73,9 @@ int SoundContainer::Create(const SoundContainer& reference) {
 
 	m_TopLevelSoundSet->Create(*reference.m_TopLevelSoundSet);
 
+	if (!m_PlayingChannels.empty()) {
+		g_AudioMan.DetachSoundContainerChannels(this);
+	}
 	m_PlayingChannels.clear();
 	m_SimPlaybackEndTicks = 0;
 	m_SimPlaybackLoopsForever = false;
