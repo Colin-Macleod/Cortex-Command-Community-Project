@@ -211,6 +211,7 @@ namespace RTE {
 			int AutoGold = 5000; //!< Starting gold for AutoActivity.
 			bool AutoFog = true; //!< Fog of war for AutoActivity.
 			bool AutoDeployUnits = true; //!< Whether to deploy the scene's units for AutoActivity.
+			bool AutoClearPathToOrbit = false; //!< Whether AutoActivity requires a clear path to orbit from the brains placed in a build phase.
 			int BotSeed = -1; //!< If not negative, the local player is driven by a pseudo-random input bot (for automated testing).
 			int DesyncInjectTick = -1; //!< If not negative, deliberately perturb this machine's simulation at this sim update (for testing desync detection).
 			bool InputDelayFixed = false; //!< Whether the input delay was set on the command line. Otherwise the host picks it from the measured round trip times.
@@ -298,6 +299,7 @@ namespace RTE {
 		std::minstd_rand m_BotRNG; //!< Generator for the input bot.
 		VirtualInputFrame m_BotHeld; //!< The bot's currently held input.
 		int m_BotHoldUpdates = 0; //!< How many more sim updates the bot holds its current input.
+		float m_BotMousePosition[2] = {0, 0}; //!< The bot's absolute mouse position, for clicking around in menus.
 
 #pragma region Networking
 		/// Sends a message to one connection.

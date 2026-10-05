@@ -444,6 +444,12 @@ void LockstepMan::HandleCommandLine(int argCount, char** argValue) {
 		} else if (arg == "-coop-fog" && hasNext) {
 			m_Options.AutoFog = std::atoi(next.c_str()) != 0;
 			++i;
+		} else if (arg == "-coop-deploy" && hasNext) {
+			m_Options.AutoDeployUnits = std::atoi(next.c_str()) != 0;
+			++i;
+		} else if (arg == "-coop-clear-path" && hasNext) {
+			m_Options.AutoClearPathToOrbit = std::atoi(next.c_str()) != 0;
+			++i;
 		} else if (arg == "-coop-delay" && hasNext) {
 			m_InputDelay = std::clamp(std::atoi(next.c_str()), 1, 60);
 			m_Options.InputDelayFixed = true;
@@ -1327,7 +1333,7 @@ GameActivity* LockstepMan::BuildAutoActivity() const {
 	}
 	activity->SetDifficulty(m_Options.AutoDifficulty);
 	activity->SetStartingGold(m_Options.AutoGold);
-	activity->SetRequireClearPathToOrbit(false);
+	activity->SetRequireClearPathToOrbit(m_Options.AutoClearPathToOrbit);
 	activity->SetFogOfWarEnabled(m_Options.AutoFog);
 	// Without -coop-scene, the Activity's own default scene, or failing that the first compatible scene the scenario menu would offer, by name.
 	const std::string sceneName = m_Options.AutoScene.empty() ? activity->GetSceneName() : m_Options.AutoScene;
@@ -1451,40 +1457,78 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 	}
 
 	// Automated testing: a bot that keeps picking a new random combination of held inputs, so actors walk, jump, crouch, aim, fire and switch.
+	// Now and then it also opens the pie menu and picks a random slice (buy menu, inventory, editor commands, Done Building...), or clicks
+	// around the screen and turns the mouse wheel, so the menus get used too: the buy menu, the editors' object pickers, the inventory menu.
 	const uint64_t previousHeld = m_BotHeld.ElementHeld;
 	const uint8_t previousMouseHeld = m_BotHeld.MouseHeld;
+	const float screenWidth = static_cast<float>(g_WindowMan.GetResX());
+	const float screenHeight = static_cast<float>(g_WindowMan.GetResY());
+	bool newHold = false;
 	if (m_BotHoldUpdates <= 0) {
 		m_BotHeld = VirtualInputFrame();
 		auto chance = [this](int percent) { return static_cast<int>(m_BotRNG() % 100) < percent; };
-		int move = static_cast<int>(m_BotRNG() % 3);
-		if (move == 1) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_L_LEFT;
-		} else if (move == 2) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_L_RIGHT;
+		int action = static_cast<int>(m_BotRNG() % 100);
+		// In a build phase there's nothing else to do, and it only ends when everyone has placed a brain and picked Done Building from the pie menu.
+		const Activity* activity = g_ActivityMan.GetActivity();
+		const bool editing = activity && activity->GetActivityState() == Activity::ActivityState::Editing;
+		const int pieMenuPercent = editing ? 30 : 8;
+		const int clickPercent = editing ? 70 : 20;
+		if (action < pieMenuPercent) {
+			// Open the pie menu, point at one of eight directions and release it a while later, which picks the slice there.
+			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_PIEMENU_ANALOG;
+			m_BotHeld.MouseHeld |= 1 << MouseButtons::MOUSE_RIGHT;
+			float angle = static_cast<float>(m_BotRNG() % 8) * c_QuarterPI;
+			m_BotHeld.MouseMovement[0] = std::cos(angle) * 10.0F;
+			m_BotHeld.MouseMovement[1] = -std::sin(angle) * 10.0F;
+			m_BotHoldUpdates = 15 + static_cast<int>(m_BotRNG() % 40);
+		} else if (action < clickPercent) {
+			// Move the cursor somewhere and click (or hold) the left or right button there, maybe turning the wheel.
+			m_BotMousePosition[0] = static_cast<float>(m_BotRNG() % std::max(1, static_cast<int>(screenWidth)));
+			m_BotMousePosition[1] = static_cast<float>(m_BotRNG() % std::max(1, static_cast<int>(screenHeight)));
+			if (chance(80)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_FIRE;
+				m_BotHeld.MouseHeld |= 1 << MouseButtons::MOUSE_LEFT;
+			} else if (chance(50)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_PIEMENU_ANALOG;
+				m_BotHeld.MouseHeld |= 1 << MouseButtons::MOUSE_RIGHT;
+			}
+			if (chance(20)) {
+				m_BotHeld.MouseWheel = chance(50) ? 1 : -1;
+			}
+			m_BotHoldUpdates = 2 + static_cast<int>(m_BotRNG() % 12);
 		}
-		if (chance(30)) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_JUMP;
+		if (m_BotHoldUpdates <= 0) {
+			int move = static_cast<int>(m_BotRNG() % 3);
+			if (move == 1) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_L_LEFT;
+			} else if (move == 2) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_L_RIGHT;
+			}
+			if (chance(30)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_JUMP;
+			}
+			if (chance(15)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_CROUCH;
+			}
+			if (chance(40)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_FIRE;
+				m_BotHeld.MouseHeld |= 1 << MouseButtons::MOUSE_LEFT;
+			}
+			if (chance(25)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_AIM;
+			}
+			if (chance(5)) {
+				m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_NEXT;
+			}
+			if (chance(3)) {
+				// Raw keys reach scripts too (e.g. Space in Wave Defense).
+				m_BotHeld.KeysHeld[SDL_SCANCODE_SPACE / 64] |= 1ULL << (SDL_SCANCODE_SPACE % 64);
+			}
+			m_BotHeld.MouseMovement[0] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
+			m_BotHeld.MouseMovement[1] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
+			m_BotHoldUpdates = 10 + static_cast<int>(m_BotRNG() % 80);
 		}
-		if (chance(15)) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_CROUCH;
-		}
-		if (chance(40)) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_FIRE;
-			m_BotHeld.MouseHeld |= 1 << MouseButtons::MOUSE_LEFT;
-		}
-		if (chance(25)) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_AIM;
-		}
-		if (chance(5)) {
-			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_NEXT;
-		}
-		if (chance(3)) {
-			// Raw keys reach scripts too (e.g. Space in Wave Defense).
-			m_BotHeld.KeysHeld[SDL_SCANCODE_SPACE / 64] |= 1ULL << (SDL_SCANCODE_SPACE % 64);
-		}
-		m_BotHeld.MouseMovement[0] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
-		m_BotHeld.MouseMovement[1] = static_cast<float>(static_cast<int>(m_BotRNG() % 21) - 10);
-		m_BotHoldUpdates = 10 + static_cast<int>(m_BotRNG() % 80);
+		newHold = true;
 	}
 	--m_BotHoldUpdates;
 
@@ -1493,9 +1537,12 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 	frame.ElementReleased = previousHeld & ~frame.ElementHeld;
 	frame.MousePressed = frame.MouseHeld & ~previousMouseHeld;
 	frame.MouseReleased = previousMouseHeld & ~frame.MouseHeld;
-	frame.MousePosition[0] = static_cast<float>(g_WindowMan.GetResX() / 2);
-	frame.MousePosition[1] = static_cast<float>(g_WindowMan.GetResY() / 2);
-	// Only move the mouse on the first update of each hold, otherwise the aim just pins to the edge.
+	frame.MousePosition[0] = std::clamp(m_BotMousePosition[0], 0.0F, std::max(0.0F, screenWidth - 1.0F));
+	frame.MousePosition[1] = std::clamp(m_BotMousePosition[1], 0.0F, std::max(0.0F, screenHeight - 1.0F));
+	if (!newHold) {
+		frame.MouseWheel = 0; // Turn the wheel once per hold only.
+	}
+	// Don't move the mouse during the last updates of each hold, otherwise the aim just pins to the edge.
 	if (m_BotHoldUpdates < 5) {
 		frame.MouseMovement[0] = frame.MouseMovement[1] = 0;
 	}
@@ -1665,6 +1712,8 @@ void LockstepMan::BeginMatch() {
 		m_BotRNG.seed(static_cast<unsigned int>(m_Options.BotSeed));
 		m_BotHeld = VirtualInputFrame();
 		m_BotHoldUpdates = 0;
+		m_BotMousePosition[0] = static_cast<float>(g_WindowMan.GetResX() / 2);
+		m_BotMousePosition[1] = static_cast<float>(g_WindowMan.GetResY() / 2);
 	}
 	m_StatusMessage.clear();
 	g_ConsoleMan.PrintString("CO-OP: Match started. Local player: " + std::to_string(m_LocalPlayer + 1) + ", input delay: " + std::to_string(m_InputDelay) + " sim updates.");
