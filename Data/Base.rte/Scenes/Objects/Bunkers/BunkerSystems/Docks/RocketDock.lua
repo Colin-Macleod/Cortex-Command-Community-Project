@@ -1,3 +1,12 @@
+-- The craft can be deleted at any time and its memory reused by another object, so it's kept by UniqueID and looked up every update.
+local function FindCraft(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.updateTimer = Timer();
 	self.healTimer = Timer();
@@ -10,8 +19,8 @@ function Update(self)
 		self.ToSettle = true;
 	end
 
-	--The craft can be deleted at any time, so check that it still exists without touching it.
-	if self.craft and MovableMan:IsActor(self.craft) and (self.craft.AIMode == Actor.AIMODE_STAY or self.craft.AIMode == Actor.AIMODE_DELIVER) then
+	self.craft = FindCraft(self.craftUID);
+	if self.craft and (self.craft.AIMode == Actor.AIMODE_STAY or self.craft.AIMode == Actor.AIMODE_DELIVER) then
 		--Disable collisions with the ship
 		self.craft:SetWhichMOToNotHit(self, 100);
 		--Pin the ship and pull it nicely into the docking unit.
@@ -34,10 +43,12 @@ function Update(self)
 		end
 	elseif self.updateTimer:IsPastSimMS(200) then
 		self.craft = nil;
+		self.craftUID = nil;
 		for actor in MovableMan.Actors do
 			--See if a live rocket is within 40 pixel range of the docking unit and if it has the AI mode set to "Stay".
 			if (actor.ClassName == "ACRocket") and (actor.AIMode == Actor.AIMODE_STAY or actor.AIMode == Actor.AIMODE_DELIVER) and actor.Health > 0 and (math.abs(actor.Pos.X - self.Pos.X) < self.detectionRange) and (math.abs(actor.Pos.Y - self.Pos.Y) < self.detectionRange) then
 				self.craft = ToActor(actor);
+				self.craftUID = actor.UniqueID;
 			end
 		end
 		

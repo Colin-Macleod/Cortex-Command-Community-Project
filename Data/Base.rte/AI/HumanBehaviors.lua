@@ -1,6 +1,12 @@
 
 HumanBehaviors = {};
 
+-- Objects kept across updates (or across coroutine yields) can be deleted at any time and their memory reused by another object,
+-- so we keep their unique IDs instead and look the objects up again when we need them.
+local function FindByUniqueID(uniqueID)
+	return uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+end
+
 -- spot targets by casting a ray in a random direction
 function HumanBehaviors.LookForTargets(AI, Owner, Skill)
 	local viewAngDeg = RangeRand(50, 120) * Owner.Perceptiveness * (0.5 + Skill/200);
@@ -30,15 +36,16 @@ function HumanBehaviors.CheckEnemyLOS(AI, Owner, Skill)
 		box.Height = FrameMan.PlayerScreenHeight * skillFactor;
 		for Act in MovableMan:GetMOsInBox(box, Owner.Team, true) do
 			if IsActor(Act) and not AI.isPlayerOwned or not SceneMan:IsUnseen(Act.Pos.X, Act.Pos.Y, Owner.Team) then	-- AI-teams ignore the fog
-				table.insert(AI.Enemies, Act);
+				table.insert(AI.Enemies, Act.UniqueID);
 			end
 		end
 
 		return HumanBehaviors.LookForTargets(AI, Owner, Skill); -- cast rays like normal actors occasionally
 	else
-		local Enemy = table.remove(AI.Enemies);
-		if Enemy then
-			if MovableMan:ValidMO(Enemy) then
+		local enemyUID = table.remove(AI.Enemies);
+		if enemyUID then
+			local Enemy = FindByUniqueID(enemyUID);
+			if Enemy and MovableMan:ValidMO(Enemy) then
 				local Origin;
 				if Owner.EquippedItem and AI.deviceState == AHuman.AIMING then
 					Origin = Owner.EquippedItem.Pos;
@@ -580,23 +587,30 @@ function HumanBehaviors.WeaponSearch(AI, Owner, Abort)
 		maxSearchDistance = maxSearchDistance * 0.6;
 	end
 	
+	-- we yield while searching, so only store unique IDs
+	local moUniqueIDs = {};
+	for movableObject in MovableMan:GetMOsInRadius(Owner.Pos, maxSearchDistance, -1, true) do
+		table.insert(moUniqueIDs, movableObject.UniqueID);
+	end
+
 	local devices = {};
 	local mosSearched = 0;
-	for movableObject in MovableMan:GetMOsInRadius(Owner.Pos, maxSearchDistance, -1, true) do
+	for _, moUniqueID in ipairs(moUniqueIDs) do
 		mosSearched = mosSearched + 1;
 		if mosSearched % 30 == 0 then
 			local _ai, _ownr, _abrt = coroutine.yield();
 			if _abrt then return true end
 		end
 		
-		if MovableMan:ValidMO(movableObject) and IsHeldDevice(movableObject) then
+		local movableObject = FindByUniqueID(moUniqueID);
+		if movableObject and MovableMan:ValidMO(movableObject) and IsHeldDevice(movableObject) then
 			local device = ToHeldDevice(movableObject);
 			if device:IsPickupableBy(Owner) and not device:IsActivated() and device.Vel.Largest < 3 and not SceneMan:IsUnseen(device.Pos.X, device.Pos.Y, Owner.Team) then
 				local distanceToDevice = SceneMan:ShortestDistance(Owner.Pos, device.Pos, SceneMan.SceneWrapsX or SceneMan.SceneWrapsY);
 				if distanceToDevice:MagnitudeIsGreaterThan(Owner.Radius * 0.75) then
-					table.insert(devices, { device = device, distance = distanceToDevice });
+					table.insert(devices, { deviceUID = device.UniqueID, distance = distanceToDevice });
 				else
-					devices = {{ device = device, distance = distanceToDevice }};
+					devices = {{ deviceUID = device.UniqueID, distance = distanceToDevice }};
 					break;
 				end
 			end
@@ -613,8 +627,9 @@ function HumanBehaviors.WeaponSearch(AI, Owner, Abort)
 		local searchesRemaining = #devices;
 		local devicesToPickUp = {};
 		for _, deviceEntry in pairs(devices) do
-			local device = deviceEntry.device;
-			if MovableMan:ValidMO(device) then
+			local device = FindByUniqueID(deviceEntry.deviceUID);
+			if device and MovableMan:ValidMO(device) then
+				device = ToHeldDevice(device);
 				local pathMultiplier = 1;
 				if device:HasObjectInGroup("Weapons - Primary") or device:HasObjectInGroup("Weapons - Heavy") then
 					pathMultiplier = 0.4; -- prioritize primary or heavy weapons
@@ -1679,6 +1694,7 @@ function HumanBehaviors.ShootArea(AI, Owner, Abort)
 	local PrjDat = SharedBehaviors.GetProjectileData(Owner);
 	local Dist = SceneMan:ShortestDistance(Owner.EquippedItem.Pos, AimPoint, false);
 	local Weapon = ToHDFirearm(Owner.EquippedItem);
+	local weaponUID = Weapon.UniqueID;
 
 	-- uncomment these to get the range of the weapon
 	--ConsoleMan:PrintString(Owner.EquippedItem.PresetName .. " range = " .. PrjDat.rng .. " px");
@@ -1695,6 +1711,12 @@ function HumanBehaviors.ShootArea(AI, Owner, Abort)
 
 	AI.fire = false;
 	while aim do
+		Weapon = FindByUniqueID(weaponUID);
+		if not Weapon then
+			break; -- the weapon is gone
+		end
+		Weapon = ToHDFirearm(Weapon);
+
 		if Owner.FirearmIsReady then
 			AI.deviceState = AHuman.AIMING;
 			AI.Ctrl.AnalogAim = Vector(1,0):RadRotate(aim+aimError+RangeRand(-0.02, 0.02)*AI.aimSkill);

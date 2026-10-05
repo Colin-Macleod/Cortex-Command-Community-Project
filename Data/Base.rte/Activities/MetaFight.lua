@@ -1,3 +1,13 @@
+-- Actors kept across updates can be deleted at any time and their memory reused by another object,
+-- so we also keep their unique IDs and look them up again at the start of every update.
+local function FindActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 ---------------------------------------------------------
 -- BRAIN INTEGRITY CHECK
 function MetaFight:BrainCheck()
@@ -524,8 +534,10 @@ function MetaFight:StartActivity()
 		self.AI.SpawnTimer = Timer();
 		self.AI.SpawnTimer:SetSimTimeLimitMS(16000);
 		self.AI.AttackTarget = {};
+		self.AI.AttackTargetUID = {};
 		self.AI.AttackPos = {};
 		self.AI.Defender = {};
+		self.AI.DefenderUID = {};
 	end
 
 	-- Clear data about actors controlled by external scripts. If scripts are active they'll grab their actors back
@@ -637,6 +649,13 @@ end
 ---------------------------------------------------------
 -- UPDATE
 function MetaFight:UpdateActivity()
+	if self.AI then
+		for team = Activity.TEAM_1, Activity.MAXTEAMCOUNT - 1 do
+			self.AI.AttackTarget[team] = self.AI.AttackTarget[team] and FindActor(self.AI.AttackTargetUID[team]);
+			self.AI.Defender[team] = self.AI.Defender[team] and FindActor(self.AI.DefenderUID[team]);
+		end
+	end
+
 	--------------------------------------------------------
 	-- Immediately do scanning for teams who have scheduled it
 	local scanMessage = "Scanning";
@@ -1112,6 +1131,7 @@ function MetaFight:SearchLZ(player)
 							Passenger.AIMode = Actor.AIMODE_GOTO;
 							Passenger.Team = team;
 							self.AI.Defender[team] = Passenger;
+							self.AI.DefenderUID[team] = Passenger.UniqueID;
 							Craft:AddInventoryItem(Passenger);
 						end
 
@@ -1251,6 +1271,7 @@ function MetaFight:SearchLZ(player)
 
 			self.AI.AttackTarget[team] = self:SelectTarget(TargetActors); -- Select the target based on distance from our brain
 			if self.AI.AttackTarget[team] then
+				self.AI.AttackTargetUID[team] = self.AI.AttackTarget[team].UniqueID;
 				self.AI.AttackPos[team] = Vector(self.AI.AttackTarget[team].Pos.X, self.AI.AttackTarget[team].Pos.Y);
 			else
 				-- No target found

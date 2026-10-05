@@ -5,6 +5,16 @@ require("AI/CrabBehaviors");
 
 NativeTurretAI = {};
 
+-- Targets are kept across updates, but they can be deleted at any time and their memory reused by another object,
+-- so we only keep their unique IDs between updates and look the objects up again at the start of every update.
+local function FindByUniqueID(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return IsAHuman(mo) and ToAHuman(mo) or IsACrab(mo) and ToACrab(mo) or IsACRocket(mo) and ToACRocket(mo) or IsACDropShip(mo) and ToACDropShip(mo) or IsADoor(mo) and ToADoor(mo) or ToActor(mo);
+	end
+	return mo;
+end
+
 function NativeTurretAI:Create(Owner)
 	local Members = {};
 
@@ -43,6 +53,8 @@ end
 
 function NativeTurretAI:Update(Owner)
 	self.Ctrl = Owner:GetController();
+	self.Target = FindByUniqueID(self.TargetUID);
+	self.UnseenTarget = FindByUniqueID(self.UnseenTargetUID);
 
 	if self.isPlayerOwned then
 		if self.PlayerInterferedTimer:IsPastSimTimeLimit() then
@@ -181,6 +193,9 @@ function NativeTurretAI:Update(Owner)
 	if self.deviceState == ACrab.AIMING then
 		self.Ctrl:SetState(Controller.AIM_SHARP, true);
 	end
+
+	self.TargetUID = self.Target and self.Target.UniqueID;
+	self.UnseenTargetUID = self.UnseenTarget and self.UnseenTarget.UniqueID;
 end
 
 function NativeTurretAI:Destroy(Owner)

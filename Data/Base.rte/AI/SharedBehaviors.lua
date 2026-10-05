@@ -1,5 +1,15 @@
 SharedBehaviors = {};
 
+-- Actors kept across coroutine yields can be deleted at any time and their memory reused by another object,
+-- so we keep their unique IDs instead and look them up again when we need them. Returns nil if the actor is not active in the scene.
+local function FindActiveActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function SharedBehaviors.GetTeamShootingSkill(team)
 	local skill = 80;
 	local Activ = ActivityMan:GetActivity();
@@ -128,7 +138,7 @@ function SharedBehaviors.BrainSearch(AI, Owner, Abort)
 	local Brains = {};
 	for Act in MovableMan.Actors do
 		if Act.Team ~= Owner.Team and Act:HasObjectInGroup("Brains") then
-			table.insert(Brains, Act);
+			table.insert(Brains, Act.UniqueID);
 		end
 	end
 
@@ -138,7 +148,7 @@ function SharedBehaviors.BrainSearch(AI, Owner, Abort)
 			if GmActiv:PlayerActive(player) and GmActiv:GetTeamOfPlayer(player) ~= Owner.Team then
 				local Act = GmActiv:GetPlayerBrain(player);
 				if Act and MovableMan:IsActor(Act) then
-					table.insert(Brains, Act);
+					table.insert(Brains, Act.UniqueID);
 				end
 			end
 		end
@@ -146,17 +156,19 @@ function SharedBehaviors.BrainSearch(AI, Owner, Abort)
 
 	if #Brains > 0 then
 		if #Brains == 1 then
-			if MovableMan:IsActor(Brains[1]) then
+			local Brain = FindActiveActor(Brains[1]);
+			if Brain then
 				Owner:ClearAIWaypoints();
-				Owner:AddAIMOWaypoint(Brains[1]);
+				Owner:AddAIMOWaypoint(Brain);
 				AI:CreateGoToBehavior(Owner);
 			end
 		else	-- lobotomy test
-			local ClosestBrain;
+			local closestBrainUID;
 			local minDist = math.huge;
-			for _, Act in pairs(Brains) do
+			for _, brainUID in ipairs(Brains) do
 				-- measure how easy the path to the destination is to traverse
-				if MovableMan:IsActor(Act) then
+				local Act = FindActiveActor(brainUID);
+				if Act then
 					Owner:ClearAIWaypoints();
 					Owner:AddAISceneWaypoint(Act.Pos);
 					Owner:UpdateMovePath();
@@ -209,14 +221,15 @@ function SharedBehaviors.BrainSearch(AI, Owner, Abort)
 					local score = pathLength * 0.55 + math.floor(pathObstMaxHeight/27) * 8;
 					if score < minDist then
 						minDist = score;
-						ClosestBrain = Act;
+						closestBrainUID = brainUID;
 					end
 				end
 			end
 
 			--Owner:ClearAIWaypoints(); -- this part freezes the script when facing the opposing brain
 
-			if MovableMan:IsActor(ClosestBrain) then
+			local ClosestBrain = FindActiveActor(closestBrainUID);
+			if ClosestBrain then
 				Owner:ClearAIWaypoints(); -- moving the function here fixes it (4zK)
 				Owner:AddAIMOWaypoint(ClosestBrain);
 				AI:CreateGoToBehavior(Owner);

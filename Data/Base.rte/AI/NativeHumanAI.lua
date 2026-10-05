@@ -4,6 +4,28 @@ require("AI/SharedBehaviors");
 
 NativeHumanAI = {};
 
+-- Targets are kept across updates, but they can be deleted at any time and their memory reused by another object,
+-- so we only keep their unique IDs between updates and look the objects up again at the start of every update.
+local function FindByUniqueID(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return IsAHuman(mo) and ToAHuman(mo) or IsACrab(mo) and ToACrab(mo) or IsACRocket(mo) and ToACRocket(mo) or IsACDropShip(mo) and ToACDropShip(mo) or IsADoor(mo) and ToADoor(mo) or ToActor(mo);
+	end
+	return mo;
+end
+
+local function RefreshStoredObjects(self)
+	self.Target = FindByUniqueID(self.TargetUID);
+	self.UnseenTarget = FindByUniqueID(self.UnseenTargetUID);
+	self.PickupHD = FindByUniqueID(self.PickupHDUID);
+end
+
+local function StoreObjectUniqueIDs(self)
+	self.TargetUID = self.Target and self.Target.UniqueID;
+	self.UnseenTargetUID = self.UnseenTarget and self.UnseenTarget.UniqueID;
+	self.PickupHDUID = self.PickupHD and self.PickupHD.UniqueID;
+end
+
 function NativeHumanAI:Create(Owner)
 	local Members = {};
 
@@ -82,6 +104,7 @@ end
 
 function NativeHumanAI:Update(Owner)
 	self.Ctrl = Owner:GetController();
+	RefreshStoredObjects(self);
 
 	-- Our jetpack might have thrust balancing enabled, so update for our current mass
 	if Owner.Jetpack then		
@@ -650,6 +673,8 @@ function NativeHumanAI:Update(Owner)
 	elseif self.lateralMoveState == Actor.LAT_RIGHT then
 		self.Ctrl:SetState(Controller.MOVE_RIGHT, true);
 	end
+
+	StoreObjectUniqueIDs(self);
 end
 
 function NativeHumanAI:Destroy(Owner)
@@ -665,6 +690,7 @@ end
 
 -- functions that create behaviors. the default behaviors are stored in the HumanBehaviors table. store your custom behaviors in a table to avoid name conflicts between mods.
 function NativeHumanAI:CreateQuickthrowBehavior(Owner)
+	self.Target = FindByUniqueID(self.TargetUID); -- this can be called from outside of Update
 	if self.Target and MovableMan:ValidMO(self.Target) then
 		if Owner:EquipThrowable(true) and Owner.ThrowableIsReady then
 			self.NextBehavior = coroutine.create(HumanBehaviors.ThrowTarget);

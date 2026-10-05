@@ -111,6 +111,7 @@ void Actor::Clear() {
 	m_DrawWaypoints = false;
 	m_MoveTarget.Reset();
 	m_pMOMoveTarget = nullptr;
+	m_MOMoveTargetUniqueID = 0;
 	m_PrevPathTarget.Reset();
 	m_MoveVector.Reset();
 	m_MovePath.clear();
@@ -270,6 +271,7 @@ int Actor::Create(const Actor& reference) {
 	m_DrawWaypoints = reference.m_DrawWaypoints;
 	m_MoveTarget = reference.m_MoveTarget;
 	m_pMOMoveTarget = reference.m_pMOMoveTarget;
+	m_MOMoveTargetUniqueID = reference.m_MOMoveTargetUniqueID;
 	m_PrevPathTarget = reference.m_PrevPathTarget;
 	m_MoveVector = reference.m_MoveVector;
 	m_MovePath.clear();
@@ -1002,8 +1004,16 @@ BITMAP* Actor::GetAIModeIcon() {
 	return m_apAIIcons[m_AIMode];
 }
 
+const MovableObject* Actor::GetMOMoveTarget() const {
+	return MOMoveTargetExists() ? m_pMOMoveTarget : nullptr;
+}
+
+bool Actor::MOMoveTargetExists() const {
+	return m_pMOMoveTarget && g_MovableMan.FindObjectByUniqueID(m_MOMoveTargetUniqueID) == m_pMOMoveTarget && g_MovableMan.ValidMO(m_pMOMoveTarget);
+}
+
 MOID Actor::GetAIMOWaypointID() const {
-	if (g_MovableMan.ValidMO(m_pMOMoveTarget))
+	if (MOMoveTargetExists())
 		return m_pMOMoveTarget->GetID();
 	else
 		return g_NoMOID;
@@ -1019,7 +1029,7 @@ void Actor::UpdateMovePath() {
 	float jumpHeight = EstimateJumpHeight();
 
 	// If we're following someone/thing, then never advance waypoints until that thing disappears
-	if (g_MovableMan.ValidMO(m_pMOMoveTarget)) {
+	if (MOMoveTargetExists()) {
 		m_PathRequest = g_SceneMan.GetScene()->CalculatePathAsync(g_SceneMan.MovePointToGround(m_Pos, m_CharHeight * 0.2, 10), m_pMOMoveTarget->GetPos(), jumpHeight, digStrength, static_cast<Activity::Teams>(m_Team));
 	} else {
 		// Do we currently have a path to a static target we would like to still pursue?
@@ -1031,9 +1041,9 @@ void Actor::UpdateMovePath() {
 
 				// If the waypoint was tied to an MO to pursue, then load it into the current MO target
 				if (g_MovableMan.ValidMO(m_Waypoints.front().second)) {
-					m_pMOMoveTarget = m_Waypoints.front().second;
+					SetMOMoveTarget(m_Waypoints.front().second);
 				} else {
-					m_pMOMoveTarget = 0;
+					SetMOMoveTarget(nullptr);
 				}
 
 				// We loaded the waypoint, no need to keep it
@@ -1088,7 +1098,7 @@ void Actor::OnNewMovePath() {
 			m_PrevPathTarget = m_MovePath.front();
 			m_MovePath.pop_front();
 		}
-	} else if (m_pMOMoveTarget) {
+	} else if (MOMoveTargetExists()) {
 		m_MoveTarget = m_pMOMoveTarget->GetPos();
 	} else {
 		// Nowhere to gooooo
@@ -1130,8 +1140,8 @@ void Actor::Update() {
 	m_ViewPoint = m_Pos;
 
 	// Check if the MO we're following still exists, and if not, then clear the destination
-	if (m_pMOMoveTarget && !g_MovableMan.ValidMO(m_pMOMoveTarget)) {
-		m_pMOMoveTarget = nullptr;
+	if (m_pMOMoveTarget && !MOMoveTargetExists()) {
+		SetMOMoveTarget(nullptr);
 	}
 
 	///////////////////////////////////////////////////////////////////////////////

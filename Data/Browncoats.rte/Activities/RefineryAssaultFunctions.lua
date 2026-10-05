@@ -1,3 +1,24 @@
+-- MOs kept across updates (mostly in the save table) can be deleted at any time and their memory then reused by another object, so they're only
+-- used after being looked up again by the unique IDs in self.savedMOUniqueIDs, recorded when they're freshly obtained (and again on load, see RefineryAssault.lua).
+local function FindObject(uniqueID, isType, toType)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and isType(mo) then
+		return toType(mo);
+	end
+	return nil;
+end
+
+local function GetUniqueIDs(mo)
+	if type(mo) == "table" then
+		local uniqueIDs = {};
+		for i = 1, #mo do
+			uniqueIDs[i] = type(mo[i]) == "userdata" and mo[i].UniqueID or false;
+		end
+		return uniqueIDs;
+	end
+	return type(mo) == "userdata" and mo.UniqueID or nil;
+end
+
 function RefineryAssault:HandleMessage(message, object)
 
 	self.tacticsHandler:OnMessage(message, object);
@@ -288,6 +309,7 @@ function RefineryAssault:HandleMessage(message, object)
 			-- Stage 5 generator stuff
 				
 			self.saveTable.stage5Generators = {};
+			self.savedMOUniqueIDs.stage5Generators = {};
 			
 			local i = 1;
 			
@@ -295,6 +317,7 @@ function RefineryAssault:HandleMessage(message, object)
 				if particle.PresetName == "Browncoat Refinery Generator Breakable Objective" then
 					particle.MissionCritical = false;
 					table.insert(self.saveTable.stage5Generators, particle)
+					self.savedMOUniqueIDs.stage5Generators[#self.saveTable.stage5Generators] = particle.UniqueID;
 					
 					self.HUDHandler:AddObjective(self.humanTeam,
 					"S5DestroyGenerators" .. i,
@@ -393,6 +416,8 @@ function RefineryAssault:HandleMessage(message, object)
 				MovableMan:AddActor(actor);
 				actor:UnequipArms();
 			end
+			self.savedMOUniqueIDs.roninPrisoners = GetUniqueIDs(self.saveTable.roninPrisoners);
+			self.savedMOUniqueIDs.roninPrisonerLeader = GetUniqueIDs(self.saveTable.roninPrisonerLeader);
 
 		end
 		
@@ -402,10 +427,13 @@ function RefineryAssault:HandleMessage(message, object)
 		self.roninPrisonerMessageTimer = Timer();
 		
 		if self.saveTable.roninPrisoners then
-			for k, actor in pairs(self.saveTable.roninPrisoners) do
-				MovableMan:ChangeActorTeam(actor, self.humanTeam);
-				actor:AddScript("Base.rte/AI/HumanAI.lua");
-				actor.PlayerControllable = true;
+			for k, actorUniqueID in ipairs(self.savedMOUniqueIDs.roninPrisoners) do
+				local actor = FindObject(actorUniqueID, IsActor, ToActor);
+				if actor then
+					MovableMan:ChangeActorTeam(actor, self.humanTeam);
+					actor:AddScript("Base.rte/AI/HumanAI.lua");
+					actor.PlayerControllable = true;
+				end
 			end
 		end
 		
@@ -583,8 +611,8 @@ function RefineryAssault:HandleMessage(message, object)
 	elseif message == "RefineryAssault_KeycardPickedUp" then
 		
 		if self.Stage < 7 then
-			for k, brain in pairs(self.saveTable.playerBrains) do
-				if object == brain.UniqueID then
+			for k, brainUniqueID in ipairs(self.savedMOUniqueIDs.playerBrains) do
+				if object == brainUniqueID then
 					self.HUDHandler:RemoveAllObjectives(self.humanTeam);
 					MovableMan:SendGlobalMessage("ActivateCapturable_RefineryS7AuxAuthConsole");
 					self.Stage = 7;
@@ -694,19 +722,25 @@ function RefineryAssault:HandleMessage(message, object)
 	elseif message == "Refinery_S10BossUniqueIDReturn" then
 		
 		self.saveTable.bossActor = ToActor(MovableMan:FindObjectByUniqueID(object));
+		self.savedMOUniqueIDs.bossActor = GetUniqueIDs(self.saveTable.bossActor);
 
 	elseif message == "Refinery_RefineryS10FinalBossDead" then	
 	
 		self.saveTable.gameFinished = true;
 		
-		self.saveTable.finalBossPosition = Vector(self.saveTable.bossActor.Pos.X, self.saveTable.bossActor.Pos.Y);
+		local bossActor = FindObject(self.savedMOUniqueIDs.bossActor, IsActor, ToActor);
+		if bossActor then
+			self.saveTable.finalBossPosition = Vector(bossActor.Pos.X, bossActor.Pos.Y);
+		end
 	
 		MusicMan:SetNextDynamicSongSection("Victory Stinger", true, true, true);
 		MusicMan:EndDynamicMusic(false);
 		
 		self.HUDHandler:SetCinematicBars(self.humanTeam, true)
 		
-		self.HUDHandler:QueueCameraPanEvent(self.humanTeam, "S10BossDeath", self.saveTable.bossActor, 0.1, 4000, true, true, true);
+		if bossActor then
+			self.HUDHandler:QueueCameraPanEvent(self.humanTeam, "S10BossDeath", bossActor, 0.1, 4000, true, true, true);
+		end
 		
 	elseif message == "Refinery_RefineryS10FinalBossExploded" then	
 	
@@ -799,6 +833,7 @@ function RefineryAssault:HandleMessage(message, object)
 		self.stage3AllConsolesBroken = true;
 		self.HUDHandler:RemoveObjective(self.humanTeam, "S3DestroyConsoles");
 		self.saveTable.stage3FacilityOperator = nil;
+		self.savedMOUniqueIDs.stage3FacilityOperator = nil;
 		self.saveTable.stage3DrillOverloaded = true;
 		self.HUDHandler:RemoveObjective(self.humanTeam, "S3OverloadDrill");
 		
@@ -807,15 +842,22 @@ function RefineryAssault:HandleMessage(message, object)
 			self.HUDHandler:RemoveAllCameraPanEvents(self.humanTeam);
 		end
 	elseif message == "SkipStage4" then
-		for k, door in pairs(self.saveTable.stage4Door) do
-			door:GibThis();
+		for k, doorUniqueID in ipairs(self.savedMOUniqueIDs.stage4Door) do
+			local door = FindObject(doorUniqueID, IsActor, ToActor);
+			if door then
+				door:GibThis();
+			end
 		end
-		for k, door in pairs(self.saveTable.stage3Doors) do
-			door:GibThis();
+		for k, doorUniqueID in ipairs(self.savedMOUniqueIDs.stage3Doors) do
+			local door = FindObject(doorUniqueID, IsActor, ToActor);
+			if door then
+				door:GibThis();
+			end
 		end
 		self:SendMessage("RefineryAssault_S4DoorsBlownUp");
 	elseif message == "SkipStage5" then
-		for i, generator in ipairs(self.saveTable.stage5Generators) do
+		for i, generatorUniqueID in ipairs(self.savedMOUniqueIDs.stage5Generators) do
+			local generator = FindObject(generatorUniqueID, IsMOSRotating, ToMOSRotating);
 			if not generator or not MovableMan:ValidMO(generator) then
 			else
 				ToMOSRotating(generator):GibThis();
@@ -1121,6 +1163,7 @@ function RefineryAssault:SetupStartingActors()
 			table.insert(self.saveTable.stage2CounterAttSpawners, par);
 		end
 	end
+	self.savedMOUniqueIDs.stage2CounterAttSpawners = GetUniqueIDs(self.saveTable.stage2CounterAttSpawners);
 	
 	self.saveTable.enemyActorTables.stage1 = {};
 	
@@ -1159,6 +1202,8 @@ function RefineryAssault:SetupStartingActors()
 		
 	end
 
+	self.savedMOUniqueIDs.enemyActorTables.stage1 = GetUniqueIDs(self.saveTable.enemyActorTables.stage1);
+
 	for k, v in pairs(stage1SquadsTable) do
 		local task = self.tacticsHandler:PickTask(self.aiTeam);
 		self.tacticsHandler:AddSquad(self.aiTeam, stage1SquadsTable[k], task.Name, true);
@@ -1176,6 +1221,8 @@ function RefineryAssault:SetupStartingActors()
 			table.insert(self.saveTable.stage4Door, actor);
 		end
 	end
+	self.savedMOUniqueIDs.stage3Doors = GetUniqueIDs(self.saveTable.stage3Doors);
+	self.savedMOUniqueIDs.stage4Door = GetUniqueIDs(self.saveTable.stage4Door);
 	
 end
 
@@ -1272,8 +1319,10 @@ function RefineryAssault:SetupFirstStage()
 		MovableMan:AddActor(brain);
 		--dropShip:AddInventoryItem(brain);
 	end
+	self.savedMOUniqueIDs.playerBrains = GetUniqueIDs(self.saveTable.playerBrains);
 	
 	self.saveTable.stage1InitialDropship = dropShip;
+	self.savedMOUniqueIDs.stage1InitialDropship = GetUniqueIDs(dropShip);
 	
 	MovableMan:AddActor(dropShip)
 	
@@ -1334,15 +1383,16 @@ function RefineryAssault:MonitorStage1()
 
 	-- Send away the initial dropship once it's empty
 	if self.saveTable.stage1InitialDropship then
-		local craft = ToACDropShip(self.saveTable.stage1InitialDropship);
+		local craft = FindObject(self.savedMOUniqueIDs.stage1InitialDropship, IsACDropShip, ToACDropShip);
 		if not craft or not MovableMan:ValidMO(craft) or craft:IsDead() then
 			self.saveTable.stage1InitialDropship = nil;
+			self.savedMOUniqueIDs.stage1InitialDropship = nil;
 		else
-			craft = ToACDropShip(self.saveTable.stage1InitialDropship);
 			if self.saveTable.stage1InitialDropshipToReturn then
 				if craft.AIMode == Actor.AIMODE_SENTRY then
 					craft.AIMode = Actor.AIMODE_RETURN;
 					self.saveTable.stage1InitialDropship = nil;
+					self.savedMOUniqueIDs.stage1InitialDropship = nil;
 					self.saveTable.stage1InitialDropshipToReturn = nil;
 				end
 			elseif craft:IsInventoryEmpty() then
@@ -1361,9 +1411,11 @@ function RefineryAssault:MonitorStage1()
 
 	local noActors = true;
 
-	for i, actor in ipairs(self.saveTable.enemyActorTables.stage1) do
+	for i, actorUniqueID in ipairs(self.savedMOUniqueIDs.enemyActorTables.stage1) do
+		local actor = FindObject(actorUniqueID, IsActor, ToActor);
 		if not actor or not MovableMan:ValidMO(actor) or actor:IsDead() then
 			self.saveTable.enemyActorTables.stage1[i] = false;
+			self.savedMOUniqueIDs.enemyActorTables.stage1[i] = false;
 			self.HUDHandler:RemoveObjective(self.humanTeam, "S1KillEnemies" .. i);
 		else
 			noActors = false;
@@ -1423,9 +1475,12 @@ function RefineryAssault:MonitorStage1()
 		-- Send the counterattack by setting up squad
 		
 		-- Get actors back from spawners
-		for k, spawner in pairs(self.saveTable.stage2CounterAttSpawners) do	
-			spawner:SendMessage("ActorSpawner_ManualTriggerAndReturnActor", "Activity");
-			print("sent spawn message return");
+		for k, spawnerUniqueID in ipairs(self.savedMOUniqueIDs.stage2CounterAttSpawners) do	
+			local spawner = FindObject(spawnerUniqueID, IsMOSRotating, ToMOSRotating);
+			if spawner then
+				spawner:SendMessage("ActorSpawner_ManualTriggerAndReturnActor", "Activity");
+				print("sent spawn message return");
+			end
 		end
 		-- by now, we have gotten back messages and filled out our returned actor table.
 		
@@ -1524,6 +1579,7 @@ function RefineryAssault:MonitorStage2()
 		-- Setup stage 3 consoles
 		
 		self.saveTable.stage3Consoles = {};
+		self.savedMOUniqueIDs.stage3Consoles = {};
 		
 		local i = 1;
 		
@@ -1531,6 +1587,7 @@ function RefineryAssault:MonitorStage2()
 			if particle.PresetName == "Browncoat Refinery Console Breakable Objective" then
 				particle.MissionCritical = false;
 				table.insert(self.saveTable.stage3Consoles, particle)
+				self.savedMOUniqueIDs.stage3Consoles[#self.saveTable.stage3Consoles] = particle.UniqueID;
 				self.tacticsHandler:AddTask("Defend Refinery Console " .. i, self.aiTeam, particle, "Defend", 10);
 				self.tacticsHandler:AddTask("Attack Refinery Console " .. i, self.humanTeam, particle, "Attack", 10);
 				i = i + 1;
@@ -1541,6 +1598,7 @@ function RefineryAssault:MonitorStage2()
 		
 		-- note index access, we get a table back
 		self.saveTable.stage3FacilityOperator = self.deliveryCreationHandler:CreateEliteSquad(self.aiTeam, 1, "Heavy")[1];
+		self.savedMOUniqueIDs.stage3FacilityOperator = GetUniqueIDs(self.saveTable.stage3FacilityOperator);
 		self.saveTable.stage3FacilityOperator.Head = CreateAttachable("Browncoat Heavy Alt Head B", "Browncoats.rte");
 		local area = SceneMan.Scene:GetArea("RefineryAssault_S3FacilityOperator");
 		local pos = SceneMan:MovePointToGround(area.Center, 50, 3);
@@ -1648,7 +1706,7 @@ end
 function RefineryAssault:MonitorStage3()
 
 	if not self.saveTable.stage3FacilityOperatorKilled then
-		local actor = self.saveTable.stage3FacilityOperator;
+		local actor = FindObject(self.savedMOUniqueIDs.stage3FacilityOperator, IsActor, ToActor);
 		if not actor or not MovableMan:ValidMO(actor) or actor:IsDead() then
 			self.HUDHandler:RemoveObjective(self.humanTeam, "S3DefeatOperator");
 			self.saveTable.stage3FacilityOperatorKilled = true;
@@ -1658,9 +1716,11 @@ function RefineryAssault:MonitorStage3()
 	
 	if not self.stage3AllConsolesBroken then
 
-		for k, console in pairs(self.saveTable.stage3Consoles) do
+		for k in pairs(self.saveTable.stage3Consoles) do
+			local console = FindObject(self.savedMOUniqueIDs.stage3Consoles[k], IsMOSRotating, ToMOSRotating);
 			if not console or not MovableMan:ValidMO(console) then
 				table.remove(self.saveTable.stage3Consoles, k);
+				table.remove(self.savedMOUniqueIDs.stage3Consoles, k);
 				
 				self.tacticsHandler:RemoveTask("Defend Refinery Console " .. k, self.aiTeam);
 				self.tacticsHandler:RemoveTask("Attack Refinery Console " .. k, self.humanTeam);
@@ -1713,13 +1773,16 @@ function RefineryAssault:MonitorStage3()
 		end
 		
 		-- thou shalt deal with this bad code
-		if MovableMan:ValidMO(self.saveTable.stage3Doors[1]) then
-			ToADoor(self.saveTable.stage3Doors[1]):OpenDoor();
+		local stage3Door1 = FindObject(self.savedMOUniqueIDs.stage3Doors[1], IsActor, ToActor);
+		local stage3Door2 = FindObject(self.savedMOUniqueIDs.stage3Doors[2], IsActor, ToActor);
+		local stage4Door = FindObject(self.savedMOUniqueIDs.stage4Door[1], IsActor, ToActor);
+		if stage3Door1 and MovableMan:ValidMO(stage3Door1) then
+			ToADoor(stage3Door1):OpenDoor();
 		end
 		
 		if self.stage3DoorSequenceTimer:IsPastSimMS(7500) then
-			if MovableMan:ValidMO(self.saveTable.stage3Doors[2]) then
-				ToADoor(self.saveTable.stage3Doors[2]):OpenDoor();
+			if stage3Door2 and MovableMan:ValidMO(stage3Door2) then
+				ToADoor(stage3Door2):OpenDoor();
 				if not self.stage3ScreenShake2 then
 					self.stage3ScreenShake2 = true;
 					local pos = SceneMan.Scene:GetArea("RefineryAssault_S3DoorSequenceArea").Center;
@@ -1729,8 +1792,8 @@ function RefineryAssault:MonitorStage3()
 		end
 		
 		if not self.stage3PlayedDoorStopSound == true and self.stage3DoorSequenceTimer:IsPastSimMS(8750) then
-			if MovableMan:ValidMO(self.saveTable.stage4Door[1]) then
-				ToADoor(self.saveTable.stage4Door[1]):OpenDoor();
+			if stage4Door and MovableMan:ValidMO(stage4Door) then
+				ToADoor(stage4Door):OpenDoor();
 				if not self.stage3ScreenShake3 then
 					self.stage3ScreenShake3 = true;
 					local pos = SceneMan.Scene:GetArea("RefineryAssault_S3DoorSequenceArea").Center;
@@ -1740,8 +1803,8 @@ function RefineryAssault:MonitorStage3()
 		end
 		
 		if self.stage3DoorSequenceTimer:IsPastSimMS(10000) then
-			if MovableMan:ValidMO(self.saveTable.stage4Door[1]) then
-				local door = self.saveTable.stage4Door[1];
+			if stage4Door and MovableMan:ValidMO(stage4Door) then
+				local door = stage4Door;
 				ToADoor(door):ResetSensorTimer();
 				if not self.stage3PlayedDoorStopSound then
 					ToADoor(door):StopDoor();
@@ -1790,14 +1853,16 @@ end
 
 function RefineryAssault:MonitorStage4()
 
-	for k, door in pairs(self.saveTable.stage4Door) do
+	for k, doorUniqueID in ipairs(self.savedMOUniqueIDs.stage4Door) do
+		local door = FindObject(doorUniqueID, IsActor, ToActor);
 		if not door or not MovableMan:ValidMO(door) then
 		else
 			ToADoor(door):ResetSensorTimer();
 		end
 	end
 	
-	for k, door in pairs(self.saveTable.stage3Doors) do
+	for k, doorUniqueID in ipairs(self.savedMOUniqueIDs.stage3Doors) do
+		local door = FindObject(doorUniqueID, IsActor, ToActor);
 		if not door or not MovableMan:ValidMO(door) then
 		else
 			ToADoor(door):ResetSensorTimer();
@@ -1810,9 +1875,11 @@ function RefineryAssault:MonitorStage5()
 
 	local noGenerators = true;
 
-	for i, generator in ipairs(self.saveTable.stage5Generators) do
+	for i, generatorUniqueID in ipairs(self.savedMOUniqueIDs.stage5Generators) do
+		local generator = FindObject(generatorUniqueID, IsMOSRotating, ToMOSRotating);
 		if not generator or not MovableMan:ValidMO(generator) then
 			self.saveTable.stage5Generators[i] = false;
+			self.savedMOUniqueIDs.stage5Generators[i] = false;
 			self.HUDHandler:RemoveObjective(self.humanTeam, "S5DestroyGenerators" .. i);
 		else
 			noGenerators = false;
@@ -1852,19 +1919,26 @@ function RefineryAssault:MonitorStage5()
 		
 		table.insert(self.saveTable.enemyActorTables.stage6SubCommanderSquad, self.saveTable.stage6subCommander);
 		
+		self.savedMOUniqueIDs.enemyActorTables.stage6SubCommanderSquad = GetUniqueIDs(self.saveTable.enemyActorTables.stage6SubCommanderSquad);
+		
 		self.tacticsHandler:AddSquad(self.aiTeam, self.saveTable.enemyActorTables.stage6SubCommanderSquad, "Brainhunt");
 		
-		for k, item in pairs(self.saveTable.enemyActorTables.stage6SubCommanderSquad) do
-			self.stage6SubcommanderDoor:AddInventoryItem(item);
+		local subcommanderDoor = FindObject(self.stage6SubcommanderDoorUniqueID, IsActor, ToActor);
+		if subcommanderDoor then
+			for k, item in pairs(self.saveTable.enemyActorTables.stage6SubCommanderSquad) do
+				subcommanderDoor:AddInventoryItem(item);
+			end
+			
+			subcommanderDoor:SendMessage("BuyDoor_CustomTableOrder");
 		end
-		
-		self.stage6SubcommanderDoor:SendMessage("BuyDoor_CustomTableOrder");
 		
 		-- Reveal fog
 		local box = SceneMan.Scene:GetArea("RefineryAssault_S6SubcommanderViewFogRevealArea").FirstBox;
 		SceneMan:RevealUnseenBox(box.Corner.X, box.Corner.Y, box.Width, box.Height, self.humanTeam);
 		
-		self.HUDHandler:QueueCameraPanEvent(self.humanTeam, "S6SubcommanderView", self.stage6SubcommanderDoor.Pos, 0.05, 5000, true);
+		if subcommanderDoor then
+			self.HUDHandler:QueueCameraPanEvent(self.humanTeam, "S6SubcommanderView", subcommanderDoor.Pos, 0.05, 5000, true);
+		end
 		
 		self.HUDHandler:AddObjective(self.humanTeam,
 		"S6GetKeycard",
@@ -1916,7 +1990,10 @@ function RefineryAssault:MonitorStage6()
 	if not keycard or (keycard.HasEverBeenAddedToMovableMan and not MovableMan:ValidMO(keycard)) then
 		-- spawn a new one
 		self.saveTable.stage6Keycard = CreateHeldDevice("Browncoat Military Keycard", "Browncoats.rte");
-		self.saveTable.stage6Keycard.Pos = self.stage6SubcommanderDoor.Pos
+		local subcommanderDoor = FindObject(self.stage6SubcommanderDoorUniqueID, IsActor, ToActor);
+		if subcommanderDoor then
+			self.saveTable.stage6Keycard.Pos = subcommanderDoor.Pos
+		end
 		MovableMan:AddItem(self.saveTable.stage6Keycard);
 		self.stage6UniqueIDs.stage6Keycard = self.saveTable.stage6Keycard.UniqueID;
 		-- Point the objective at the new keycard, since the old one may be deleted.

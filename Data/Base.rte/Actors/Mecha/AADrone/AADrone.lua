@@ -1,6 +1,24 @@
 dofile("Base.rte/Constants.lua")
 require("AI/NativeCrabAI")
 
+-- The missile and the targets can be deleted at any time and their memory reused by another object,
+-- so we keep their unique IDs and look them up again every update.
+local function FindAEmitter(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID)
+	if mo and IsAEmitter(mo) then
+		return ToAEmitter(mo)
+	end
+	return nil
+end
+
+local function FindActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID)
+	if mo and IsActor(mo) then
+		return ToActor(mo)
+	end
+	return nil
+end
+
 function Create(self)
 	self.AI = NativeCrabAI:Create(self)
 	self.SearchTimer = Timer()
@@ -50,6 +68,7 @@ function Create(self)
 				self.SAM_LastVel = Vector(self.SAM.Vel.X, self.SAM.Vel.Y)
 
 				self.SAM = ArmedSAM
+				self.SAM_UID = self.SAM.UniqueID
 				MovableMan:AddMO(self.SAM)
 
 				self.UpdateSAM = self.UpdateArmedSAM -- Use the UpdateArmedSAM-function from now on
@@ -111,7 +130,9 @@ end
 
 function Update(self)
 	if self.SAM then -- Check if any old missile is alive
-		if MovableMan:ValidMO(self.SAM) then
+		self.SAM = FindAEmitter(self.SAM_UID)
+		self.SAM_Target = self.SAM_Target and FindActor(self.SAM_TargetUID)
+		if self.SAM and MovableMan:ValidMO(self.SAM) then
 			if self.SAM_Target and MovableMan:ValidMO(self.SAM_Target) then
 				self.UpdateSAM(self)
 			else
@@ -177,7 +198,7 @@ function Update(self)
 											table.insert(
 												self.ValidTargets,
 												{
-													Actor = Act,
+													ActorUID = Act.UniqueID,
 													priority = angle / 3
 														+ range / 300
 														+ (3 - Act.Health / 100)
@@ -213,7 +234,7 @@ function Update(self)
 				end
 			end
 		else -- Check if the missile have a clear line of sight to any of the selected targets
-			local NewTarget = table.remove(self.ValidTargets).Actor -- Only check one target to reduce calculations per update
+			local NewTarget = FindActor(table.remove(self.ValidTargets).ActorUID) -- Only check one target to reduce calculations per update
 			if NewTarget and MovableMan:ValidMO(NewTarget) and not NewTarget:IsDead() then
 				local Trace = SceneMan:ShortestDistance(self.AboveHUDPos, NewTarget.Pos, false)
 				-- Don't shoot at targets that are out of reach
@@ -259,11 +280,13 @@ function Update(self)
 									self.SAM.Pos = self.Pos + self:RotateOffset(SpawnOffset)
 									self.SAM.Vel = self.Vel + self:RotateOffset(Vector(0, -17))
 									self.SAM.IgnoresTeamHits = true
+									self.SAM_UID = self.SAM.UniqueID
 									self.SAM:TriggerBurst()
 									MovableMan:AddMO(self.SAM)
 
 									self.armedSAM = false
 									self.SAM_Target = NewTarget
+									self.SAM_TargetUID = NewTarget.UniqueID
 
 									-- Call this function to update the missile
 									self.UpdateSAM = self.UpdateInertSAM

@@ -1,3 +1,12 @@
+-- Grenades can be deleted at any time and their memory reused by other objects, so the grenade tables hold UniqueIDs and grenades are looked up again before use.
+local function FindGrenade(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.grenadeTableA = {};
 	self.grenadeTableB = {};
@@ -68,8 +77,9 @@ function Update(self)
 			
 			if mode == "Remote" then
 				if actor:IsPlayerControlled() then
-					if self.grenadeTableA[self.maxActiveGrenades] and MovableMan:IsParticle(self.grenadeTableA[self.maxActiveGrenades]) then
-						self.grenadeTableA[self.maxActiveGrenades]:SetStringValue("GrenadeMode", "Delete");
+					local oldestGrenade = FindGrenade(self.grenadeTableA[self.maxActiveGrenades]);
+					if oldestGrenade then
+						oldestGrenade:SetStringValue("GrenadeMode", "Delete");
 					end
 					for i = 1, self.maxActiveGrenades do
 						self.grenadeTableB[i + 1] = self.grenadeTableA[i];
@@ -79,7 +89,7 @@ function Update(self)
 						self.grenadeTableA[i] = self.grenadeTableB[i];
 					end
 					self.grenadeTableB = {};
-					self.grenadeTableA[1] = bullet;
+					self.grenadeTableA[1] = bullet.UniqueID;
 					self:SetNumberValue("CoalitionRemoteGrenades", #self.grenadeTableA);
 				else
 					mode = "Timed";
@@ -95,8 +105,9 @@ function Update(self)
 	if self:StringValueExists("GrenadeTrigger") then
 		local trigger = self:GetStringValue("GrenadeTrigger");
 		for i = 1, #self.grenadeTableA do
-			if MovableMan:IsParticle(self.grenadeTableA[i]) then
-				self.grenadeTableA[i]:SetStringValue("GrenadeMode", trigger);
+			local grenade = FindGrenade(self.grenadeTableA[i]);
+			if grenade then
+				grenade:SetStringValue("GrenadeMode", trigger);
 			end
 		end
 
@@ -108,8 +119,9 @@ end
 
 function Destroy(self)
 	for i = 1, #self.grenadeTableA do
-		if MovableMan:IsParticle(self.grenadeTableA[i]) then
-			self.grenadeTableA[i]:SetStringValue("GrenadeMode", "Delete");
+		local grenade = FindGrenade(self.grenadeTableA[i]);
+		if grenade then
+			grenade:SetStringValue("GrenadeMode", "Delete");
 		end
 	end
 end

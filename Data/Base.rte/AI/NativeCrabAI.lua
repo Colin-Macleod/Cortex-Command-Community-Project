@@ -4,6 +4,16 @@ require("AI/SharedBehaviors");
 
 NativeCrabAI = {};
 
+-- Targets are kept across updates, but they can be deleted at any time and their memory reused by another object,
+-- so we only keep their unique IDs between updates and look the objects up again at the start of every update.
+local function FindByUniqueID(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return IsAHuman(mo) and ToAHuman(mo) or IsACrab(mo) and ToACrab(mo) or IsACRocket(mo) and ToACRocket(mo) or IsACDropShip(mo) and ToACDropShip(mo) or IsADoor(mo) and ToADoor(mo) or ToActor(mo);
+	end
+	return mo;
+end
+
 function NativeCrabAI:Create(Owner)
 	local Members = {};
 
@@ -58,6 +68,8 @@ end
 
 function NativeCrabAI:Update(Owner)
 	self.Ctrl = Owner:GetController();
+	self.Target = FindByUniqueID(self.TargetUID);
+	self.UnseenTarget = FindByUniqueID(self.UnseenTargetUID);
 
 	-- Our jetpack might have thrust balancing enabled, so update for our current mass
 	if Owner.Jetpack then		
@@ -359,6 +371,9 @@ function NativeCrabAI:Update(Owner)
 			self.Ctrl:SetState(Controller.BODY_JUMP, true); -- trigger normal jetpack emission
 		end
 	end
+
+	self.TargetUID = self.Target and self.Target.UniqueID;
+	self.UnseenTargetUID = self.UnseenTarget and self.UnseenTarget.UniqueID;
 end
 
 function NativeCrabAI:Destroy(Owner)

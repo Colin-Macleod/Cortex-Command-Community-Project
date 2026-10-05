@@ -1,6 +1,15 @@
 package.loaded.Constants = nil;
 require("Constants");
 
+-- The evacuation rocket is kept by unique ID and looked up every update, as it can be deleted and its memory reused by another object at any time.
+local function FindEvacuationRocket(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsACRocket(mo) then
+		return ToACRocket(mo);
+	end
+	return nil;
+end
+
 function MaginotMission:StartActivity(isNewGame)
 	self.defenderLZ = SceneMan.Scene:GetArea("LZ Team 1");
 	self.attackLZ1 = SceneMan.Scene:GetArea("LZ Team 2");
@@ -139,6 +148,7 @@ function MaginotMission:ResumeLoadedGame()
 		for actor in MovableMan.AddedActors do
 			if actor.Team == self.defenderTeam and actor.PresetName == "Rocket MK2" and self.rescueLZ:IsInside(Vector(actor.Pos.X, self.rescueLZ:GetCenterPoint().Y)) then
 				self.evacuationRocket = ToACRocket(actor);
+				self.evacuationRocketUID = self.evacuationRocket.UniqueID;
 				break;
 			end
 		end
@@ -251,6 +261,7 @@ end
 
 function MaginotMission:SpawnEvacuationRocket()
 	self.evacuationRocket = CreateACRocket("Rocket MK2", "Base.rte");
+	self.evacuationRocketUID = self.evacuationRocket.UniqueID;
 	self.evacuationRocket.Pos = Vector(self.rescueLZ:GetCenterPoint().X, -100);
 	self.evacuationRocket.Team = self.defenderTeam;
 	self.evacuationRocket:SetControllerMode(Controller.CIM_AI, -1);
@@ -381,6 +392,8 @@ function MaginotMission:UpdateActivity()
 		return;
 	end
 
+	self.evacuationRocket = FindEvacuationRocket(self.evacuationRocketUID);
+
 	self:DoGameOverCheck();
 	
 	local enemyInsideBrainEvacuateArea = false;
@@ -430,6 +443,7 @@ function MaginotMission:UpdateActivity()
 	elseif self.currentFightStage == self.fightStage.enterEvacuationRocket then
 		if not self.evacuationRocket or not MovableMan:IsActor(self.evacuationRocket) then
 			self.evacuationRocket = nil;
+			self.evacuationRocketUID = nil;
 		elseif self.evacuationRocket then
 			local evacuationRocketHasAllBrains = true;
 			for player = Activity.PLAYER_1, Activity.MAXPLAYERCOUNT - 1 do

@@ -1,3 +1,12 @@
+-- Effect particles can be deleted at any time and their memory reused by other objects, so they're kept by UniqueID and looked up again before use.
+local function FindEffectParticle(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToMOPixel(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.fireTimer = Timer();
 	self.blinkTimer = Timer();
@@ -30,7 +39,7 @@ function Update(self)
 			effectPar.Pos = self.MuzzlePos;
 			effectPar.PinStrength = 1000;
 			MovableMan:AddParticle(effectPar);
-			self.particleTable[#self.particleTable+1] = effectPar;
+			self.particleTable[#self.particleTable+1] = effectPar.UniqueID;
 		end
 
 		if self.chargeCounter <= self.maxCharge then
@@ -39,11 +48,12 @@ function Update(self)
 		end
 
 		for i = 1, #self.particleTable do
-			if MovableMan:IsParticle(self.particleTable[i]) then
-				self.particleTable[i].ToDelete = false;
-				self.particleTable[i].ToSettle = false;
-				self.particleTable[i].PinStrength = 1000;
-				self.particleTable[i].Pos = self.MuzzlePos;
+			local effectPar = FindEffectParticle(self.particleTable[i]);
+			if effectPar then
+				effectPar.ToDelete = false;
+				effectPar.ToSettle = false;
+				effectPar.PinStrength = 1000;
+				effectPar.Pos = self.MuzzlePos;
 			end
 		end
 
@@ -85,8 +95,9 @@ function Update(self)
 			end
 
 			for i = 1, #self.particleTable do
-				if MovableMan:IsParticle(self.particleTable[i]) then
-					self.particleTable[i].ToDelete = true;
+				local effectPar = FindEffectParticle(self.particleTable[i]);
+				if effectPar then
+					effectPar.ToDelete = true;
 				end
 			end
 
@@ -101,8 +112,9 @@ function Update(self)
 		end
 
 		for i = 1, #self.particleTable do
-			if MovableMan:IsParticle(self.particleTable[i]) then
-				self.particleTable[i].ToDelete = true;
+			local effectPar = FindEffectParticle(self.particleTable[i]);
+			if effectPar then
+				effectPar.ToDelete = true;
 			end
 		end
 		
@@ -113,8 +125,9 @@ end
 
 function Destroy(self)
 	for i = 1, #self.particleTable do
-		if MovableMan:IsParticle(self.particleTable[i]) then
-			self.particleTable[i].ToDelete = true;
+		local effectPar = FindEffectParticle(self.particleTable[i]);
+		if effectPar then
+			effectPar.ToDelete = true;
 		end
 	end
 end

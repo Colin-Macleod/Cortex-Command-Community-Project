@@ -1,6 +1,22 @@
 package.loaded.Constants = nil;
 require("Constants");
 
+-- Stored objects are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function FindObject(uniqueID, isType, toType)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and isType(mo) then
+		return toType(mo);
+	end
+	return nil;
+end
+
+local function RefreshStoredObjects(self)
+	self.mamaCrab = FindObject(self.mamaCrabUID, IsACrab, ToACrab);
+	self.target = FindObject(self.targetUID, IsActor, ToActor);
+	self.eggSac = FindObject(self.eggSacUID, IsAEmitter, ToAEmitter);
+	self.litscreen = FindObject(self.litscreenUID, IsAEmitter, ToAEmitter);
+end
+
 function DoainarMission:StartActivity(isNewGame)
 	self.caveAreaA = SceneMan.Scene:GetArea("Cave Inside A");
 	self.caveAreaB = SceneMan.Scene:GetArea("Cave Inside B");
@@ -41,6 +57,7 @@ function DoainarMission:OnSave()
 	self:SaveNumber("mamaDead", self.mamaDead and 1 or 0);
 	self:SaveNumber("passedPitfall", self.passedPitfall and 1 or 0);
 
+	RefreshStoredObjects(self);
 	if not self.mamaDead and self.mamaCrab and MovableMan:IsActor(self.mamaCrab) then
 		self:SaveNumber("mamaCrab.Status", self.mamaCrab.Status);
 	end
@@ -58,11 +75,13 @@ function DoainarMission:StartNewGame()
 	self.passedPitfall = false;
 
 	self.eggSac = CreateAEmitter("Eggsac");
+	self.eggSacUID = self.eggSac.UniqueID;
 	self.eggSac.Pos = Vector(1274, 315);
 	self.eggSac.Team = self.CPUTeam;
 	MovableMan:AddParticle(self.eggSac);
 
 	self.mamaCrab = CreateACrab("Mega Crab");
+	self.mamaCrabUID = self.mamaCrab.UniqueID;
 	self.mamaCrab.Pos = Vector(1176, 368);
 	self.mamaCrab.Team = self.CPUTeam;
 	self.mamaCrab.SpriteAnimDuration = self.mamaCrab.SpriteAnimDuration * 10;
@@ -162,6 +181,7 @@ function DoainarMission:ResumeLoadedGame()
 	for actor in MovableMan.AddedActors do
 		if actor.PresetName == "Mega Crab" then
 			self.mamaCrab = ToACrab(actor);
+			self.mamaCrabUID = self.mamaCrab.UniqueID;
 			self.mamaCrab.Status = self:LoadNumber("mamaCrab.Status"); -- Note: This must be handled specially, because inactive status is overwritten when an Actor is added to MovableMan.
 			break;
 		end
@@ -170,6 +190,7 @@ function DoainarMission:ResumeLoadedGame()
 	for particle in MovableMan.AddedParticles do
 		if particle.PresetName == "Eggsac" then
 			self.eggSac = ToAEmitter(particle);
+			self.eggSacUID = self.eggSac.UniqueID;
 			break;
 		end
 	end
@@ -199,12 +220,15 @@ end
 function DoainarMission:UpdateActivity()
 	-- Clear all objective markers, they get re-added each frame
 	self:ClearObjectivePoints();
+	RefreshStoredObjects(self);
 	if self.mamaCrab and MovableMan:IsActor(self.mamaCrab) then
 		if not MovableMan:IsActor(self.target) then
 			self.target = MovableMan:GetClosestTeamActor(self.PlayerTeam, Activity.PLAYER_NONE, self.mamaCrab.Pos, SceneMan.SceneWidth, Vector(), self.mamaCrab);
+			self.targetUID = self.target and self.target.UniqueID or nil;
 		end
 	else
 		self.mamaCrab = nil;
+		self.mamaCrabUID = nil;
 	end
 
 	local crabcount = 0;
@@ -271,6 +295,7 @@ function DoainarMission:UpdateActivity()
 								self.mamaCrab.Status = Actor.UNSTABLE;
 
 								self.target = MovableMan:GetClosestTeamActor(self.PlayerTeam, Activity.PLAYER_NONE, self.mamaCrab.Pos, SceneMan.SceneWidth, Vector(), self.mamaCrab);
+								self.targetUID = self.target and self.target.UniqueID or nil;
 
 								self:ResetMessageTimer(player);
 								FrameMan:ClearScreenText(screen);
@@ -357,12 +382,14 @@ function DoainarMission:UpdateActivity()
 		self.eggSac.SpriteAnimDuration = 600 - 300 * self.eggSac.Throttle;
 	else
 		self.eggSac = nil;
+		self.eggSacUID = nil;
 	end
 
 	--Reading the console
 	if playerInsideConsoleArea == 1 or self.WinnerTeam == self.PlayerTeam then
 		if MovableMan:IsParticle(self.litscreen) == false then
 			self.litscreen = CreateAEmitter("Lit Screen");
+			self.litscreenUID = self.litscreen.UniqueID;
 			self.litscreen:EnableEmission(true);
 			self.litscreen.Pos = Vector(1104, 612);
 			MovableMan:AddParticle(self.litscreen);

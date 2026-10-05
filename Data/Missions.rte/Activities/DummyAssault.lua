@@ -1,6 +1,15 @@
 package.loaded.Constants = nil;
 require("Constants");
 
+-- Stored actors are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function FindActorByUniqueID(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function DummyAssault:StartActivity(isNewGame)
 	self.alarmZone = SceneMan.Scene:GetArea("Dummy Base Alarm");
 	self.factoryZone = SceneMan.Scene:GetArea("Dummy Factory Invasion");
@@ -40,6 +49,7 @@ function DummyAssault:StartNewGame()
 			actor.AIMode = Actor.AIMODE_SENTRY;
 			if actor.PresetName == "Dummy Controller" then
 				self.CPUBrain = actor;
+				self.CPUBrainUID = actor.UniqueID;
 			end
 		end
 	end
@@ -111,6 +121,7 @@ function DummyAssault:ResumeLoadedGame()
 	for actor in MovableMan.AddedActors do
 		if actor.Team == self.CPUTeam and actor.PresetName == "Dummy Controller" then
 			self.CPUBrain = actor;
+			self.CPUBrainUID = actor.UniqueID;
 			break;
 		end
 	end
@@ -176,7 +187,8 @@ function DummyAssault:UpdateActivity()
 			end
 		end
 
-		if MovableMan:IsActor(self.CPUBrain) then
+		self.CPUBrain = FindActorByUniqueID(self.CPUBrainUID);
+		if self.CPUBrain and MovableMan:IsActor(self.CPUBrain) then
 			self:AddObjectivePoint("Destroy!", self.CPUBrain.AboveHUDPos+Vector(0,-16), Activity.TEAM_1, GameActivity.ARROWDOWN);
 		else
 			self.WinnerTeam = Activity.TEAM_1;

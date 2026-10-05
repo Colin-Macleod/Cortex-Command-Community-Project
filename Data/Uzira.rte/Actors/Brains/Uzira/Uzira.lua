@@ -1,3 +1,12 @@
+-- Minions are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function findMinion(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 local setupMinionAIMode = function(self, minion)
 	if self.minionsShouldGather then
 		minion.AIMode = Actor.AIMODE_GOTO;
@@ -59,7 +68,7 @@ local handleMinionSpawning = function(self)
 					newMinion.RotAngle = RangeRand(-1.5, 1.5);
 					self:setupMinionAIMode(newMinion);
 					MovableMan:AddActor(newMinion);
-					table.insert(self.minions, newMinion);
+					table.insert(self.minions, newMinion.UniqueID);
 		
 					if self.GoldCarried >= self.spawnCost then
 						self.GoldCarried = self.GoldCarried - self.spawnCost;
@@ -90,13 +99,15 @@ end
 local cleanupDeadMinions = function(self)
 	-- Iterate backwards so table.remove doesn't skip the entry after each removed one.
 	for i = #self.minions, 1, -1 do
-		if not MovableMan:IsActor(self.minions[i]) or self.minions[i].Health <= 0 then
+		local minion = findMinion(self.minions[i]);
+		if not minion or minion.Health <= 0 then
 			table.remove(self.minions, i);
 		end
 	end
 
 	for i = #self.frenziedMinions, 1, -1 do
-		if not MovableMan:IsActor(self.frenziedMinions[i]) or self.frenziedMinions[i].Health <= 0 then
+		local frenziedMinion = findMinion(self.frenziedMinions[i]);
+		if not frenziedMinion or frenziedMinion.Health <= 0 then
 			table.remove(self.frenziedMinions, i);
 		end
 	end
@@ -117,9 +128,9 @@ local updateMinions = function(self)
 		end
 		
 		for i = 1, #self.minions do
-			local minion = self.minions[i];
+			local minion = findMinion(self.minions[i]);
 			
-			if SceneMan:ShortestDistance(self.Pos, minion.Pos, SceneMan.SceneWrapsX).Magnitude > self.minionDecayRadius then
+			if minion and SceneMan:ShortestDistance(self.Pos, minion.Pos, SceneMan.SceneWrapsX).Magnitude > self.minionDecayRadius then
 				minion.Health = minion.Health - 1;
 				for attachable in minion.Attachables do
 					local smoke = CreateMOSParticle("Small Smoke Ball 1");
@@ -147,9 +158,10 @@ local updateMinions = function(self)
 		self:updateFrenziedMinions();
 	end
 	if self:IsPlayerControlled() and self.HUDVisible then
-		for _, minion in pairs(self.minions) do
+		for _, minionUniqueID in pairs(self.minions) do
 			-- Dead minions are only cleaned up periodically and can be deleted at any time, so make sure this one still exists before reading it.
-			if MovableMan:IsActor(minion) and minion.Age > 1000 then
+			local minion = findMinion(minionUniqueID);
+			if minion and minion.Age > 1000 then
 				PrimitiveMan:DrawBitmapPrimitive(ActivityMan:GetActivity():ScreenOfPlayer(self:GetController().Player), minion.AboveHUDPos + Vector(0, math.sin(self.Age * 0.01) * 2 - 3), self.indicatorArrow, self.Team, 0, false, false);
 			end
 		end
@@ -158,27 +170,29 @@ end
 
 local updateFrenziedMinions = function(self)
 	for i = 1, #self.frenziedMinions do
-		local frenziedMinion = self.frenziedMinions[i];
-		local isBrainhunting = frenziedMinion.AIMode == Actor.AIMODE_BRAINHUNT;
+		local frenziedMinion = findMinion(self.frenziedMinions[i]);
+		if frenziedMinion then
+			local isBrainhunting = frenziedMinion.AIMode == Actor.AIMODE_BRAINHUNT;
 		
-		if math.random() < 0.25 then
-			frenziedMinion.AIMode = isBrainhunting and Actor.AIMODE_GOTO or Actor.AIMODE_BRAINHUNT;
-			isBrainhunting = not isBrainhunting;
-			if not isBrainhunting then
-				local target = MovableMan:GetClosestEnemyActor(frenziedMinion.Team, self.Pos, self.enemySearchRadius, Vector());
-				if target then
-					frenziedMinion.AIMode = Actor.AIMODE_GOTO;
-					frenziedMinion:AddAIMOWaypoint(target);
-				else
-					frenziedMinion.AIMode = Actor.AIMODE_BRAINHUNT;
+			if math.random() < 0.25 then
+				frenziedMinion.AIMode = isBrainhunting and Actor.AIMODE_GOTO or Actor.AIMODE_BRAINHUNT;
+				isBrainhunting = not isBrainhunting;
+				if not isBrainhunting then
+					local target = MovableMan:GetClosestEnemyActor(frenziedMinion.Team, self.Pos, self.enemySearchRadius, Vector());
+					if target then
+						frenziedMinion.AIMode = Actor.AIMODE_GOTO;
+						frenziedMinion:AddAIMOWaypoint(target);
+					else
+						frenziedMinion.AIMode = Actor.AIMODE_BRAINHUNT;
+					end
 				end
 			end
-		end
 
-		if not isBrainhunting then
-			if not frenziedMinion.MOMoveTarget or not MovableMan:IsActor(frenziedMinion.MOMoveTarget) then
-				frenziedMinion.AIMode = Actor.AIMODE_BRAINHUNT;
-				isBrainhunting = true;
+			if not isBrainhunting then
+				if not frenziedMinion.MOMoveTarget or not MovableMan:IsActor(frenziedMinion.MOMoveTarget) then
+					frenziedMinion.AIMode = Actor.AIMODE_BRAINHUNT;
+					isBrainhunting = true;
+				end
 			end
 		end
 	end
@@ -269,7 +283,10 @@ function Update(self)
 		
 		self:cleanupDeadMinions();
 		for i = 1, #self.minions do
-			self:setupMinionAIMode(self.minions[i]);
+			local minion = findMinion(self.minions[i]);
+			if minion then
+				self:setupMinionAIMode(minion);
+			end
 		end
 	end
 	

@@ -1,3 +1,12 @@
+-- Teleporters can be deleted at any time and their memory reused by other objects, so the teleporter lists hold UniqueIDs and the partner is looked up every update.
+local function FindTeleporter(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToAEmitter(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	-- Make sure the teleporter list exists.
 	if teleporterlista == nil then
@@ -11,7 +20,7 @@ function Create(self)
 	local cantele = _G["cantele"];
 
 	-- Add self to teleporter list.
-	teleporterlista[#teleporterlista + 1] = self;
+	teleporterlista[#teleporterlista + 1] = self.UniqueID;
 
 	-- Stores where on the teleporter list this teleporter is.  Used for assigning a partner.
 	self.listnum = #teleporterlista;
@@ -46,9 +55,11 @@ function Update(self)
 		-- A delay so that all teleporters will have been placed by the time the code activates.
 		if self.creationtimer:IsPastSimMS(1000) and ActivityMan:GetActivity().ActivityState ~= Activity.EDITING then
 			-- Check if the teleporter is linked yet.
-			if MovableMan:IsParticle(self.partner) == false then
+			self.partner = FindTeleporter(self.partnerUID);
+			if self.partner == nil then
 				-- If not, try to assign a partner.
-				self.partner = teleporterlistb[self.listnum];
+				self.partnerUID = teleporterlistb[self.listnum];
+				self.partner = FindTeleporter(self.partnerUID);
 				-- Turn on spinning effect.
 				self:EnableEmission(true);
 			elseif cantele[self.listnum]:IsPastSimMS(self.porttime) then

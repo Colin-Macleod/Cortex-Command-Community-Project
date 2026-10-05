@@ -15,6 +15,16 @@ Activate fog of war during the build phase by adding areas:
 
 --]]
 
+-- Actors kept across updates can be deleted at any time and their memory reused by another object,
+-- so we also keep their unique IDs and look them up again at the start of every update.
+local function FindActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function BrainvsBrain:StartActivity(isNewGame)
 	self.winTimer = Timer();
 
@@ -239,6 +249,7 @@ function BrainvsBrain:StartNewGame()
 
 			self.CPUBrain.Pos = SceneMan:MovePointToGround(self.CPUBrain.Pos, self.CPUBrain.Height*0.3, 2);
 			MovableMan:AddActor(self.CPUBrain);
+			self.CPUBrainUID = self.CPUBrain.UniqueID;
 		end
 
 		self.spawnDelay = (6500 - self.Difficulty * 60) * rte.SpawnIntervalScale;
@@ -280,6 +291,7 @@ function BrainvsBrain:ResumeLoadedGame()
 
 		if not self.CPUBrain then
 			self.CPUBrain = MovableMan:GetUnassignedBrain(self.CPUTeam);
+			self.CPUBrainUID = self.CPUBrain and self.CPUBrain.UniqueID;
 		end
 	end
 
@@ -316,6 +328,9 @@ function BrainvsBrain:EndActivity()
 end
 
 function BrainvsBrain:UpdateActivity()
+	self.CPUBrain = self.CPUBrain and FindActor(self.CPUBrainUID);
+	self.AttackActor = self.AttackActor and FindActor(self.AttackActorUID);
+
 	if self.ActivityState == Activity.OVER then
 		return;
 	elseif self.ActivityState == Activity.EDITING then
@@ -539,6 +554,7 @@ function BrainvsBrain:UpdateActivity()
 							else
 								table.sort(Intruders, function(A, B) return A.score > B.score end);	-- the nearest intruder last
 								self.AttackActor = table.remove(Intruders).Act;
+								self.AttackActorUID = self.AttackActor.UniqueID;
 								self.AttackPos = Vector(self.AttackActor.Pos.X, self.AttackActor.Pos.Y);
 
 

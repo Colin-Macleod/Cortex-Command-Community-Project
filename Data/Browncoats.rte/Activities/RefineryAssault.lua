@@ -2,6 +2,77 @@ package.loaded.Constants = nil; require("Constants");
 
 dofile("Browncoats.rte/Activities/RefineryAssaultFunctions.lua");
 
+-- MOs kept across updates (mostly in the save table) can be deleted at any time and their memory then reused by another object, so they're only
+-- used after being looked up again by the unique IDs in self.savedMOUniqueIDs. Unique IDs change on load, so they're recorded again from the freshly
+-- loaded MOs then, and deleted MOs are replaced before saving, since saving them would read their memory.
+local function FindObject(uniqueID, isType, toType)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and isType(mo) then
+		return toType(mo);
+	end
+	return nil;
+end
+
+local function GetUniqueIDs(mo)
+	if type(mo) == "table" then
+		local uniqueIDs = {};
+		for i = 1, #mo do
+			uniqueIDs[i] = type(mo[i]) == "userdata" and mo[i].UniqueID or false;
+		end
+		return uniqueIDs;
+	end
+	return type(mo) == "userdata" and mo.UniqueID or nil;
+end
+
+-- The save table keys (and enemyActorTables keys) that hold MOs or arrays of them, with what a deleted MO is saved as.
+local savedMOKeys = {
+	{"doorsToConstantlyReset", false}, {"playerBrains", false}, {"roninPrisoners", false}, {"stage2CounterAttSpawners", false}, {"stage3Consoles", false}, {"stage3Doors", false}, {"stage4Door", false}, {"stage5Generators", false},
+	{"roninPrisonerLeader", nil}, {"stage1InitialDropship", nil}, {"stage3FacilityOperator", nil}, {"bossActor", nil},
+	{"roninPrisonerDoor", true} -- Still set, so it's known to have been broken.
+};
+local savedEnemyActorTableKeys = {"stage1", "stage6SubCommanderSquad"};
+
+local function RecordLoadedMOUniqueIDs(self)
+	self.savedMOUniqueIDs = {enemyActorTables = {}};
+	for _, keyAndDeletedValue in ipairs(savedMOKeys) do
+		self.savedMOUniqueIDs[keyAndDeletedValue[1]] = GetUniqueIDs(self.saveTable[keyAndDeletedValue[1]]);
+	end
+	if self.saveTable.enemyActorTables then
+		for _, key in ipairs(savedEnemyActorTableKeys) do
+			self.savedMOUniqueIDs.enemyActorTables[key] = GetUniqueIDs(self.saveTable.enemyActorTables[key]);
+		end
+	end
+	self.stage6UniqueIDs = {stage6subCommander = GetUniqueIDs(self.saveTable.stage6subCommander), stage6Keycard = GetUniqueIDs(self.saveTable.stage6Keycard)};
+end
+
+local function ReplaceDeletedSavedMOs(tableToCheck, key, uniqueIDs, deletedValue)
+	local value = tableToCheck[key];
+	if type(value) == "table" then
+		for i = 1, #value do
+			if type(value[i]) == "userdata" and not (uniqueIDs and uniqueIDs[i] and MovableMan:FindObjectByUniqueID(uniqueIDs[i])) then
+				value[i] = false;
+			end
+		end
+	elseif type(value) == "userdata" and not (uniqueIDs and MovableMan:FindObjectByUniqueID(uniqueIDs)) then
+		tableToCheck[key] = deletedValue;
+	end
+end
+
+local function ReplaceAllDeletedSavedMOs(self)
+	for _, keyAndDeletedValue in ipairs(savedMOKeys) do
+		ReplaceDeletedSavedMOs(self.saveTable, keyAndDeletedValue[1], self.savedMOUniqueIDs[keyAndDeletedValue[1]], keyAndDeletedValue[2]);
+	end
+	if self.saveTable.enemyActorTables then
+		for _, key in ipairs(savedEnemyActorTableKeys) do
+			ReplaceDeletedSavedMOs(self.saveTable.enemyActorTables, key, self.savedMOUniqueIDs.enemyActorTables[key], nil);
+		end
+	end
+	if self.stage6UniqueIDs then
+		ReplaceDeletedSavedMOs(self.saveTable, "stage6subCommander", self.stage6UniqueIDs.stage6subCommander, false);
+		ReplaceDeletedSavedMOs(self.saveTable, "stage6Keycard", self.stage6UniqueIDs.stage6Keycard, false);
+	end
+end
+
 function RefineryAssault:OnGlobalMessage(message, object)
 	self:HandleMessage(message, object);
 end
@@ -173,7 +244,7 @@ function RefineryAssault:StartActivity(newGame)
 	-- Find stage 6 subcommander door
 	for mo in MovableMan.AddedActors do
 		if mo.PresetName == "Refinery Subcommander Door" then
-			self.stage6SubcommanderDoor = mo;
+			self.stage6SubcommanderDoorUniqueID = mo.UniqueID;
 			mo.Team = 1;
 		end
 	end
@@ -185,6 +256,8 @@ function RefineryAssault:StartActivity(newGame)
 	
 	self.musicGraceTimer = Timer();
 	self.musicGraceTime = 4000;
+	
+	self.savedMOUniqueIDs = {enemyActorTables = {}};
 	
 	if newGame then
 	
@@ -212,6 +285,8 @@ function RefineryAssault:StartActivity(newGame)
 				table.insert(self.saveTable.doorsToConstantlyReset, actor);
 			end
 		end
+		self.savedMOUniqueIDs.doorsToConstantlyReset = GetUniqueIDs(self.saveTable.doorsToConstantlyReset);
+		self.savedMOUniqueIDs.roninPrisonerDoor = GetUniqueIDs(self.saveTable.roninPrisonerDoor);
 		
 		self.saveTable.stage2HoldTimer = Timer();
 		
@@ -353,6 +428,7 @@ function RefineryAssault:ResumeLoadedGame()
 	print("loading local refineryassault save table...");
 	self.saveTable = self.saveLoadHandler:ReadSavedStringAsTable("saveTable");
 	print("loaded local refineryassault save table!");
+	RecordLoadedMOUniqueIDs(self);
 	
 	self.Stage = self:LoadNumber("stage");
 	
@@ -374,6 +450,7 @@ function RefineryAssault:ResumeLoadedGame()
 end
 
 function RefineryAssault:OnSave()
+	ReplaceAllDeletedSavedMOs(self);
 	self.saveLoadHandler:SaveTableAsString("saveTable", self.saveTable);
 	
 	self:SaveNumber("stage", self.Stage);
@@ -486,7 +563,8 @@ function RefineryAssault:UpdateActivity()
 	-- Update MOUtility not needed yet
 	--self.MOUtility:Update();
 
-	for k, door in pairs(self.saveTable.doorsToConstantlyReset) do
+	for k, doorUniqueID in ipairs(self.savedMOUniqueIDs.doorsToConstantlyReset) do
+		local door = FindObject(doorUniqueID, IsActor, ToActor);
 		if not door or not MovableMan:ValidMO(door) then
 		else
 			ToADoor(door):ResetSensorTimer();
@@ -496,25 +574,34 @@ function RefineryAssault:UpdateActivity()
 	if not self.saveTable.debugInvincibleBrain then
 		if self.HUDHandler:GetCameraPanEventCount(self.humanTeam) > 0 and not self.saveTable.brainsInvincible then
 			self.saveTable.brainsInvincible = true;
-			for k, brain in pairs(self.saveTable.playerBrains) do
-				self.MOUtility:SetMOUnhittable(brain, true);
+			for k, brainUniqueID in ipairs(self.savedMOUniqueIDs.playerBrains) do
+				local brain = FindObject(brainUniqueID, IsActor, ToActor);
+				if brain then
+					self.MOUtility:SetMOUnhittable(brain, true);
+				end
 			end
 		elseif self.saveTable.brainsInvincible and self.HUDHandler:GetCameraPanEventCount(self.humanTeam) == 0 then
 			self.saveTable.brainsInvincible = false;
-			for k, brain in pairs(self.saveTable.playerBrains) do
-				self.MOUtility:SetMOUnhittable(brain, false);
+			for k, brainUniqueID in ipairs(self.savedMOUniqueIDs.playerBrains) do
+				local brain = FindObject(brainUniqueID, IsActor, ToActor);
+				if brain then
+					self.MOUtility:SetMOUnhittable(brain, false);
+				end
 			end
 		end
 	end
 	
 	if self.roninPrisonerMessageTimer and not self.roninPrisonerMessageTimer:IsPastSimMS(6000) then
-		if self.saveTable.roninPrisonerLeader and MovableMan:ValidMO(self.saveTable.roninPrisonerLeader) then
-			PrimitiveMan:DrawTextPrimitive(self.saveTable.roninPrisonerLeader.AboveHUDPos, "We are in your debt.", true, 1);
+		local roninPrisonerLeader = FindObject(self.savedMOUniqueIDs.roninPrisonerLeader, IsActor, ToActor);
+		if roninPrisonerLeader and MovableMan:ValidMO(roninPrisonerLeader) then
+			PrimitiveMan:DrawTextPrimitive(roninPrisonerLeader.AboveHUDPos, "We are in your debt.", true, 1);
 		end
 	else
-		if self.saveTable.roninPrisonerDoor and not MovableMan:ValidMO(self.saveTable.roninPrisonerDoor) then
+		local roninPrisonerDoor = FindObject(self.savedMOUniqueIDs.roninPrisonerDoor, IsActor, ToActor);
+		if self.saveTable.roninPrisonerDoor and not (roninPrisonerDoor and MovableMan:ValidMO(roninPrisonerDoor)) then
 			self:SendMessage("RefineryAssault_RoninPrisonerDoorBroken");
 			self.saveTable.roninPrisonerDoor = nil;
+			self.savedMOUniqueIDs.roninPrisonerDoor = nil;
 		end
 	end
 	
@@ -561,32 +648,35 @@ function RefineryAssault:UpdateActivity()
 		-- Invincible brain and infinite gun
 		if not self.saveTable.debugInvincibleBrain and UInputMan:KeyPressed(Key.KP_6) then
 			self.saveTable.debugInvincibleBrain = true;
-			for k, brain in pairs(self.saveTable.playerBrains) do
-				if not self.saveTable.brainsInvincible then
-					self.MOUtility:SetMOUnhittable(brain, true);
+			for k, brainUniqueID in ipairs(self.savedMOUniqueIDs.playerBrains) do
+				local brain = FindObject(brainUniqueID, IsActor, ToActor);
+				if brain then
+					if not self.saveTable.brainsInvincible then
+						self.MOUtility:SetMOUnhittable(brain, true);
+					end
+					local gun = CreateHDFirearm("M16A2", "Ronin.rte");
+					gun.Magazine.RoundCount = -1;
+					gun.RateOfFire = 1500;
+					gun.PresetName = "Debug M16A2";
+					gun.Reloadable = false;
+					brain:AddInventoryItem(gun);
+				
+					brain.GetsHitByMOs = true; -- need this for capturables to work
+				
+					ToAHuman(brain).Jetpack.JetTimeTotal = 9999;
+					ToAHuman(brain).Jetpack.JetReplenishRate = 99;
+				
+					brain.MissionCritical = true;
+					ToAHuman(brain).Head.MissionCritical = true;
+					ToAHuman(brain).MaxHealth = 999999;
+					ToAHuman(brain).Health = 999999;
+					brain.GibImpulseLimit = 999999;
+					brain.GibWoundLimit = 999999;
+					for att in brain.Attachables do
+						att.GibImpulseLimit = 999999;
+						att.GibWoundLimit = 999999;
+					end			
 				end
-				local gun = CreateHDFirearm("M16A2", "Ronin.rte");
-				gun.Magazine.RoundCount = -1;
-				gun.RateOfFire = 1500;
-				gun.PresetName = "Debug M16A2";
-				gun.Reloadable = false;
-				brain:AddInventoryItem(gun);
-				
-				brain.GetsHitByMOs = true; -- need this for capturables to work
-				
-				ToAHuman(brain).Jetpack.JetTimeTotal = 9999;
-				ToAHuman(brain).Jetpack.JetReplenishRate = 99;
-				
-				brain.MissionCritical = true;
-				ToAHuman(brain).Head.MissionCritical = true;
-				ToAHuman(brain).MaxHealth = 999999;
-				ToAHuman(brain).Health = 999999;
-				brain.GibImpulseLimit = 999999;
-				brain.GibWoundLimit = 999999;
-				for att in brain.Attachables do
-					att.GibImpulseLimit = 999999;
-					att.GibWoundLimit = 999999;
-				end			
 			end
 		end
 	end

@@ -1,8 +1,17 @@
+-- Trail particles can be deleted at any time and their memory reused by other objects, so they're kept by UniqueID and looked up every update.
+local function FindTrailParticle(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToMOPixel(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.AirResistance = self.AirResistance * RangeRand(1.0, 1.5);
 	self.trailLength = 30;
 
-	self.trailPar = {};
+	self.trailParUIDs = {};
 	self.trailParCount = 4;
 	for i = 1, self.trailParCount do
 		local particle = CreateMOPixel("Dummy Repeater Trail Glow");
@@ -14,7 +23,7 @@ function Create(self)
 
 		particle.Lifetime = 100;
 		MovableMan:AddParticle(particle);
-		table.insert(self.trailPar, particle);
+		table.insert(self.trailParUIDs, particle.UniqueID);
 	end
 
 	self.endPar = CreateMOSParticle("Tiny Smoke Ball 1 Glow Yellow");
@@ -24,10 +33,11 @@ function ThreadedUpdate(self)
 	if not self.ToDelete then
 		-- Touching other things in non-synced update is bad, but because we know that nothing else is gonna be running scripts on it, we can get away with this
 		for i = 1, self.trailParCount do
-			if self.trailPar[i] and MovableMan:IsParticle(self.trailPar[i]) then
-				self.trailPar[i].Pos = self.Pos + Vector(RangeRand(-0.5, 0.5), RangeRand(-0.5, 0.5)) - Vector(self.PrevVel.X, self.PrevVel.Y):SetMagnitude(math.min(self.PrevVel.Magnitude, self.trailLength + 1) * i/self.trailParCount);
-				self.trailPar[i].Vel = Vector(self.PrevVel.X, self.PrevVel.Y);
-				self.trailPar[i].Lifetime = self.Age + math.random(20, 40);
+			local trailPar = FindTrailParticle(self.trailParUIDs[i]);
+			if trailPar then
+				trailPar.Pos = self.Pos + Vector(RangeRand(-0.5, 0.5), RangeRand(-0.5, 0.5)) - Vector(self.PrevVel.X, self.PrevVel.Y):SetMagnitude(math.min(self.PrevVel.Magnitude, self.trailLength + 1) * i/self.trailParCount);
+				trailPar.Vel = Vector(self.PrevVel.X, self.PrevVel.Y);
+				trailPar.Lifetime = self.Age + math.random(20, 40);
 			end
 		end
 	end

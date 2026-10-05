@@ -1,3 +1,13 @@
+-- Actors kept across updates can be deleted at any time and their memory reused by another object,
+-- so we also keep their unique IDs and look them up again every update.
+local function FindActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function SkirmishDefense:StartActivity(isNewGame)
 	-- Count CPU teams
 	self.CPUTeamCount = 0;
@@ -393,6 +403,9 @@ function SkirmishDefense:UpdateActivity()
 
 			for team = 0, Activity.MAXTEAMCOUNT - 1 do
 				if self:TeamActive(team) and self:TeamIsCPU(team) then
+					self.AI[team].AttackTarget = self.AI[team].AttackTarget and FindActor(self.AI[team].AttackTargetUID);
+					self.AI[team].Engineer = self.AI[team].Engineer and FindActor(self.AI[team].EngineerUID);
+
 					self.LZmap:Update(); -- Update info about landing zones and player actors
 
 					-- Check if any AI actors have reached their destination
@@ -512,6 +525,7 @@ function SkirmishDefense:UpdateActivity()
 
 										self.AI[team].AttackTarget = self:SelectTarget(TargetActors);
 										if self.AI[team].AttackTarget then
+											self.AI[team].AttackTargetUID = self.AI[team].AttackTarget.UniqueID;
 											self.AI[team].DigToBrain = true;
 											self.AI[team].AttackPos = Vector(self.AI[team].AttackTarget.Pos.X, self.AI[team].AttackTarget.Pos.Y);
 										else
@@ -531,6 +545,7 @@ function SkirmishDefense:UpdateActivity()
 
 										self.AI[team].AttackTarget = self:SelectTarget(TargetActors);
 										if self.AI[team].AttackTarget then
+											self.AI[team].AttackTargetUID = self.AI[team].AttackTarget.UniqueID;
 											self.AI[team].AttackPos = Vector(self.AI[team].AttackTarget.Pos.X, self.AI[team].AttackTarget.Pos.Y);
 										else
 											-- No target found
@@ -569,6 +584,7 @@ function SkirmishDefense:UpdateActivity()
 
 										self.AI[team].Engineer = self:CreateEngineer(team);
 										if self.AI[team].Engineer then
+											self.AI[team].EngineerUID = self.AI[team].Engineer.UniqueID;
 											Craft:AddInventoryItem(self.AI[team].Engineer);
 
 											-- Subtract the total value of the craft+cargo from the CPU team's funds

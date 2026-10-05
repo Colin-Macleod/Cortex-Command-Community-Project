@@ -1,3 +1,12 @@
+-- The thrower is kept by unique ID and looked up when used, as it can be deleted and its memory reused by another object at any time.
+local function FindUser(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsAHuman(mo) then
+		return ToAHuman(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.rotNum = 0;
 	self.stance = Vector(6, 8);
@@ -133,6 +142,7 @@ function OnDetach(self, exParent)
 		local actor = exParent:GetRootParent();
 		if actor and IsAHuman(actor) then
 			self.user = ToAHuman(actor);
+			self.userUID = self.user.UniqueID;
 			throwAngle = self.user:GetAimAngle(false);
 			self.Team = self.user.Team;
 			self.IgnoresTeamHits = true;
@@ -145,9 +155,10 @@ function OnDetach(self, exParent)
 end
 
 function OnCollideWithMO(self, mo, rootMO)
-	if self.user then
+	if self.userUID then
 		-- The thrower can be deleted at any time, so make sure it still exists before reading it.
-		local userExists = MovableMan:IsActor(self.user);
+		self.user = FindUser(self.userUID);
+		local userExists = self.user ~= nil and MovableMan:IsActor(self.user);
 		if self.throwSpeed > 1 and userExists and self.momentum > 10 then
 			self.Vel = (self.Vel + SceneMan:ShortestDistance(self.Pos, self.user.Pos, SceneMan.SceneWrapsX):SetMagnitude(self.throwSpeed)) * 0.3;
 			self.AngularVel = self.AngularVel * -0.6;
@@ -165,6 +176,7 @@ function OnCollideWithMO(self, mo, rootMO)
 				self.Vel = (self.Vel + SceneMan:ShortestDistance(self.Pos, self.user.Pos, SceneMan.SceneWrapsX):SetMagnitude(self.throwSpeed)) * 0.3;
 			end
 			self.user = nil;
+			self.userUID = nil;
 		end
 
 		self.throwSpeed = 1;

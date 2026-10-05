@@ -1,3 +1,12 @@
+-- The holder is kept by unique ID and looked up every update, as it can be deleted and its memory reused by another object at any time.
+local function FindHolder(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.fuzeDelay = 4000;
 	self.fuzeDecreaseIncrement = 50;
@@ -10,6 +19,7 @@ function OnAttach(self, parent)
 end
 
 function Update(self)
+	self.holder = FindHolder(self.holderUID);
 	if self.fuze then
 		--Trail effect
 		local part = CreateMOPixel("Warp Flicker");
@@ -81,6 +91,7 @@ function Update(self)
 			local newHolder = self:GetRootParent();
 			if MovableMan:IsActor(newHolder) then
 				self.holder = ToActor(newHolder);
+				self.holderUID = self.holder.UniqueID;
 			end
 		end
 		

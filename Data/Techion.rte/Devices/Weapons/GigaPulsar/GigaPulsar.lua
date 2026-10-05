@@ -1,3 +1,12 @@
+-- The ejected magazine is kept by unique ID and looked up when used, as it can be deleted and its memory reused by another object at any time.
+local function FindLastMagazine(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) and IsMagazine(mo) then
+		return ToMagazine(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.origActivationDelay = self.ActivationDelay;
 	self.spinDownTimer = Timer();
@@ -22,13 +31,15 @@ function Update(self)
 
 	if self.Magazine then
 		self.lastMag = self.Magazine;
+		self.lastMagUID = self.Magazine.UniqueID;
 		self.dingSound = false;
 		if self.Magazine.RoundCount == 0 then
 			self:Reload();
 		end
 	else
 		if self.dingSound == false then
-			if MovableMan:IsParticle(self.lastMag) then
+			self.lastMag = FindLastMagazine(self.lastMagUID);
+			if self.lastMag then
 				self.lastMag.Sharpness = 1;
 				self.lastMag.Vel = self.lastMag.Vel + Vector(-10 * self.FlipFactor, 0):RadRotate(self.RotAngle);
 

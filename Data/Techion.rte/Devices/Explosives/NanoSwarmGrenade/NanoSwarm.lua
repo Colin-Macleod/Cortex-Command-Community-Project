@@ -14,6 +14,23 @@ function SwarmTo(object, target, speed)
 	object.Vel = object.Vel + dirVector * speed * modifier;
 end
 
+-- The target and wasps are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function FindTarget(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
+local function FindWasp(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToMOPixel(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	--The initial number of wasps.
 	self.waspNum = 25;
@@ -75,7 +92,7 @@ function Create(self)
 	--The maximum strength the swarm can push through.
 	self.maxMoveStrength = 1;
 
-	--The list of wasps in this swarm.
+	--The list of wasps in this swarm, by unique ID.
 	self.roster = {};
 
 	--The list of offsets for each wasp.
@@ -93,8 +110,8 @@ function Create(self)
 		wasp.Vel = Vector(math.random(-10, 10), math.random(-10, 10));
 		self.offsets[i] = Vector(math.random(-self.swarmRad, self.swarmRad), math.random(-self.swarmRad, self.swarmRad));
 		wasp.Pos = self.Pos + self.offsets[i];
+		self.roster[i] = wasp.UniqueID;
 		MovableMan:AddParticle(wasp);
-		self.roster[i] = wasp;
 	end
 end
 
@@ -103,6 +120,7 @@ function Update(self)
 	local moving = false;
 	local attacking = false;
 
+	self.target = FindTarget(self.targetUID);
 	if not MovableMan:IsActor(self.target) or self.target.Team == self.Team then
 		--Find a target.
 		local shortestDist;
@@ -111,6 +129,7 @@ function Update(self)
 				local dist = SceneMan:ShortestDistance(self.Pos, actor.Pos, true).Magnitude;
 				if dist < self.targetDist and (not shortestDist or dist < shortestDist) then
 					self.target = actor;
+					self.targetUID = actor.UniqueID;
 					shortestDist = dist;
 				end
 			end
@@ -186,8 +205,8 @@ function Update(self)
 
 	--Make all the wasps in this swarm's roster follow it.
 	for i = 1, #self.roster do
-		if MovableMan:IsParticle(self.roster[i]) then
-			local wasp = self.roster[i];
+		local wasp = FindWasp(self.roster[i]);
+		if wasp then
 
 			--Keep the wasp alive.
 			wasp.ToDelete = false;
@@ -244,8 +263,8 @@ function Update(self)
 				local wasp = CreateMOPixel("Techion.rte/Nanowasp " .. math.random(3));
 				wasp.Pos = self.Pos + self.offsets[i];
 				wasp.Vel = Vector(math.random(-10, 10), math.random(-10, 10));
+				self.roster[i] = wasp.UniqueID;
 				MovableMan:AddParticle(wasp);
-				self.roster[i] = wasp;
 			else
 				table.remove(self.roster, i);
 			end
@@ -272,8 +291,9 @@ end
 function Destroy(self)
 	--Remove all wasps.
 	for i = 1, #self.roster do
-		if MovableMan:IsParticle(self.roster[i]) then
-			self.roster[i].ToDelete = true;
+		local wasp = FindWasp(self.roster[i]);
+		if wasp then
+			wasp.ToDelete = true;
 		end
 	end
 end

@@ -7,6 +7,15 @@ local function FindFuelTarget(uniqueID)
 	return nil;
 end
 
+-- Fuel particles are kept by unique ID too, as they can be deleted and their memory reused by another object at any time.
+local function FindFuelParticle(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) and IsMOPixel(mo) then
+		return ToMOPixel(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.explodeTimer = Timer();
 	self.partList = {};
@@ -18,17 +27,17 @@ function Create(self)
 	self:EraseFromTerrain();
 
 	for i = 1, self.numOfParticles do
-		self.partList[i] = CreateMOPixel("Browncoat Boss Oil Bomb Fuel");
-		self.partList[i].Pos = self.Pos;
-		self.partList[i].Vel = Vector(math.random(20), 0):RadRotate(math.pi * 2 * math.random()) + self.Vel;
-		MovableMan:AddParticle(self.partList[i]);
-		self.partList[i].queue = math.abs(self.partList[i].Vel.X - self.Vel.X) * TimerMan.DeltaTimeMS;
+		local fuel = CreateMOPixel("Browncoat Boss Oil Bomb Fuel");
+		fuel.Pos = self.Pos;
+		fuel.Vel = Vector(math.random(20), 0):RadRotate(math.pi * 2 * math.random()) + self.Vel;
+		MovableMan:AddParticle(fuel);
+		self.partList[i] = {uniqueID = fuel.UniqueID, queue = math.abs(fuel.Vel.X - self.Vel.X) * TimerMan.DeltaTimeMS};
 
 		if i < self.numOfParticles * 0.5 then
 			local part = CreateMOSParticle("Oil Spray Particle");
 			part.Pos = self.Pos;
 			part.Lifetime = part.Lifetime*RangeRand(0.8, 1.2);
-			part.Vel = self.partList[i].Vel;
+			part.Vel = fuel.Vel;
 			MovableMan:AddParticle(part);
 		end
 	end
@@ -54,7 +63,8 @@ function ThreadedUpdate(self)
 
 		local partsLeft = 0;
 		for i = 1, #self.partList do
-			if self.partList[i] and MovableMan:IsParticle(self.partList[i]) and self.partList[i].PresetName == "Browncoat Boss Oil Bomb Fuel" then
+			local fuel = self.partList[i] and FindFuelParticle(self.partList[i].uniqueID);
+			if fuel and fuel.PresetName == "Browncoat Boss Oil Bomb Fuel" then
 				if self.explodeTimer:IsPastSimMS(self.explodeTime + self.partList[i].queue) then
 					local fire = CreatePEmitter("Flame ".. math.random(2) .." Hurt Browncoat Boss Oil Bomb");
 					fire.Team = self.Team;
@@ -63,7 +73,7 @@ function ThreadedUpdate(self)
 						fire.Pos = target.Pos + self.partList[i].stickOffset;
 						fire.Vel = Vector(-self.partList[i].stickOffset.X, -self.partList[i].stickOffset.Y):SetMagnitude(3);
 					else
-						fire.Pos = Vector(self.partList[i].Pos.X, self.partList[i].Pos.Y);
+						fire.Pos = Vector(fuel.Pos.X, fuel.Pos.Y);
 						fire.Vel = self.Vel;
 						fire.Lifetime = math.random(14000, 16000);
 					end
@@ -83,11 +93,11 @@ function ThreadedUpdate(self)
 							firePar.Lifetime = math.random(500, 1000);
 							firePar.GlobalAccScalar = RangeRand(-0.6, -0.1);
 						end
-						firePar.Pos = Vector(self.partList[i].Pos.X, self.partList[i].Pos.Y);
+						firePar.Pos = Vector(fuel.Pos.X, fuel.Pos.Y);
 						MovableMan:AddParticle(firePar);
 					end
 					
-					self.partList[i].ToDelete = true;
+					fuel.ToDelete = true;
 				else
 					partsLeft = partsLeft + 1;
 				end
@@ -100,20 +110,21 @@ function ThreadedUpdate(self)
 	else
 		--Look for targets to douse with fuel
 		for i = 1, #self.partList do
-			if self.partList[i] and MovableMan:IsParticle(self.partList[i]) and self.partList[i].PresetName == "Browncoat Boss Oil Bomb Fuel" then
+			local fuel = self.partList[i] and FindFuelParticle(self.partList[i].uniqueID);
+			if fuel and fuel.PresetName == "Browncoat Boss Oil Bomb Fuel" then
 
 				local target = FindFuelTarget(self.partList[i].targetUniqueID);
 				if target then
 
 					if math.random() < 0.01 then
-						self.partList[i].Vel = target.Vel;
-						self.partList[i].Pos = target.Pos + Vector(self.partList[i].stickOffset.X, self.partList[i].stickOffset.Y):RadRotate(target.RotAngle - self.partList[i].targetStickAngle);
+						fuel.Vel = target.Vel;
+						fuel.Pos = target.Pos + Vector(self.partList[i].stickOffset.X, self.partList[i].stickOffset.Y):RadRotate(target.RotAngle - self.partList[i].targetStickAngle);
 					end
 				else
 					self.partList[i].targetUniqueID = nil;
-					local velNum = math.ceil(math.sqrt(self.partList[i].Vel.Magnitude + 1));
+					local velNum = math.ceil(math.sqrt(fuel.Vel.Magnitude + 1));
 
-					local mocheck = SceneMan:CastMORay(self.partList[i].Pos, Vector(velNum, 0):RadRotate(self.partList[i].Vel.AbsRadAngle), self.partList[i].ID, -2, rte.airID, true, 1);
+					local mocheck = SceneMan:CastMORay(fuel.Pos, Vector(velNum, 0):RadRotate(fuel.Vel.AbsRadAngle), fuel.ID, -2, rte.airID, true, 1);
 					if mocheck ~= rte.NoMOID then
 						local mo = MovableMan:GetMOFromID(MovableMan:GetMOFromID(mocheck).ID);
 						if mo and mo.Team ~= self.Team and mo.PresetName ~= self.PresetName then
@@ -122,7 +133,7 @@ function ThreadedUpdate(self)
 
 							self.partList[i].targetStickAngle = mo.RotAngle;
 
-							self.partList[i].stickOffset = SceneMan:ShortestDistance(mo.Pos, self.partList[i].Pos, SceneMan.SceneWrapsX) * 0.8;
+							self.partList[i].stickOffset = SceneMan:ShortestDistance(mo.Pos, fuel.Pos, SceneMan.SceneWrapsX) * 0.8;
 						end
 					end
 				end

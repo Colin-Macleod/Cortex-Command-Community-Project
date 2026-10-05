@@ -1,3 +1,13 @@
+-- Actors kept across updates can be deleted at any time and their memory reused by another object,
+-- so we also keep their unique IDs and look them up again when we need them.
+local function FindActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function WaveDefense:CheckBrains()
 	for player = Activity.PLAYER_1, Activity.MAXPLAYERCOUNT - 1 do
 		if self:PlayerActive(player) and self:PlayerHuman(player) then
@@ -409,6 +419,7 @@ function WaveDefense:UpdateActivity()
 			-- The AI have money to buy units
 			if self:GetTeamFunds(self.CPUTeam) > 0 then
 				if self.AI.SpawnTimer:IsPastSimMS(self.AI.timeToSpawn) then
+					self.AI.AttackTarget = self.AI.AttackTarget and FindActor(self.AI.AttackTargetUID);
 					if self.AI.AttackPos then	-- Search for a LZ from where to attack the target
 						local easyPathLZx, easyPathLZobst, closeLZx, closeLZobst = self.AI.LZmap:FindLZ(self.CPUTeam, self.AI.AttackPos);
 						if easyPathLZx then	-- Search done
@@ -485,6 +496,7 @@ function WaveDefense:UpdateActivity()
 
 						self.AI.AttackTarget = self:SelectTarget(TargetActors);
 						if self.AI.AttackTarget then
+							self.AI.AttackTargetUID = self.AI.AttackTarget.UniqueID;
 							self.AI.AttackPos = Vector(self.AI.AttackTarget.Pos.X, self.AI.AttackTarget.Pos.Y);
 						else
 							-- No target found

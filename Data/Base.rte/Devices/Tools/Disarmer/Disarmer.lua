@@ -1,3 +1,12 @@
+-- Explosives can be deleted at any time and their memory reused by other objects, so they're kept by UniqueID and looked up again before use.
+local function FindExplosive(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToMOSRotating(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.disarmTicks = 3;
 	self.disarmRange = GetPPM() * 4;
@@ -28,20 +37,20 @@ function Update(self)
 				local targetCount = 0;
 				self.actionPhase = self.actionPhase + 1;
 				for i = 1, #self.targetTable do
-					-- Targets can be deleted at any time, so check that they still exist without touching them.
-					if self.targetTable[i] and MovableMan:IsParticle(self.targetTable[i]) and SceneMan:ShortestDistance(self.MuzzlePos, self.targetTable[i].Pos, SceneMan.SceneWrapsX):MagnitudeIsLessThan(self.disarmRange + 5) then
+					local target = FindExplosive(self.targetTable[i]);
+					if target and SceneMan:ShortestDistance(self.MuzzlePos, target.Pos, SceneMan.SceneWrapsX):MagnitudeIsLessThan(self.disarmRange + 5) then
 						targetCount = targetCount + 1;
 						local detectPar = CreateMOPixel("Disarmer Detection Particle ".. (self.actionPhase == self.disarmTicks and "Safe" or "Neutral"));
-						detectPar.Pos = self.targetTable[i].Pos;
+						detectPar.Pos = target.Pos;
 						MovableMan:AddParticle(detectPar);
 
 						if self.actionPhase == self.disarmTicks then
-							local itemName = string.gsub(self.targetTable[i]:GetModuleAndPresetName(), " Active", "");
+							local itemName = string.gsub(target:GetModuleAndPresetName(), " Active", "");
 							local disarmedItem = CreateTDExplosive(itemName);
-							disarmedItem.Pos = self.targetTable[i].Pos;
-							disarmedItem.RotAngle = self.targetTable[i].RotAngle;
+							disarmedItem.Pos = target.Pos;
+							disarmedItem.RotAngle = target.RotAngle;
 							MovableMan:AddParticle(disarmedItem);
-							self.targetTable[i].Sharpness = 1;
+							target.Sharpness = 1;
 						end
 					else
 						self.targetTable[i] = nil;
@@ -84,15 +93,22 @@ function Update(self)
 				local disarmTables = {AntiPersonnelMineTable, RemoteExplosiveTableA, TimedExplosiveTable};
 				for _, bombTable in pairs(disarmTables) do
 					if bombTable then
-						for _, explosive in pairs(bombTable) do
-							if MovableMan:IsParticle(explosive) and SceneMan:ShortestDistance(self.MuzzlePos, explosive.Pos, SceneMan.SceneWrapsX):MagnitudeIsLessThan(self.disarmRange) then
+						for _, explosiveEntry in pairs(bombTable) do
+							-- The explosive tables hold UniqueIDs, but scripts that still store the explosive itself are handled as before.
+							local explosive;
+							if type(explosiveEntry) == "number" then
+								explosive = FindExplosive(explosiveEntry);
+							elseif MovableMan:IsParticle(explosiveEntry) then
+								explosive = explosiveEntry;
+							end
+							if explosive and SceneMan:ShortestDistance(self.MuzzlePos, explosive.Pos, SceneMan.SceneWrapsX):MagnitudeIsLessThan(self.disarmRange) then
 								alarm = true;
 								local isFriendly = explosive.Team == self.Team;
 								alarmSound = isFriendly and alarmSound or self.dangerSound;
 								local detectPar = CreateMOPixel("Disarmer Detection Particle ".. (isFriendly and "Safe" or "Danger"));
 								detectPar.Pos = explosive.Pos;
 								MovableMan:AddParticle(detectPar);
-								table.insert(self.targetTable, explosive);
+								table.insert(self.targetTable, explosive.UniqueID);
 							end
 						end
 					end

@@ -1,3 +1,12 @@
+-- The craft can be deleted at any time and its memory reused by another object, so it's kept by UniqueID and looked up again before use.
+local function FindCraft(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:ValidMO(mo) and IsACDropShip(mo) then
+		return ToACDropShip(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.captureSound = CreateSoundContainer("Dock Capture", "Base.rte");
 	self.releaseSound = CreateSoundContainer("Dock Release", "Base.rte");
@@ -25,6 +34,7 @@ function Create(self)
 		-- but that's fine. who's gonna notice?
 	
 		self.craft = self.saveLoadHandler:LoadLocallySavedMO(self, "savedDockedCraft");
+		self.craftUID = self.craft and self.craft.UniqueID or nil;
 		self.HasDockedCraft = true;
 	end
 end
@@ -39,7 +49,8 @@ function Update(self)
 		self.ToSettle = true;
 	end
 
-	if self.craft and MovableMan:ValidMO(self.craft) then
+	self.craft = FindCraft(self.craftUID);
+	if self.craft then
 		--This block runs before HoldTimer it's passed
 		if not self.HoldTimer:IsPastSimMS(self.HoldTime) then
 			if not self.HasDockedCraft then
@@ -111,6 +122,7 @@ function Update(self)
 			self.craft.AltitudeMoveState = ACraft.ASCEND;
 			self.craft:RemoveNumberValue("Docked");
 			self.craft = nil; --Forget about the craft thus starting all over again
+			self.craftUID = nil;
 			self.ReleaseTimer:Reset();
 			self.releaseSound:Play(self.Pos);
 
@@ -141,10 +153,12 @@ function Update(self)
 		end
 	elseif self.ReleaseTimer:IsPastSimMS(self.ReleaseTime * 4) and self.updateTimer:IsPastSimMS(200) then
 		self.craft = nil;
+		self.craftUID = nil;
 		for mo in MovableMan:GetMOsInRadius(self.Pos, self.detectionRange, -1, true) do
 			--See if a live rocket is within 45 pixel range of the docking unit
 			if mo.ClassName == "ACDropShip" and not ToActor(mo):IsDead() then
 				self.craft = ToACDropShip(mo);
+				self.craftUID = mo.UniqueID;
 				self.confirmCapture = true;
 				self.captureSound:Play(self.Pos);
 			end
@@ -156,6 +170,7 @@ function Update(self)
 end
 
 function OnSave(self)
+	self.craft = FindCraft(self.craftUID);
 	if self.craft then
 		self.saveLoadHandler:SaveMOLocally(self, "savedDockedCraft", self.craft);
 	end

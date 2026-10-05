@@ -1,3 +1,12 @@
+-- The trail particle is kept by unique ID and looked up every update, as it can be deleted and its memory reused by another object at any time.
+local function FindTrailParticle(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) then
+		return ToMOPixel(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	--Collide with objects and deploy the destroy effect.
 	self.CheckCollision = function(inverted)
@@ -36,13 +45,15 @@ function Create(self)
 	self.trailPar.Pos = self.Pos;
 	self.trailPar.Vel = self.Vel * 0.1;
 	self.trailPar.Lifetime = 60;
+	self.trailParUID = self.trailPar.UniqueID;
 	MovableMan:AddParticle(self.trailPar);
 
 	self.lastVel = Vector(self.Vel.X, self.Vel.Y);
 end
 
 function Update(self)
-	if not self.ToDelete and self.trailPar and MovableMan:IsParticle(self.trailPar) then
+	self.trailPar = FindTrailParticle(self.trailParUID);
+	if not self.ToDelete and self.trailPar then
 		self.trailPar.Pos = self.Pos - Vector(self.lastVel.X, self.lastVel.Y):SetMagnitude(math.min(self.lastVel.Magnitude * rte.PxTravelledPerFrame, self.trailLength) * 0.5);
 		self.trailPar.Vel = self.lastVel * 0.5;
 		self.trailPar.Lifetime = self.Age + TimerMan.DeltaTimeMS;

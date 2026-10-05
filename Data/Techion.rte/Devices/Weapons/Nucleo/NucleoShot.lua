@@ -1,3 +1,12 @@
+-- Connectable particles are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function FindConnectableParticle(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:ValidMO(mo) then
+		return mo;
+	end
+	return nil;
+end
+
 function Explode(self)
 	--TODO: Add wounds through Lua like the other disintegrator weapons
 	local particleCount = 13;
@@ -37,16 +46,21 @@ function OnMessage(self, message, context)
 		self.connectableParticles = {};
 		for k, particle in pairs(context) do
 			if MovableMan:FindObjectByUniqueID(particle) then
-				self.connectableParticles[k] = MovableMan:FindObjectByUniqueID(particle);
+				self.connectableParticles[k] = particle;
 			end
 		end
 		self.detDelay = 4000/math.sqrt(math.max(1, #self.connectableParticles));
 		self.Vel = Vector(self.Vel.X, self.Vel.Y):DegRotate(#self.connectableParticles * RangeRand(-1, 1));
-		for k, particle in pairs(self.connectableParticles) do
-			particle:SendMessage("Nucleo_NewConnectableParticle", self.UniqueID);
+		for k, particleUniqueID in pairs(self.connectableParticles) do
+			local particle = MovableMan:FindObjectByUniqueID(particleUniqueID);
+			if particle then
+				particle:SendMessage("Nucleo_NewConnectableParticle", self.UniqueID);
+			end
 		end
 	elseif message == "Nucleo_NewConnectableParticle" then
-		table.insert(self.connectableParticles, MovableMan:FindObjectByUniqueID(context));
+		if MovableMan:FindObjectByUniqueID(context) then
+			table.insert(self.connectableParticles, context);
+		end
 	elseif message == "Nucleo_Explode" then
 		Explode(self);
 	end
@@ -85,8 +99,9 @@ function ThreadedUpdate(self)
 	PrimitiveMan:DrawCirclePrimitive(self.Pos, self.Radius, self.colors[math.random(#self.colors)]);
 
 	if self.connectableParticles then
-		for k, particle in pairs(self.connectableParticles) do
-			if MovableMan:ValidMO(particle) then
+		for k, particleUniqueID in pairs(self.connectableParticles) do
+			local particle = FindConnectableParticle(particleUniqueID);
+			if particle then
 				local dist = SceneMan:ShortestDistance(self.Pos, particle.Pos, SceneMan.SceneWrapsX);
 				if dist:MagnitudeIsLessThan(self.linkRange) then
 
@@ -119,8 +134,9 @@ end
 
 function SyncedUpdate(self)
 	if self.connectableParticles then
-		for k, particle in pairs(self.connectableParticles) do
-			if MovableMan:ValidMO(particle) then
+		for k, particleUniqueID in pairs(self.connectableParticles) do
+			local particle = FindConnectableParticle(particleUniqueID);
+			if particle then
 				particle.Pos = self.Pos + Vector(math.random() * 5, 0):RadRotate(math.random() * math.pi * 2);
 				particle:SendMessage("Nucleo_Explode");
 			end

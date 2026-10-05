@@ -23,7 +23,8 @@ function Create(self)
 	end
 
 	self.tableNum = #AntiPersonnelMineTable + 1;
-	AntiPersonnelMineTable[self.tableNum] = self;
+	-- By unique ID, since the mine can be deleted and its memory reused by another object at any time (the disarmer looks it up).
+	AntiPersonnelMineTable[self.tableNum] = self.UniqueID;
 
 	self.checkDelay = 100;
 	self.checkDelayExtension = 0.1;
@@ -38,7 +39,7 @@ function Update(self)
 	self.ToSettle = false;
 	if AntiPersonnelMineTable == nil then
 		AntiPersonnelMineTable = {};
-		AntiPersonnelMineTable[self.tableNum] = self;
+		AntiPersonnelMineTable[self.tableNum] = self.UniqueID;
 	end
 
 	if self.Sharpness ~= 0 then

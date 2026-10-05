@@ -3,6 +3,23 @@ require("Constants");
 require("Scripts/Shared/Activity_SpeedrunHelper")
 require("Scripts/Shared/SecretCodeEntry");
 
+-- Stored objects are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function FindObject(uniqueID, isType, toType)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and isType(mo) then
+		return toType(mo);
+	end
+	return nil;
+end
+
+local function FindValidMO(uniqueID, isType, toType)
+	local mo = FindObject(uniqueID, isType, toType);
+	if mo and MovableMan:ValidMO(mo) then
+		return mo;
+	end
+	return nil;
+end
+
 function SignalHunt:StartActivity(isNewGame)
 	self.humanLZ = SceneMan.Scene:GetArea("LZ Team 1");
 	self.ambusherLZ = SceneMan.Scene:GetArea("LZ Team 2");
@@ -111,6 +128,7 @@ function SignalHunt:StartNewGame()
 	end
 
 	self.outerZombieGenerator = CreateAEmitter("Zombie Generator");
+	self.outerZombieGeneratorUID = self.outerZombieGenerator.UniqueID;
 	self.outerZombieGenerator.Pos = self.outerZombieGeneratorArea:GetCenterPoint();
 	self.outerZombieGenerator.Team = self.zombieTeam;
 	self.outerZombieGenerator:EnableEmission(false);
@@ -121,6 +139,7 @@ function SignalHunt:StartNewGame()
 	MovableMan:AddParticle(self.outerZombieGenerator);
 
 	self.outerBombMaker = CreateAEmitter("Bomb Maker");
+	self.outerBombMakerUID = self.outerBombMaker.UniqueID;
 	self.outerBombMaker.Pos = self.outerBombMakerArea:GetCenterPoint();
 	self.outerBombMaker.RotAngle = 5.9;
 	self.outerBombMaker.Team = self.zombieTeam;
@@ -131,6 +150,7 @@ function SignalHunt:StartNewGame()
 	MovableMan:AddParticle(self.outerBombMaker);
 
 	self.innerZombieGenerator = CreateAEmitter("Zombie Generator");
+	self.innerZombieGeneratorUID = self.innerZombieGenerator.UniqueID;
 	self.innerZombieGenerator.Pos = self.innerZombieGeneratorArea:GetCenterPoint();
 	self.innerZombieGenerator.Team = self.zombieTeam;
 	self.innerZombieGenerator:EnableEmission(false);
@@ -141,6 +161,7 @@ function SignalHunt:StartNewGame()
 	MovableMan:AddParticle(self.innerZombieGenerator);
 
 	self.innerBombMaker = CreateAEmitter("Bomb Maker");
+	self.innerBombMakerUID = self.innerBombMaker.UniqueID;
 	self.innerBombMaker.Pos = self.innerBombMakerArea:GetCenterPoint();
 	self.innerBombMaker.RotAngle = 5.1;
 	self.innerBombMaker.Team = self.zombieTeam;
@@ -151,6 +172,7 @@ function SignalHunt:StartNewGame()
 	MovableMan:AddParticle(self.innerBombMaker);
 
 	self.controlCase = CreateMOSRotating("Control Chip Case");
+	self.controlCaseUID = self.controlCase.UniqueID;
 	self.controlCase.Pos = self.controlCaseArea:GetCenterPoint();
 	self.controlCase.Team = self.zombieTeam;
 	MovableMan:AddParticle(self.controlCase);
@@ -247,23 +269,29 @@ function SignalHunt:ResumeLoadedGame()
 		if particle.PresetName == "Zombie Generator" then
 			if self.innerZombieGeneratorArea:IsInside(particle.Pos) then
 				self.innerZombieGenerator = ToAEmitter(particle);
+				self.innerZombieGeneratorUID = self.innerZombieGenerator.UniqueID;
 			elseif self.outerZombieGeneratorArea:IsInside(particle.Pos) then
 				self.outerZombieGenerator = ToAEmitter(particle);
+				self.outerZombieGeneratorUID = self.outerZombieGenerator.UniqueID;
 			end
 		elseif particle.PresetName == "Bomb Maker" then
 			if (particle.Pos - Vector(468, 276)):MagnitudeIsLessThan(5) then
 				self.innerBombMaker = ToAEmitter(particle);
+				self.innerBombMakerUID = self.innerBombMaker.UniqueID;
 			elseif (particle.Pos - Vector(1128, 276)):MagnitudeIsLessThan(5) then
 				self.outerBombMaker = ToAEmitter(particle);
+				self.outerBombMakerUID = self.outerBombMaker.UniqueID;
 			end
 		elseif particle.PresetName == "Control Chip Case" then
 			self.controlCase = ToMOSRotating(particle);
+			self.controlCaseUID = self.controlCase.UniqueID;
 		end
 	end
 
 	for actor in MovableMan.AddedActors do
 		if self.evacuationRocketSpawned and not self.evacuationRocket and actor.Team == self.humanTeam and actor.ClassName == "ACRocket" then
 			self.evacuationRocket = ToACRocket(actor);
+			self.evacuationRocketUID = self.evacuationRocket.UniqueID;
 		end
 	end
 end
@@ -366,22 +394,34 @@ function SignalHunt:DoSpeedrunMode()
 	self:SetTeamAISkill(self.humanTeam, Activity.UNFAIRSKILL);
 	self:SetTeamAISkill(self.zombieTeam, Activity.UNFAIRSKILL);
 	self:SetTeamAISkill(self.ambusherTeam, Activity.UNFAIRSKILL);
-	for emission in self.outerZombieGenerator.Emissions do
-		emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+	local outerZombieGenerator = FindObject(self.outerZombieGeneratorUID, IsAEmitter, ToAEmitter);
+	if outerZombieGenerator then
+		for emission in outerZombieGenerator.Emissions do
+			emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+		end
+		outerZombieGenerator.SpriteAnimDuration = outerZombieGenerator.SpriteAnimDuration * currentZombieSpawnDifficultyMultiplier / self.zombieSpawnDifficultyMultiplier;
 	end
-	self.outerZombieGenerator.SpriteAnimDuration = self.outerZombieGenerator.SpriteAnimDuration * currentZombieSpawnDifficultyMultiplier / self.zombieSpawnDifficultyMultiplier;
 	
-	for emission in self.outerBombMaker.Emissions do
-		emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+	local outerBombMaker = FindObject(self.outerBombMakerUID, IsAEmitter, ToAEmitter);
+	if outerBombMaker then
+		for emission in outerBombMaker.Emissions do
+			emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+		end
 	end
 	
-	for emission in self.innerZombieGenerator.Emissions do
-		emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+	local innerZombieGenerator = FindObject(self.innerZombieGeneratorUID, IsAEmitter, ToAEmitter);
+	if innerZombieGenerator then
+		for emission in innerZombieGenerator.Emissions do
+			emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+		end
+		innerZombieGenerator.SpriteAnimDuration = innerZombieGenerator.SpriteAnimDuration * currentZombieSpawnDifficultyMultiplier / self.zombieSpawnDifficultyMultiplier;
 	end
-	self.innerZombieGenerator.SpriteAnimDuration = self.innerZombieGenerator.SpriteAnimDuration * currentZombieSpawnDifficultyMultiplier / self.zombieSpawnDifficultyMultiplier;
 	
-	for emission in self.innerBombMaker.Emissions do
-		emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+	local innerBombMaker = FindObject(self.innerBombMakerUID, IsAEmitter, ToAEmitter);
+	if innerBombMaker then
+		for emission in innerBombMaker.Emissions do
+			emission.ParticlesPerMinute = emission.ParticlesPerMinute / currentZombieSpawnDifficultyMultiplier * self.zombieSpawnDifficultyMultiplier;
+		end
 	end
 end
 
@@ -455,12 +495,12 @@ end
 
 function SignalHunt:DoZombieAndBombSpawns(zombieActorCount)
 	for i = 1, 2 do
-		local generatorToUse = i == 1 and self.outerZombieGenerator or self.innerZombieGenerator;
+		local generatorToUse = FindValidMO(i == 1 and self.outerZombieGeneratorUID or self.innerZombieGeneratorUID, IsAEmitter, ToAEmitter);
 		local generatorEnabled = i == 1 and (self.currentFightStage >= self.fightStage.inOuterCaveArea) or (self.currentFightStage >= self.fightStage.inInnerCaveArea or self.outerZombieGenerator == nil or (self.Difficulty == Activity.MAXDIFFICULTY and self.currentFightStage >= self.fightStage.inOuterCaveArea));
-		local bombMakerToUse = i == 1 and self.outerBombMaker or self.innerBombMaker;
+		local bombMakerToUse = FindObject(i == 1 and self.outerBombMakerUID or self.innerBombMakerUID, IsAEmitter, ToAEmitter);
 		local bombPickupAreaToUse = i == 1 and self.outerBombPickupArea or self.innerBombPickupArea;
 
-		if generatorToUse and MovableMan:ValidMO(generatorToUse) then
+		if generatorToUse then
 			local bombCount = 0;
 			for item in MovableMan.Items do
 				if bombPickupAreaToUse:IsInside(item.Pos) and item.PresetName == "Blue Bomb" then
@@ -471,7 +511,7 @@ function SignalHunt:DoZombieAndBombSpawns(zombieActorCount)
 				bombMakerToUse:EnableEmission(generatorEnabled and bombCount < self.numberOfLooseBombsPerBombMaker);
 			end
 			generatorToUse:EnableEmission(generatorEnabled);
-		else
+		elseif bombMakerToUse then
 			bombMakerToUse:EnableEmission(false);
 		end
 	end
@@ -657,8 +697,9 @@ function SignalHunt:UpdateActivity()
 		end
 
 		-- The actor holding the chip can be deleted at any time, so make sure it still exists before reading it.
-		if self.actorHoldingControlChip and not MovableMan:ValidMO(self.actorHoldingControlChip) then
-			self.actorHoldingControlChip = nil;
+		self.actorHoldingControlChip = FindValidMO(self.actorHoldingControlChipUID, IsActor, ToActor);
+		if not self.actorHoldingControlChip then
+			self.actorHoldingControlChipUID = nil;
 		end
 		if self.actorHoldingControlChip and self.actorHoldingControlChip.Team == self.humanTeam then
 			if not self.speedrunData and self.secretIndex and SecretCodeEntry.IsValid(self.secretIndex) then
@@ -670,18 +711,29 @@ function SignalHunt:UpdateActivity()
 		end
 	end
 
-	if self.controlCase and not MovableMan:ValidMO(self.controlCase) then
+	local controlCase = self.controlCase and FindValidMO(self.controlCaseUID, IsMOSRotating, ToMOSRotating);
+	local controlChip = self.controlChip and FindValidMO(self.controlChipUID, IsHeldDevice, ToHeldDevice);
+	if self.controlCase and not controlCase then
 		self.controlCase = nil;
+		self.controlCaseUID = nil;
 		self.noControlChipTimer:Reset();
 	elseif not self.controlCase and not self.controlChip then
 		for item in MovableMan.Items do
 			if item.PresetName == "Control Chip" then
 				self.controlChip = item;
+				self.controlChipUID = item.UniqueID;
 				break;
 			end
 		end
-	elseif self.controlChip and not MovableMan:ValidMO(self.controlChip) then
+	elseif self.controlChip and not controlChip then
 		self.controlChip = nil;
+		self.controlChipUID = nil;
+	end
+	if controlCase then
+		self.controlCase = controlCase;
+	end
+	if controlChip then
+		self.controlChip = controlChip;
 	end
 
 	local humanActorCount = 0;
@@ -695,16 +747,22 @@ function SignalHunt:UpdateActivity()
 		end
 		if actor:HasObject("Control Chip") then
 			self.actorHoldingControlChip = actor;
+			self.actorHoldingControlChipUID = actor.UniqueID;
 		end
 	end
-	if self.actorHoldingControlChip and (not MovableMan:ValidMO(self.actorHoldingControlChip) or not self.actorHoldingControlChip:HasObject("Control Chip")) then
+	self.actorHoldingControlChip = FindValidMO(self.actorHoldingControlChipUID, IsActor, ToActor);
+	if not self.actorHoldingControlChip or not self.actorHoldingControlChip:HasObject("Control Chip") then
 		self.actorHoldingControlChip = nil;
+		self.actorHoldingControlChipUID = nil;
 	end
 
-	if self.evacuationRocket and not MovableMan:ValidMO(self.evacuationRocket) then
+	local evacuationRocket = FindValidMO(self.evacuationRocketUID, IsACRocket, ToACRocket);
+	if self.evacuationRocket and not evacuationRocket then
 		self.evacuationRocket = nil;
+		self.evacuationRocketUID = nil;
 		self.evacuationRocketSpawned = false;
 	elseif self.evacuationRocket then
+		self.evacuationRocket = evacuationRocket;
 		local rocketShouldEvacuate = self.evacuationRocket:HasObject("Control Chip") or (self.secretIndex == nil and self.evacuationRocket:HasObjectInGroup("Brains"));
 		if not rocketShouldEvacuate and self.evacuationRocket.Vel:MagnitudeIsLessThan(1) then
 			self.evacuationRocket:OpenHatch();
@@ -716,6 +774,7 @@ function SignalHunt:UpdateActivity()
 	if not self.controlCase and not self.controlChip and not self.actorHoldingControlChip then
 		if self.noControlChipTimer:IsPastSimMS(100) then
 			self.controlChip = CreateHeldDevice("Control Chip", "Missions.rte");
+			self.controlChipUID = self.controlChip.UniqueID;
 			self.controlChip.Pos = self.controlCaseArea:GetCenterPoint();
 			MovableMan:AddItem(self.controlChip);
 		end
@@ -740,6 +799,7 @@ end
 
 function SignalHunt:SpawnEvacuationRocket()
 	self.evacuationRocket = CreateACRocket("Rocket MK2", "Base.rte");
+	self.evacuationRocketUID = self.evacuationRocket.UniqueID;
 	self.evacuationRocket.Pos = Vector(self.humanLZ:GetCenterPoint().X, -100);
 	if self.speedrunData then
 		self.evacuationRocket.Pos.Y = 0; -- Start the rocket lower for speedruns, so it's more likely to be on the ground if the rush to it.

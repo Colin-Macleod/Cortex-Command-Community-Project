@@ -19,8 +19,9 @@ function Create(self)
 		TimedExplosiveTable = {};
 	end
 
+	-- Explosives can be deleted at any time and their memory reused by other objects, so the table holds UniqueIDs for others (e.g. the Disarmer) to look up.
 	self.tableNum = #TimedExplosiveTable + 1;
-	TimedExplosiveTable[self.tableNum] = self;
+	TimedExplosiveTable[self.tableNum] = self.UniqueID;
 
 	self.activateSound = CreateSoundContainer("Explosive Device Activate", "Base.rte");
 	self.blipSound = CreateSoundContainer("Timed Explosive Blip", "Coalition.rte");
@@ -31,7 +32,7 @@ end
 function Update(self)
 	if TimedExplosiveTable == nil then
 		TimedExplosiveTable = {};
-		TimedExplosiveTable[self.tableNum] = self;
+		TimedExplosiveTable[self.tableNum] = self.UniqueID;
 	end
 
 	TimedExplosiveStick(self);

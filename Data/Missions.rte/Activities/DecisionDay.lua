@@ -2,6 +2,15 @@ require("Constants");
 require("Utilities")
 require("Scripts/Shared/Activity_SpeedrunHelper")
 
+-- The initial drop ships are kept by unique ID and looked up when used, as they can be deleted and their memory reused by another object at any time.
+local function FindValidDropShip(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsACDropShip(mo) and MovableMan:ValidMO(mo) then
+		return ToACDropShip(mo);
+	end
+	return nil;
+end
+
 function DecisionDayDeployBrainPieSliceActivation(pieMenuOwner, pieMenu, pieSlice)
 	ActivityMan:GetActivity():SaveNumber("DeployBrain", pieMenuOwner:GetController().Player + 1);
 end
@@ -706,7 +715,7 @@ function DecisionDay:ResumeLoadedGame()
 		if self.currentStage < self.stages.frontBunkerCaptured and actor.Team == self.humanTeam and IsACDropShip(actor) then
 			actor.ImpulseDamageThreshold = 1;
 			actor.GlobalAccScalar = 1.75;
-			self.initialDropShipsAndVelocities[#self.initialDropShipsAndVelocities + 1] = { dropShip = ToACDropShip(actor), velX = actor.Vel.X };
+			self.initialDropShipsAndVelocities[#self.initialDropShipsAndVelocities + 1] = { dropShipUID = actor.UniqueID, velX = actor.Vel.X };
 		elseif actor:IsInGroup("Brains") and actor.Team == self.humanTeam then
 			for _, player in pairs(self.humanPlayers) do
 				if actor:IsInGroup("Brain " .. tostring(player)) then
@@ -1020,9 +1029,9 @@ function DecisionDay:UpdateCamera()
 		if self.currentStage == self.stages.showInitialText and self.messageTimer.SimTimeLimitProgress > 0.75 then
 			scrollTargetAndSpeed = {nil, fastScroll};
 		else
-			local dropShipToFollow = #self.initialDropShipsAndVelocities > 0 and self.initialDropShipsAndVelocities[1].dropShip or nil;
+			local dropShipToFollow = #self.initialDropShipsAndVelocities > 0 and FindValidDropShip(self.initialDropShipsAndVelocities[1].dropShipUID) or nil;
 			-- It can have been deleted since the list was last cleaned up.
-			if dropShipToFollow and MovableMan:ValidMO(dropShipToFollow) then
+			if dropShipToFollow then
 				scrollTargetAndSpeed = {dropShipToFollow.Pos, veryFastScroll};
 			else
 				scrollTargetAndSpeed = {self.initialDropShipSpawnArea.Center, veryFastScroll};
@@ -1247,22 +1256,23 @@ function DecisionDay:SpawnAndUpdateInitialDropShips()
 		end
 		craft.GlobalAccScalar = 1.75;
 		MovableMan:AddActor(craft);
-		self.initialDropShipsAndVelocities[#self.initialDropShipsAndVelocities + 1] = { dropShip = craft, velX = math.random(-5, 5) };
+		self.initialDropShipsAndVelocities[#self.initialDropShipsAndVelocities + 1] = { dropShipUID = craft.UniqueID, velX = math.random(-5, 5) };
 
 		self.alliedData.spawnTimer:Reset();
 	end
 
 	for i = #self.initialDropShipsAndVelocities, 1, -1 do
 		local initialDropShipAndVelocity = self.initialDropShipsAndVelocities[i];
-		if not MovableMan:ValidMO(initialDropShipAndVelocity.dropShip) then
+		local dropShip = FindValidDropShip(initialDropShipAndVelocity.dropShipUID);
+		if not dropShip then
 			table.remove(self.initialDropShipsAndVelocities, i);
 			if i == 1 and not self.initialDropShipDestroyed then
 				self.initialDropShipDestroyed = true;
 			end
 		else
-			initialDropShipAndVelocity.dropShip.Vel.X = initialDropShipAndVelocity.velX;
-			if initialDropShipAndVelocity.dropShip.TravelImpulse.Magnitude > 10 or initialDropShipAndVelocity.dropShip.Age > 100000 then
-				initialDropShipAndVelocity.dropShip:GibThis();
+			dropShip.Vel.X = initialDropShipAndVelocity.velX;
+			if dropShip.TravelImpulse.Magnitude > 10 or dropShip.Age > 100000 then
+				dropShip:GibThis();
 			end
 		end
 	end

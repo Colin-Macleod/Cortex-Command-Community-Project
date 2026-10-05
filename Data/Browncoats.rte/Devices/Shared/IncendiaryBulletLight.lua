@@ -1,5 +1,15 @@
+-- The trail glow is kept by unique ID and looked up every update, as it can be deleted and its memory reused by another object at any time.
+local function FindTrailGlow(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and MovableMan:IsParticle(mo) and IsMOPixel(mo) then
+		return ToMOPixel(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.trailGlow = CreateMOPixel("Incendiary Bullet Trail Glow Light");
+	self.trailGlowUID = self.trailGlow.UniqueID;
 	self.trailLength = 40;
 
 	self.trailGlow.Pos = self.Pos - Vector(self.Vel.X, self.Vel.Y) * rte.PxTravelledPerFrame * 0.5;
@@ -9,7 +19,8 @@ function Create(self)
 end
 
 function Update(self)
-	if self.trailGlow and MovableMan:IsParticle(self.trailGlow) then
+	self.trailGlow = FindTrailGlow(self.trailGlowUID);
+	if self.trailGlow then
 		self.trailGlow.Pos = self.Pos - Vector(self.Vel.X, self.Vel.Y):SetMagnitude(math.min(self.Vel.Magnitude * rte.PxTravelledPerFrame, self.trailLength) * 0.5);
 		self.trailGlow.Vel = self.Vel * 0.5;
 		self.trailGlow.Lifetime = self.Age + TimerMan.DeltaTimeMS;

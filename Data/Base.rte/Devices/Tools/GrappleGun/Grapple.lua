@@ -1,4 +1,4 @@
--- The gun, its user and the hooked target can be deleted at any time, so they're kept by unique ID and looked up again every update.
+-- The gun, its user, the hooked target and the crank sound can be deleted at any time and their memory reused by other objects, so they're kept by unique ID and looked up again every update.
 local function FindByUniqueID(uniqueID)
 	return uniqueID and MovableMan:FindObjectByUniqueID(uniqueID) or nil;
 end
@@ -151,7 +151,9 @@ function Update(self)
 			self.parentGun.HUDVisible = false;
 		end
 		-- Add sound when extending / retracting
-		if MovableMan:IsParticle(self.crankSound) then
+		local crankSound = FindByUniqueID(self.crankSoundUID);
+		self.crankSound = crankSound and MovableMan:IsParticle(crankSound) and ToAEmitter(crankSound) or nil;
+		if self.crankSound then
 			self.crankSound.PinStrength = 1000;
 			self.crankSound.ToDelete = false;
 			self.crankSound.ToSettle = false;
@@ -165,6 +167,7 @@ function Update(self)
 			self.crankSound = CreateAEmitter("Grapple Gun Sound Crank");
 			self.crankSound.Pos = startPos;
 			MovableMan:AddParticle(self.crankSound);
+			self.crankSoundUID = self.crankSound.UniqueID;
 		end
 
 		self.lastSetLineLength = self.setLineLength;
@@ -496,8 +499,9 @@ function Update(self)
 	end
 end
 function Destroy(self)
-	if MovableMan:IsParticle(self.crankSound) then
-		self.crankSound.ToDelete = true;
+	local crankSound = FindByUniqueID(self.crankSoundUID);
+	if crankSound and MovableMan:IsParticle(crankSound) then
+		crankSound.ToDelete = true;
 	end
 	local parentGun = FindByUniqueID(self.parentGunUID);
 	if parentGun and parentGun.ID ~= rte.NoMOID then

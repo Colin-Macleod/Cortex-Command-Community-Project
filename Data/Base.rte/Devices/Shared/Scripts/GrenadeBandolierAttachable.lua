@@ -1,3 +1,8 @@
+-- The root parent and the grenade it held can be deleted at any time and their memory reused by other objects, so they're kept by UniqueID and looked up again before use.
+local function FindByUniqueID(uniqueID)
+	return uniqueID and MovableMan:FindObjectByUniqueID(uniqueID) or nil;
+end
+
 local modifyGrenadeCount = function(self, numberOfGrenadesToAddOrRemove, doNotDeleteAttachableIfThereAreNoMoreGrenades)
 	-- This is probably an unnecessary safety check, but it may be possible for some combination of replenish delays and replenish gui time limits to result in wonky behaviour, so it's best to be extra safe.
 	if self.currentGrenadeCount < 0 then
@@ -7,8 +12,10 @@ local modifyGrenadeCount = function(self, numberOfGrenadesToAddOrRemove, doNotDe
 
 	self.currentGrenadeCount = self.infiniteGrenades and 1 or (self.currentGrenadeCount + numberOfGrenadesToAddOrRemove);
 	self.Mass = self.bandolierMass + (self.grenadeMass * self.currentGrenadeCount);
-	self.rootParent:SetNumberValue(self.bandolierKey, self.currentGrenadeCount);
-	self.rootParent:SetGoldValue(self.rootParent:GetGoldValue(self.rootParent.ModuleID, 1, 1) + (self.grenadeObjectGoldValue * numberOfGrenadesToAddOrRemove));
+	if self.rootParent then
+		self.rootParent:SetNumberValue(self.bandolierKey, self.currentGrenadeCount);
+		self.rootParent:SetGoldValue(self.rootParent:GetGoldValue(self.rootParent.ModuleID, 1, 1) + (self.grenadeObjectGoldValue * numberOfGrenadesToAddOrRemove));
+	end
 
 	if self.currentGrenadeCount <= 0 and not doNotDeleteAttachableIfThereAreNoMoreGrenades then
 		self.ToDelete = true;
@@ -43,6 +50,7 @@ function Create(self)
 		return;
 	end
 	self.rootParent = ToAHuman(rootParent);
+	self.rootParentUID = rootParent.UniqueID;
 	self.rootParentController = self.rootParent:GetController();
 	self.isHumanTeam = ActivityMan:GetActivity():IsHumanTeam(self.rootParent.Team);
 
@@ -91,6 +99,8 @@ function Create(self)
 end
 
 function Update(self)
+	local rootParent = FindByUniqueID(self.rootParentUID);
+	self.rootParent = rootParent and ToAHuman(rootParent) or nil;
 	if self.rootParent and MovableMan:ValidMO(self.rootParent) and self.rootParent.Health > 0 then
 		local rootParentEquippedItemModuleAndPresetName = self.rootParent.EquippedItem ~= nil and self.rootParent.EquippedItem:GetModuleAndPresetName() or nil;
 		local rootParentIsHoldingGrenade = rootParentEquippedItemModuleAndPresetName == self.grenadeObject:GetModuleAndPresetName();
@@ -150,10 +160,13 @@ function Update(self)
 		end
 		
 		self.grenadePreviouslyHeldByRootParent = rootParentIsHoldingGrenade and self.rootParent.EquippedItem or nil;
+		self.grenadePreviouslyHeldByRootParentUID = self.grenadePreviouslyHeldByRootParent and self.grenadePreviouslyHeldByRootParent.UniqueID or nil;
 	end
 end
 
 function Destroy(self)
+	local rootParent = FindByUniqueID(self.rootParentUID);
+	self.rootParent = rootParent and ToAHuman(rootParent) or nil;
 	if self.rootParent and MovableMan:ValidMO(self.rootParent) then
 		self.rootParent:RemoveNumberValue(self.bandolierKey);
 	end
@@ -163,6 +176,8 @@ function Destroy(self)
 		local bandolierRotAngle = self.RotAngle;
 		local bandolierAngularVel = self.AngularVel;
 		
+		local grenadePreviouslyHeldByRootParent = FindByUniqueID(self.grenadePreviouslyHeldByRootParentUID);
+		self.grenadePreviouslyHeldByRootParent = grenadePreviouslyHeldByRootParent and IsHeldDevice(grenadePreviouslyHeldByRootParent) and ToHeldDevice(grenadePreviouslyHeldByRootParent) or nil;
 		if self.grenadePreviouslyHeldByRootParent then
 			if MovableMan:ValidMO(self.grenadePreviouslyHeldByRootParent) and not self.grenadePreviouslyHeldByRootParent:IsActivated() then
 				self.grenadePreviouslyHeldByRootParent.ToDelete = true;

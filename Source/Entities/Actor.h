@@ -395,7 +395,7 @@ namespace RTE {
 		/// Removes all AI waypoints and clears the current path to the current
 		/// waypoint. The AI Actor will stop in its tracks.
 		void ClearAIWaypoints() {
-			m_pMOMoveTarget = 0;
+			SetMOMoveTarget(nullptr);
 			m_Waypoints.clear();
 			m_MovePath.clear();
 			m_MoveTarget = m_Pos;
@@ -489,12 +489,15 @@ namespace RTE {
 		}
 
 		/// Gets a pointer to the MovableObject move target of this Actor.
-		/// @return A pointer to the MovableObject move target of this Actor.
-		const MovableObject* GetMOMoveTarget() const { return m_pMOMoveTarget; }
+		/// @return A pointer to the MovableObject move target of this Actor, or nullptr if there is none or it no longer exists.
+		const MovableObject* GetMOMoveTarget() const;
 
 		/// Sets the MovableObject this Actor is moving towards, if any.
 		/// @param newTarget The new target, or nullptr for none. Not owned.
-		void SetMOMoveTarget(const MovableObject* newTarget) { m_pMOMoveTarget = newTarget; }
+		void SetMOMoveTarget(const MovableObject* newTarget) {
+			m_pMOMoveTarget = newTarget;
+			m_MOMoveTargetUniqueID = newTarget ? newTarget->GetUniqueID() : 0;
+		}
 
 		/// Sets this' perceptiveness to alarming events going on around him.
 		/// @param newPerceptiveness The current perceptiveness, 0.0 - 1.0
@@ -1040,6 +1043,11 @@ namespace RTE {
 		Vector m_MoveTarget;
 		// The MO we're currently following, if any. If still valid, this' position will update the MoveTarget each UpdateAI.
 		const MovableObject* m_pMOMoveTarget;
+		long m_MOMoveTargetUniqueID; //!< The unique ID of m_pMOMoveTarget, to tell it from another object that was later given the same memory after it was deleted.
+
+		/// Gets whether the MovableObject move target still exists. Checks its unique ID as well as its address, since the memory of a deleted object is reused.
+		/// @return Whether there's a move target and it still exists.
+		bool MOMoveTargetExists() const;
 		// The point previous on the path to the one currently assigned the move target
 		Vector m_PrevPathTarget;
 		// The relative, scene-wrapped difference between the current m_Pos and the m_MoveTarget.
