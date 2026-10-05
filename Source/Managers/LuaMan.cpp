@@ -438,9 +438,41 @@ void LuaMan::ResetStatesForNewActivity() {
 		lua_gc(luaState.GetLuaState(), LUA_GCCOLLECT, 0);
 		lua_gc(luaState.GetLuaState(), LUA_GCSTOP, 0);
 	};
+	// Testing aid: with CCCP_DT_LUA_GLOBALS_LOG=<path>, the global variables each Lua state has when an Activity starts (left over from what this process
+	// did before) are logged, sorted, with their types and, for tables, their sizes. Two co-op peers' logs should be the same.
+	static const char* globalsLogPath = std::getenv("CCCP_DT_LUA_GLOBALS_LOG");
+	static std::ofstream globalsLog = globalsLogPath ? std::ofstream(globalsLogPath, std::ios::out | std::ios::trunc) : std::ofstream();
+	static int activityStartCount = 0;
+	++activityStartCount;
+	auto logGlobals = [](LuaStateWrapper& luaState, const std::string& stateName) {
+		if (!globalsLogPath) {
+			return;
+		}
+		std::lock_guard<std::recursive_mutex> lock(luaState.GetMutex());
+		lua_State* state = luaState.GetLuaState();
+		const int stackTop = lua_gettop(state);
+		const char* listGlobals =
+		    "local out = {} "
+		    "for k, v in next, _G do "
+		    "  local t = type(v) local extra = '' "
+		    "  if t == 'table' then local n = 0 for _ in next, v do n = n + 1 end extra = ' ' .. n "
+		    "  elseif t == 'number' or t == 'boolean' or t == 'string' then extra = ' ' .. tostring(v) end "
+		    "  out[#out + 1] = tostring(k) .. ' ' .. t .. extra "
+		    "end "
+		    "table.sort(out) return table.concat(out, '\\n')";
+		if (luaL_dostring(state, listGlobals) == 0 && lua_isstring(state, -1)) {
+			globalsLog << "# Activity start " << activityStartCount << ", " << stateName << "\n" << lua_tostring(state, -1) << "\n";
+		}
+		lua_settop(state, stackTop);
+	};
 	collectAllGarbage(m_MasterScriptState);
-	for (LuaStateWrapper& luaState: m_ScriptStates) {
-		collectAllGarbage(luaState);
+	logGlobals(m_MasterScriptState, "master state");
+	for (size_t i = 0; i < m_ScriptStates.size(); ++i) {
+		collectAllGarbage(m_ScriptStates[i]);
+		logGlobals(m_ScriptStates[i], "state " + std::to_string(i));
+	}
+	if (globalsLogPath) {
+		globalsLog.flush();
 	}
 
 	m_MasterScriptState.m_RandomGenerator.Seed(0x9E3779B97F4A7C15ULL);
