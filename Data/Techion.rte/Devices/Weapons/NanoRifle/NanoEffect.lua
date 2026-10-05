@@ -1,13 +1,20 @@
+-- Targets are kept by unique ID and looked up every update, as they can be deleted at any time.
+local function FindTarget(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsMOSRotating(mo) and not mo.ToDelete then
+		return ToMOSRotating(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	--Get the target from Sharpness.
-	local mo = MovableMan:FindObjectByUniqueID(self.Sharpness);
-	if mo and IsMOSRotating(mo) then
-		self.target = ToMOSRotating(mo);
-	end
+	self.target = FindTarget(self.Sharpness);
 	if self.target == nil then
 		self.ToDelete = true;
 		return;
 	end
+	self.targetID = self.target.UniqueID;
 
 	self.healing = self.target.Team == self.Team;
 	self.healMultiplier = self.target.ModuleName == "Techion.rte" and 1.0 or 0.5;
@@ -44,7 +51,8 @@ function Create(self)
 end
 
 function Update(self)
-	if self.target and IsMOSRotating(self.target) and not self.target.ToDelete then
+	self.target = FindTarget(self.targetID);
+	if self.target then
 		self.Pos = self.target.Pos + Vector(self.targetOffset.X, self.targetOffset.Y):RadRotate(self.target.RotAngle - self.hitAngle);
 
 		--Flicker.
@@ -59,7 +67,8 @@ function Update(self)
 		--Cause damage to enemies, or heal friendlies.
 		if self.pulseTimer:IsPastSimMS(self.pulseTime + self.target.Material.StructuralIntegrity * 2) then
 			if IsAttachable(self.target) then
-				self.nextTarget = ToAttachable(self.target):GetParent();
+				local parent = ToAttachable(self.target):GetParent();
+				self.nextTargetID = parent and parent.UniqueID or nil;
 				self.nextTargetOffset = ToAttachable(self.target).ParentOffset;
 			end
 
@@ -73,6 +82,7 @@ function Update(self)
 				else
 					--Move on to the next target MO to repair.
 					self.target = nil;
+					self.targetID = nil;
 				end
 			else
 				local woundName = ToMOSRotating(self.target):GetEntryWoundPresetName();
@@ -90,12 +100,12 @@ function Update(self)
 		if self.pulses > self.maxPulses then
 			self.ToDelete = true;
 		end
-	elseif self.nextTarget then
-		self.target = self.nextTarget;
+	elseif FindTarget(self.nextTargetID) then
+		self.targetID = self.nextTargetID;
 		self.targetOffset = self.nextTargetOffset;
 		self.hitAngle = 0;
 
-		self.nextTarget = nil;
+		self.nextTargetID = nil;
 	else
 		if self.healing then
 			self.ToDelete = true;

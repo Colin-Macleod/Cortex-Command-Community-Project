@@ -20,6 +20,16 @@ function Create(self)
 	self.missile = CreateAEmitter("Particle Coalition Missile Launcher", "Coalition.rte");
 end
 
+-- The locked target, looked up by unique ID every update, as it can be deleted at any time.
+local function GetLockedTarget(self)
+	local target = self.targetID and MovableMan:FindObjectByUniqueID(self.targetID);
+	if target and IsMOSRotating(target) and not target.ToDelete then
+		return IsACrab(target) and ToACrab(target) or ToMOSRotating(target);
+	end
+	self.targetID = nil;
+	return nil;
+end
+
 function ThreadedUpdate(self)
 	local parent = self:GetRootParent();
 	local sharpAimProgress = 0;
@@ -48,10 +58,10 @@ function ThreadedUpdate(self)
 							if movement > self.lockThreshold then
 
 								self.targetLostTimer:Reset();
-								if not self.target or (self.target and self.target.ID ~= mo.ID) then
+								if self.targetID ~= mo.UniqueID then
 									self.detectSound:Play(self.Pos);
 								end
-								self.target = IsACrab(mo) and ToACrab(mo) or mo;
+								self.targetID = mo.UniqueID;
 								self.markerSize = mo.Radius;
 							end
 						end
@@ -64,11 +74,12 @@ function ThreadedUpdate(self)
 		elseif self.markerSize > 0 then
 			self.markerSize = (self.markerSize * 0.9) - 1;
 		end
-		if self.target and self.target.ID ~= rte.NoMOID and not self.targetLostTimer:IsPastSimTimeLimit() and self.markerSize > 0 then
+		local target = GetLockedTarget(self);
+		if target and target.ID ~= rte.NoMOID and not self.targetLostTimer:IsPastSimTimeLimit() and self.markerSize > 0 then
 			if playerControlled then
-				local crosshairPos = self.target.Pos;
-				if self.target.Turret then
-					crosshairPos = self.target.Pos + SceneMan:ShortestDistance(self.target.Pos, self.target.Turret.Pos, SceneMan.SceneWrapsX) * 0.5;
+				local crosshairPos = target.Pos;
+				if IsACrab(target) and target.Turret then
+					crosshairPos = target.Pos + SceneMan:ShortestDistance(target.Pos, target.Turret.Pos, SceneMan.SceneWrapsX) * 0.5;
 				end
 				local crossVecX = Vector(markerSize, 0):DegRotate(self.markerRotAngle);
 				local crossVecY = Vector(0, markerSize):DegRotate(self.markerRotAngle);
@@ -84,7 +95,7 @@ function ThreadedUpdate(self)
 				self.markerRotAngle = self.markerRotAngle + (self.markerTurnSpeed/math.sqrt(self.markerSize) * self.FlipFactor);
 			end
 		else
-			self.target = nil;
+			self.targetID = nil;
 		end
 	end
 	if self.FiredFrame then
@@ -98,8 +109,9 @@ function ThreadedUpdate(self)
 		missile.Team = self.Team;
 		missile.IgnoresTeamHits = true;
 
-		if self.target and IsMOSRotating(self.target) then
-			missile:SetNumberValue("TargetID", self.target.ID);
+		local target = GetLockedTarget(self);
+		if target then
+			missile:SetNumberValue("TargetID", target.ID);
 		end
 		MovableMan:AddParticle(missile);
 	end

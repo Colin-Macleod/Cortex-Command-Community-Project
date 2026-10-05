@@ -6,7 +6,8 @@ function Create(self)
 	if self:NumberValueExists("TargetID") then
 		local mo = MovableMan:GetMOFromID(self:GetNumberValue("TargetID"));
 		if mo and IsMOSRotating(mo) then
-			self.target = ToMOSRotating(mo);
+			-- Kept by unique ID and looked up every update, as the target can be deleted at any time.
+			self.targetUniqueID = mo.UniqueID;
 			self.targetSound:Play(self.Pos);
 		end
 	end
@@ -16,8 +17,9 @@ end
 
 function Update(self)
 	self.GlobalAccScalar = 1/math.sqrt(1 + math.abs(self.Vel.X) * 0.1);
-	if self.target and self.target.ID ~= rte.NoMOID then
-		local targetDist = SceneMan:ShortestDistance(self.Pos, self.target.Pos, SceneMan.SceneWrapsX);
+	local target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID);
+	if target and not target.ToDelete and target.ID ~= rte.NoMOID then
+		local targetDist = SceneMan:ShortestDistance(self.Pos, target.Pos, SceneMan.SceneWrapsX);
 		if targetDist:MagnitudeIsLessThan(self.Diameter) then
 			self:GibThis();
 		else
