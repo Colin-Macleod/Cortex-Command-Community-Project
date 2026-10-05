@@ -25,6 +25,14 @@ Headless on Linux: `xvfb-run -a -s "-screen 0 1280x720x24" ./CortexCommand`.
 
 The other `CCCP_DT_*` variables are documented in `DeterminismHarness.h`. They select the activity, scene and fog of war, request per-object dumps at chosen ticks, and set how often the terrain is hashed. For desyncs that don't reproduce on demand, `CCCP_DT_DUMP_RING=<N>` keeps per-object dumps of the last N ticks in memory and writes them (`Userdata/CoopDesync_*.txt.ring<tick>`) when a co-op desync is detected, so both peers' dumps of the first diverging tick (from the hash logs) can be diffed. `CCCP_DT_LUA_RNG_LOG=<path>` logs every random number scripts draw from a Lua state's generator, with the sim update and Lua call stack; diff two peers' logs to find the script that drew differently.
 
+More aids for desyncs that depend on a process's memory layout or history:
+
+- `CCCP_DT_POOL_SHUFFLE=<seed>` makes the entity pools hand out memory in a seeded random order. Run co-op peers with different seeds and anything in the sim that depends on object addresses (address-only object checks, loops over address-keyed containers) desyncs quickly, without the slowness of an AddressSanitizer build.
+- `CCCP_DT_LUA_HEAP_SHUFFLE=<seed>` allocates seeded random garbage in every Lua state when it's created, so `pairs()` visits table, object and function keys in a different order than in a peer with another seed.
+- `CCCP_DT_PAIRS_AUDIT=1` prints `PAIRSAUDIT <script>:<line> <key type>` once for every `pairs()` call site that loops over a table with keys that aren't strings or numbers. The order of such loops follows Lua heap addresses, so any of them whose result depends on the order can desync.
+- `CCCP_DT_ID_LOG=<path>` logs every object creation (sim update, unique ID, class, preset). Diff two peers' logs to find where they started creating different objects or numbering them differently.
+- `-coop-chain "Activity@Scene;Activity@Scene;..."` (host) plays the listed activities one after another in the same processes, the scene being optional, and `-coop-match-updates <N>` (every peer) ends each match after N sim updates. Desyncs that need a process to have played earlier matches (state left over from one Activity to the next) show up with these.
+
 ### Finding the call site that diverged (RNG tracing)
 
 Build with `-DRTE_RNG_TRACE` (Linux only; it uses `backtrace`). In this build every draw from the global RNG records its call stack, and whether it came from a worker thread, to `<log>.rngtrace` during the first `CCCP_DT_TRACE_TICKS` ticks.

@@ -120,6 +120,7 @@ Test-only options:
 - `-coop-bot <seed>`: drives the local player with a pseudo-random input bot.
 - `-coop-inject-desync <update>`: deliberately perturbs the simulation on one computer, to check the desync detector.
 - `-coop-sim-latency <ms>` and `-coop-sim-jitter <ms>`: hold back every message this computer sends by the given latency plus a random 0 to jitter ms, keeping message order (like a reliable ordered connection over a slow link). Pass them to every game instance to test a slow network with all instances on one machine.
+- `-coop-chain "Activity@Scene;Activity@Scene;..."` (host) and `-coop-match-updates <N>` (every computer): play the listed activities one after another in the same game instances, each match ending after N sim updates, to catch state left over from one match to the next.
 
 Example, two computers on one machine:
 
