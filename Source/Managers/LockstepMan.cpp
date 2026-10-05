@@ -1,3 +1,11 @@
+// RakNet includes <windows.h> on Windows (see below). Both build systems define these already; this makes sure they're in effect even if this file is built some other way.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include "LockstepMan.h"
 #include "MathConsistency.h"
 #include "lua.hpp"
@@ -25,6 +33,36 @@
 #include "MessageIdentifiers.h"
 #include "RakPeerInterface.h"
 #include "RakNetTypes.h"
+
+// RakNet includes <WinSock2.h> and <windows.h> on Windows, after the engine headers above. Undefine the Win32 A/W macros that have the same names as engine
+// methods, or calls to those methods below (e.g. Entity::GetClassName) would be renamed (GetClassNameA) and fail to compile. See also NetworkServer.h.
+#ifdef GetClassName
+#undef GetClassName
+#endif
+#ifdef GetObject
+#undef GetObject
+#endif
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+#ifdef LoadString
+#undef LoadString
+#endif
+#ifdef PlaySound
+#undef PlaySound
+#endif
+#ifdef DrawText
+#undef DrawText
+#endif
+#ifdef CreateFont
+#undef CreateFont
+#endif
+#ifdef ERROR
+#undef ERROR
+#endif
 
 #include <algorithm>
 #include <bit>
