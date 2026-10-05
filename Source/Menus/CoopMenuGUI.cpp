@@ -81,7 +81,10 @@ void CoopMenuGUI::UpdateSessionDisplay() {
 	m_PlayersLabel->SetText(players.empty() ? "-" : players);
 
 	std::string status;
-	if (!inSession) {
+	if (!inSession && !g_LockstepMan.GetStatusMessage().empty()) {
+		// E.g. why hosting failed.
+		status = g_LockstepMan.GetStatusMessage();
+	} else if (!inSession) {
 		status = "Host a game, or enter the host's address and join. The host's UDP port has to be reachable from the other players' machines (on the internet, forward it on the host's router). Everyone needs the same game version and mods.";
 	} else if (role == LockstepMan::Role::Host) {
 		status = g_LockstepMan.GetStatusMessage() + ". Choose an activity to start it for everyone, or wait for more players.";

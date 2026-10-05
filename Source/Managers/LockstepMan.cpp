@@ -403,6 +403,8 @@ void LockstepMan::ResetSessionState() {
 	m_AutoStartDone = false;
 	m_MatchStartPending = false;
 	m_DeferredMatchStart = false;
+	m_Desynced = false;
+	m_DesyncMessage.clear();
 	m_DelayedMessages.clear();
 }
 
@@ -688,7 +690,8 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 			case ID_CONNECTION_LOST:
 				if (Peer* peer = FindPeer(guid)) {
 					peer->Connected = false;
-					g_ConsoleMan.PrintString("CO-OP: " + peer->Address + " disconnected." + (peer->Player != Players::NoPlayer ? " Player " + std::to_string(peer->Player + 1) + " will stand idle." : ""));
+					const bool playingInMatch = m_MatchRunning && peer->InMatch && peer->Player != Players::NoPlayer;
+					g_ConsoleMan.PrintString("CO-OP: " + peer->Address + " disconnected." + (playingInMatch ? " Player " + std::to_string(peer->Player + 1) + " will stand idle." : ""));
 					BroadcastLobbyStatus();
 				}
 				return;
@@ -1648,6 +1651,8 @@ void LockstepMan::EndMatch() {
 	}
 	m_Waiting = false;
 	m_LeaveRequested = false;
+	m_Desynced = false;
+	m_DesyncMessage.clear();
 	if (m_Role == Role::Host) {
 		m_StatusMessage.clear();
 		BroadcastLobbyStatus();
@@ -1696,7 +1701,13 @@ void LockstepMan::Update() {
 		m_WaitingSince = std::chrono::steady_clock::now();
 		std::string address = m_HostAddress.substr(0, m_HostAddress.rfind(':'));
 		unsigned short port = static_cast<unsigned short>(std::atoi(m_HostAddress.substr(m_HostAddress.rfind(':') + 1).c_str()));
-		m_Peer->Connect(address.c_str(), port, nullptr, 0);
+		const RakNet::ConnectionAttemptResult result = m_Peer->Connect(address.c_str(), port, nullptr, 0);
+		if (result == RakNet::CANNOT_RESOLVE_DOMAIN_NAME || result == RakNet::INVALID_PARAMETER) {
+			// Retrying won't help (and resolving the name blocks the game each time).
+			m_RejectReason = "Could not find the host \"" + address + "\". Check the address.";
+			m_StatusMessage = m_RejectReason;
+			g_ConsoleMan.PrintString("CO-OP: " + m_RejectReason);
+		}
 	}
 
 	if (m_Role == Role::Host) {
@@ -1969,7 +1980,9 @@ void LockstepMan::DrawOverlay(BITMAP* targetBitmap) {
 	if (m_MatchRunning) {
 		const std::string playerText = m_LocalPlayer == Players::NoPlayer ? std::string("Watching (no free player slot)") : "Player " + std::to_string(m_LocalPlayer + 1);
 		topLine = std::string("CO-OP ") + (m_Role == Role::Host ? "HOST" : "CLIENT") + " | " + playerText + " | Sim update " + std::to_string(m_NextSimUpdate) + " | Input delay " + std::to_string(m_InputDelay);
-		if (m_Role == Role::Host && m_ChecksumsCompared > 0) {
+		if (m_Desynced) {
+			topLine += " | DESYNCED";
+		} else if (m_Role == Role::Host && m_ChecksumsCompared > 0) {
 			topLine += " | In sync (" + std::to_string(m_ChecksumsCompared) + " checks)";
 		}
 	} else {
@@ -1986,7 +1999,7 @@ void LockstepMan::DrawOverlay(BITMAP* targetBitmap) {
 			lineY += 12;
 		}
 	}
-	if (m_Desynced) {
+	if (m_MatchRunning && m_Desynced) {
 		largeFont->DrawAligned(&bitmap, centerX, lineY, m_DesyncMessage, GUIFont::Centre);
 		lineY += 16;
 	}
