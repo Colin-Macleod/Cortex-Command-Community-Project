@@ -5,11 +5,13 @@ function Create(self)
 	self.shake = 0.5;
 	self.lifeTimer = Timer();
 	
-	if self:NumberValueExists("TargetID") and self:GetNumberValue("TargetID") ~= rte.NoMOID then
-		local mo = MovableMan:GetMOFromID(self:GetNumberValue("TargetID"));
+	if self:NumberValueExists("TargetUniqueID") then
+		-- The target is handed over by unique ID, since MOIDs may have been reassigned by now.
+		local mo = MovableMan:FindObjectByUniqueID(self:GetNumberValue("TargetUniqueID"));
 		if mo and IsActor(mo) then
 			self.target = ToActor(mo);
-			self.targetPos = mo.Pos;
+			self.targetUniqueID = mo.UniqueID;
+			self.targetPos = Vector(mo.Pos.X, mo.Pos.Y);
 			
 			local dif = SceneMan:ShortestDistance(self.Pos,self.targetPos,SceneMan.SceneWrapsX);
 			
@@ -46,6 +48,11 @@ function Update(self)
 			self:EnableEmission(true);
 		end
 		if self.target then
+			-- The target can be deleted at any time, so look it up again and only follow its position while it still exists.
+			local target = MovableMan:FindObjectByUniqueID(self.targetUniqueID);
+			if target then
+				self.targetPos = Vector(target.Pos.X, target.Pos.Y);
+			end
 			local dif = SceneMan:ShortestDistance(self.Pos,self.targetPos,SceneMan.SceneWrapsX);
 			
 			local angToTarget = dif.AbsRadAngle

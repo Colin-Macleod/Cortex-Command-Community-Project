@@ -111,7 +111,8 @@ function ThreadedUpdate(self)
 
 		local target = GetLockedTarget(self);
 		if target then
-			missile:SetNumberValue("TargetID", target.ID);
+			-- Pass the unique ID rather than the MOID, since MOIDs can be reassigned before the missile's first update.
+			missile:SetNumberValue("TargetUniqueID", target.UniqueID);
 		end
 		MovableMan:AddParticle(missile);
 	end

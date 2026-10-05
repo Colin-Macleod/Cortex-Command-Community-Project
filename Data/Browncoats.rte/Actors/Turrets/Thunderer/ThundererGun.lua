@@ -1,3 +1,12 @@
+-- The barrels and ejectors can be shot off and deleted at any time, so they're kept by unique ID and looked up when needed.
+local function FindAttachable(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsAttachable(mo) then
+		return ToAttachable(mo);
+	end
+	return nil;
+end
+
 function OnFire(self)
 	CameraMan:AddScreenShake(12, self.Pos);
 	
@@ -62,14 +71,14 @@ function Create(self)
 	
 	for att in self.Attachables do
 		if string.find(att.PresetName, "Barrel Top") then	
-			self.topBarrel = ToAttachable(att);
+			self.topBarrelUniqueID = att.UniqueID;
 		elseif string.find(att.PresetName, "Barrel Bottom") then
-			self.bottomBarrel = ToAttachable(att);
+			self.bottomBarrelUniqueID = att.UniqueID;
 		end
 		if string.find(att.PresetName, "Ejector Top") then	
-			self.topEjector = ToAttachable(att);
+			self.topEjectorUniqueID = att.UniqueID;
 		elseif string.find(att.PresetName, "Ejector Bottom") then
-			self.bottomEjector = ToAttachable(att);
+			self.bottomEjectorUniqueID = att.UniqueID;
 		end
 	end
 	
@@ -201,11 +210,15 @@ function Update(self)
 		local frameNum = math.floor(4 * progress);
 		self.Frame = self.currentBaseFrame + frameNum;
 		
-		local barrel = self.currentBarrel == 0 and self.bottomBarrel or self.topBarrel;
-		local ejector = self.currentBarrel == 0 and self.bottomEjector or self.topEjector;
+		local barrel = FindAttachable(self.currentBarrel == 0 and self.bottomBarrelUniqueID or self.topBarrelUniqueID);
+		local ejector = FindAttachable(self.currentBarrel == 0 and self.bottomEjectorUniqueID or self.topEjectorUniqueID);
 		local jointOffsetX = 10 * math.sin(progress * math.pi);
-		barrel.JointOffset = Vector(jointOffsetX, 0);
-		ejector.JointOffset = Vector(jointOffsetX, 0);
+		if barrel then
+			barrel.JointOffset = Vector(jointOffsetX, 0);
+		end
+		if ejector then
+			ejector.JointOffset = Vector(jointOffsetX, 0);
+		end
 		if progress == 1 then
 			-- surely this can be done better...
 			if not self:IsReloading() then
@@ -227,7 +240,9 @@ function Update(self)
 				end			
 				self.Frame = self.currentBaseFrame;
 			end
-			barrel.JointOffset = Vector();
+			if barrel then
+				barrel.JointOffset = Vector();
+			end
 			self.currentBarrel = (self.currentBarrel + 1) % 2;
 			self.firingAnim = false;			
 		end

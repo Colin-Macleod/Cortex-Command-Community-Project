@@ -135,7 +135,7 @@ function Update(self)
 						local melter = var.melter:Clone();
 						melter.Pos = hitPos;
 						melter.Team = self.Team;
-						melter.Sharpness = rootMO.ID;
+						melter:SetNumberValue("TargetUniqueID", rootMO.UniqueID);
 						melter.PinStrength = var.disintegrationStrength;
 						MovableMan:AddMO(melter);
 					end

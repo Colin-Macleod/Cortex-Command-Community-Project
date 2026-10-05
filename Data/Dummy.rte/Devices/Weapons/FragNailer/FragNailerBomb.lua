@@ -21,9 +21,10 @@ function Update(self)
 			if checkPix ~= rte.NoMOID and (self.ID == rte.NoMOID or checkPix ~= self.ID) and MovableMan:GetMOFromID(checkPix).Team ~= self.Team then
 				checkPos = checkPos + SceneMan:ShortestDistance(checkPos, self.Pos, SceneMan.SceneWrapsX):SetMagnitude(3);
 
-				self.target = MovableMan:GetMOFromID(checkPix);
-				self.stickPosition = SceneMan:ShortestDistance(self.target.Pos, checkPos, SceneMan.SceneWrapsX);
-				self.stickRotation = self.target.RotAngle;
+				local target = MovableMan:GetMOFromID(checkPix);
+				self.targetUniqueID = target.UniqueID;
+				self.stickPosition = SceneMan:ShortestDistance(target.Pos, checkPos, SceneMan.SceneWrapsX);
+				self.stickRotation = target.RotAngle;
 				self.stickDirection = self.RotAngle;
 
 				self.stuck = true;
@@ -45,6 +46,8 @@ function Update(self)
 			end
 		end
 	elseif self.actionPhase == 1 then
+		--The target can be deleted at any time, so look it up by UniqueID every update instead of holding onto a stale reference
+		self.target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID) or nil;
 		if self.target and self.target.ID ~= rte.NoMOID and not self.target.ToDelete then
 			self.Pos = self.target.Pos + Vector(self.stickPosition.X, self.stickPosition.Y):RadRotate(self.target.RotAngle - self.stickRotation);
 			self.RotAngle = self.stickDirection + (self.target.RotAngle - self.stickRotation);

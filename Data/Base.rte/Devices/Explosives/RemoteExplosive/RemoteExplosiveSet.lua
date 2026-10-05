@@ -58,14 +58,14 @@ end
 function RemoteExplosiveStick(self)
 	if self.actionPhase == 0 then
 		local checkVec = Vector(self.Vel.X, self.Vel.Y + 1):SetMagnitude(math.max(self.Vel.Magnitude * rte.PxTravelledPerFrame, self.Radius));
-		--Find a user to ignore hits with
-		if not self.userID then
-			self.userID = rte.NoMOID;
+		--Find a user to ignore hits with, kept by unique ID since MOIDs can be reassigned between frames
+		if not self.userUniqueID then
+			self.userUniqueID = -1;
 			local moCheck = SceneMan:CastMORay(self.Pos, checkVec * (-2), self.ID, -1, rte.airID, true, 1);
 			if moCheck ~= rte.NoMOID then
-				local rootID = MovableMan:GetMOFromID(moCheck).RootID;
-				if rootID ~= rte.NoMOID then
-					self.userID = rootID;
+				local rootMO = MovableMan:GetMOFromID(moCheck):GetRootParent();
+				if rootMO and rootMO.ID ~= rte.NoMOID then
+					self.userUniqueID = rootMO.UniqueID;
 				end
 			end
 		end
@@ -74,9 +74,10 @@ function RemoteExplosiveStick(self)
 		for i = 1, 2 do
 			local checkPos = self.Pos + (checkVec/i);
 			local checkPix = SceneMan:GetMOIDPixel(checkPos.X, checkPos.Y);
-			if checkPix ~= rte.NoMOID and MovableMan:GetMOFromID(checkPix).RootID ~= self.userID then
+			if checkPix ~= rte.NoMOID and MovableMan:GetMOFromID(checkPix):GetRootParent().UniqueID ~= self.userUniqueID then
 				checkPos = checkPos + SceneMan:ShortestDistance(checkPos, self.Pos, SceneMan.SceneWrapsX):SetMagnitude(ToMOSprite(self):GetSpriteWidth() * 0.5 - 1);
 				self.target = ToMOSRotating(MovableMan:GetMOFromID(checkPix));
+				self.targetUniqueID = self.target.UniqueID;
 				self.stickPosition = SceneMan:ShortestDistance(self.target.Pos, checkPos, SceneMan.SceneWrapsX);
 				self.stickRotation = self.target.RotAngle;
 				self.stickDirection = self.RotAngle;
@@ -106,6 +107,9 @@ function RemoteExplosiveStick(self)
 		self.Vel = Vector();
 		self.AngularVel = 0;
 		if self.actionPhase == 1 then
+			-- The target can be deleted at any time, so look it up again by its unique ID.
+			local target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID);
+			self.target = target and ToMOSRotating(target) or nil;
 			if self.target and self.target.ID ~= rte.NoMOID and not self.target.ToDelete then
 				self.Pos = self.target.Pos + Vector(self.stickPosition.X, self.stickPosition.Y):RadRotate(self.target.RotAngle - self.stickRotation);
 				self.RotAngle = self.stickDirection + (self.target.RotAngle - self.stickRotation);

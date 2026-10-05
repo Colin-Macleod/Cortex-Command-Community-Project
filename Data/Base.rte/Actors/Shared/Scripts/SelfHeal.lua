@@ -8,6 +8,13 @@ end
 
 function Update(self)
 	local controller = self:GetController();
+	if self.healing then
+		-- The part being healed and its wound can be deleted at any time, so look them up again by unique ID, and stop healing a part that's no longer attached to us.
+		local part = self.healing.partUID and MovableMan:FindObjectByUniqueID(self.healing.partUID);
+		self.healing.part = part and IsMOSRotating(part) and part:GetRootParent().UniqueID == self.UniqueID and ToMOSRotating(part) or nil;
+		local wound = self.healing.part and self.healing.woundUID and MovableMan:FindObjectByUniqueID(self.healing.woundUID);
+		self.healing.wound = wound and IsAEmitter(wound) and ToAEmitter(wound) or nil;
+	end
 	if self.healing and self.healing.part then
 		if self.healing.wound then
 			if self.healing.timer:IsPastSimMS(self.healing.delay) then
@@ -97,6 +104,10 @@ function Update(self)
 			controller:SetState(Controller.WEAPON_CHANGE_PREV, true);
 			self:RemoveNumberValue("SelfHeal");
 		end
+	end
+	if self.healing then
+		self.healing.partUID = self.healing.part and self.healing.part.UniqueID or nil;
+		self.healing.woundUID = self.healing.wound and self.healing.wound.UniqueID or nil;
 	end
 end
 

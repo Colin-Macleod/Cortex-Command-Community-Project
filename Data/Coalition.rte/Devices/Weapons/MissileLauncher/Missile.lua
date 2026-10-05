@@ -3,8 +3,8 @@ function Create(self)
 	self.lifeTimer = Timer();
 	self.targetSound = CreateSoundContainer("Explosive Device Detonate", "Base.rte");
 
-	if self:NumberValueExists("TargetID") then
-		local mo = MovableMan:GetMOFromID(self:GetNumberValue("TargetID"));
+	if self:NumberValueExists("TargetUniqueID") then
+		local mo = MovableMan:FindObjectByUniqueID(self:GetNumberValue("TargetUniqueID"));
 		if mo and IsMOSRotating(mo) then
 			-- Kept by unique ID and looked up every update, as the target can be deleted at any time.
 			self.targetUniqueID = mo.UniqueID;

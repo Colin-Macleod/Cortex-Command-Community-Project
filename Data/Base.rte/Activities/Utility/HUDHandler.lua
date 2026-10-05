@@ -65,6 +65,8 @@
 
 -- RemoveObjective(team, internalName) to remove an objective. There is also RemoveAllObjectives(team).
 
+-- SetObjectivePosition(team, internalName, pos) changes an existing objective's position (or MO to follow) without changing its place in the list.
+
 -- MakeObjectivePrimary(team, internalName) will move an objective to the top of the list, displaying its long name and description if it has any.
 
 ------- Saving/Loading
@@ -78,6 +80,29 @@
 
 
 
+
+-- Positions can also be MOs, which can be deleted at any time and then mustn't be touched at all, so their unique IDs are kept to look them up again before every use.
+-- Only call this on a position that was just given or loaded, since it reads the MO.
+local function GetPositionUniqueID(position)
+	if position and position.PresetName then -- severely ghetto mo check
+		return position.UniqueID;
+	end
+	return nil;
+end
+
+-- Returns the current position of a table with a Position, or nil if it was an MO that no longer exists, in which case the stale MO is dropped.
+local function ResolvePosition(posTable)
+	if posTable.positionUniqueID then
+		local mo = MovableMan:FindObjectByUniqueID(posTable.positionUniqueID);
+		if mo then
+			return mo.Pos;
+		end
+		posTable.Position = nil;
+		posTable.positionUniqueID = nil;
+		return nil;
+	end
+	return posTable.Position;
+end
 
 local HUDHandler = {};
 
@@ -156,6 +181,10 @@ function HUDHandler:OnLoad(saveLoadHandler)
 	-- i can't tell why it goes wonky when just loaded straight, but it does, so:
 	
 	for team, teamTable in pairs(self.saveTable.teamTables) do
+		-- Unique IDs change on load, so get them again from the freshly loaded MOs.
+		for i, cameraTable in ipairs(teamTable.cameraQueue) do
+			cameraTable.positionUniqueID = GetPositionUniqueID(cameraTable.Position);
+		end
 		local tempTable = {};
 		for i, objTable in ipairs(teamTable.Objectives) do
 			tempTable[i] = {};
@@ -176,6 +205,15 @@ end
 function HUDHandler:OnSave(saveLoadHandler)
 	
 	print("INFO: HUDHandler saving...");
+	-- Drop any MO positions that have been deleted, so they aren't touched while saving.
+	for team, teamTable in pairs(self.saveTable.teamTables) do
+		for i, objTable in ipairs(teamTable.Objectives) do
+			ResolvePosition(objTable);
+		end
+		for i, cameraTable in ipairs(teamTable.cameraQueue) do
+			ResolvePosition(cameraTable);
+		end
+	end
 	saveLoadHandler:SaveTableAsString("HUDHandlerMainTable", self.saveTable);	
 	print("INFO: HUDHandler saved!");
 	
@@ -300,6 +338,7 @@ function HUDHandler:QueueCameraPanEvent(team, name, pos, speed, holdTime, notCan
 		
 		cameraTable.Name = name;
 		cameraTable.Position = pos;
+		cameraTable.positionUniqueID = GetPositionUniqueID(pos);
 		cameraTable.Speed = speed or 0.05;
 		cameraTable.holdTime = holdTime or 5000;
 		cameraTable.notCancellable = notCancellable or false;
@@ -424,6 +463,7 @@ function HUDHandler:AddObjective(objTeam, objInternalNameOrFullTable, objShortNa
 		print("ERROR: HUD Handler tried to add an objective with no team or no internal name!");
 		return false;
 	end
+	objTable.positionUniqueID = GetPositionUniqueID(objTable.Position);
 	
 	for i, objTable in ipairs(self.saveTable.teamTables[objTeam].Objectives) do
 		if objTable.internalName == objInternalName then
@@ -455,6 +495,20 @@ function HUDHandler:RemoveAllObjectives(team)
 	
 end
 
+function HUDHandler:SetObjectivePosition(objTeam, objInternalName, objPos)
+
+	for i, objTable in ipairs(self.saveTable.teamTables[objTeam].Objectives) do
+		if objTable.internalName == objInternalName then
+			objTable.Position = objPos;
+			objTable.positionUniqueID = GetPositionUniqueID(objPos);
+			return true;
+		end
+	end
+	
+	return false;
+	
+end
+
 function HUDHandler:MakeObjectivePrimary(objTeam, objInternalName)
 
 	for i, objTable in ipairs(self.saveTable.teamTables[objTeam].Objectives) do
@@ -478,8 +532,8 @@ function HUDHandler:UpdateHUDHandler()
 
 		if cameraTable then
 			-- Camera pan events
-			if cameraTable.Position then
-				local pos = not cameraTable.Position.PresetName and cameraTable.Position or cameraTable.Position.Pos; -- severely ghetto mo check
+			local pos = ResolvePosition(cameraTable);
+			if pos then
 			
 				for k, player in pairs(self.saveTable.playersInTeamTables[team]) do
 					local screen = self.Activity:ScreenOfPlayer(player);
@@ -595,13 +649,8 @@ function HUDHandler:UpdateHUDHandler()
 				end
 				
 				-- c++ objectives are per team, not per player, so we can't do it per player yet...
-				if objTable.Position and spectatorView then
-					local pos;
-					if objTable.Position.PresetName then -- severely ghetto mo check
-						pos = objTable.Position.Pos;
-					else
-						pos = objTable.Position;
-					end
+				local pos = spectatorView and ResolvePosition(objTable);
+				if pos then
 					if not (pos.Magnitude == 0) then -- if it's 0, 0 something probably went wrong, don't display it
 						self.Activity:AddObjectivePoint(objTable.shortName, pos, team, GameActivity.ARROWDOWN);
 					end

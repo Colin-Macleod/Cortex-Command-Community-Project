@@ -91,7 +91,7 @@ function Create(self)
 end
 
 function Update(self)
-	if self.rootParent and self.rootParent.Health > 0 and MovableMan:ValidMO(self.rootParent) then
+	if self.rootParent and MovableMan:ValidMO(self.rootParent) and self.rootParent.Health > 0 then
 		local rootParentEquippedItemModuleAndPresetName = self.rootParent.EquippedItem ~= nil and self.rootParent.EquippedItem:GetModuleAndPresetName() or nil;
 		local rootParentIsHoldingGrenade = rootParentEquippedItemModuleAndPresetName == self.grenadeObject:GetModuleAndPresetName();
 

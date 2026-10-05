@@ -197,7 +197,8 @@ function MaginotMission:DoGameOverCheck()
 							self:ResetMessageTimer(player);
 						end
 					else
-						if self.evacuationRocket and brain.UniqueID ~= self.evacuationRocket.UniqueID then
+						-- The evacuation rocket can be deleted at any time, so make sure it still exists before reading it.
+						if self.evacuationRocket and MovableMan:IsActor(self.evacuationRocket) and brain.UniqueID ~= self.evacuationRocket.UniqueID then
 							self:AddObjectivePoint("Protect!", brain.AboveHUDPos, self.defenderTeam, GameActivity.ARROWDOWN);
 						end
 

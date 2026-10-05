@@ -68,7 +68,7 @@ function Update(self)
 			
 			if mode == "Remote" then
 				if actor:IsPlayerControlled() then
-					if self.grenadeTableA[self.maxActiveGrenades] then
+					if self.grenadeTableA[self.maxActiveGrenades] and MovableMan:IsParticle(self.grenadeTableA[self.maxActiveGrenades]) then
 						self.grenadeTableA[self.maxActiveGrenades]:SetStringValue("GrenadeMode", "Delete");
 					end
 					for i = 1, self.maxActiveGrenades do

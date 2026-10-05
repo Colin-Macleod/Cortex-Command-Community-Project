@@ -1,3 +1,12 @@
+-- Target actors are kept by unique ID and looked up when needed, as they can be deleted at any time.
+local function FindTargetActor(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsActor(mo) then
+		return ToActor(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.fireVel = 17;
 	self.spread = math.rad(self.ShakeRange);
@@ -17,12 +26,13 @@ function OnFire(self)
 
 	local rocket = CreateAEmitter("Particle Browncoat Rocket", "Browncoats.rte");
 	if #self.targets > 0 then
-		if self.targets[rocketNumber] and self.targets[rocketNumber].actor.ID ~= rte.NoMOID then
-			rocket:SetNumberValue("TargetID", self.targets[rocketNumber].actor.ID);
+		local targetActor = self.targets[rocketNumber] and FindTargetActor(self.targets[rocketNumber].actorUniqueID);
+		if targetActor and targetActor.ID ~= rte.NoMOID then
+			rocket:SetNumberValue("TargetUniqueID", targetActor.UniqueID);
 			self.targets[rocketNumber].topLeft = self.targets[rocketNumber].topLeft * 1.5;
 			self.targets[rocketNumber].bottomRight = self.targets[rocketNumber].bottomRight * 1.5;
 		elseif rocketNumber > #self.targets then
-			rocket:SetNumberValue("TargetID", self.targets[math.random(#self.targets)].actor.ID);
+			rocket:SetNumberValue("TargetUniqueID", self.targets[math.random(#self.targets)].actorUniqueID);
 		end
 	end
 	rocket.Pos = self.MuzzlePos + Vector(0, (rocketNumber - self.RoundInMagCapacity * 0.5)):RadRotate(self.RotAngle);
@@ -79,7 +89,7 @@ function ThreadedUpdate(self)
 											end
 										end
 									end
-									table.insert(self.targets, {actor = actor, topLeft = topLeft, bottomRight = bottomRight});
+									table.insert(self.targets, {actorUniqueID = actor.UniqueID, topLeft = topLeft, bottomRight = bottomRight});
 								end
 							end
 						end
@@ -96,9 +106,10 @@ function ThreadedUpdate(self)
 		end
 		if parent:IsPlayerControlled() then
 			for _, target in pairs(self.targets) do
-				if target.actor and target.actor.ID ~= rte.NoMOID then
+				local targetActor = FindTargetActor(target.actorUniqueID);
+				if targetActor and targetActor.ID ~= rte.NoMOID then
 					local screen = ActivityMan:GetActivity():ScreenOfPlayer(ToActor(parent):GetController().Player);
-					PrimitiveMan:DrawBoxPrimitive(screen, target.actor.Pos + target.topLeft, target.actor.Pos + target.bottomRight, 149);
+					PrimitiveMan:DrawBoxPrimitive(screen, targetActor.Pos + target.topLeft, targetActor.Pos + target.bottomRight, 149);
 
 					if self.RoundInMagCount == 0 then
 						target.topLeft = target.topLeft * 0.9;

@@ -43,7 +43,8 @@ function Update(self)
 			self.visual.CurrentColor = self.visual.CurrentColor % #self.visual.Colors + 1;
 			self.healTimer:Reset();
 			for _, healTarget in pairs(self.healTargets) do
-				if healTarget and IsActor(healTarget) and (healTarget.Health < healTarget.MaxHealth or healTarget.WoundCount > 0) and healTarget.Vel.Largest < 10 then
+				-- Heal targets can be deleted at any time, so check that they still exist without touching them.
+				if healTarget and MovableMan:IsActor(healTarget) and (healTarget.Health < healTarget.MaxHealth or healTarget.WoundCount > 0) and healTarget.Vel.Largest < 10 then
 					local trace = SceneMan:ShortestDistance(self.Pos, healTarget.Pos, false);
 					if trace:MagnitudeIsLessThan(healRange + healTarget.Radius) and SceneMan:CastObstacleRay(self.Pos, trace, Vector(), Vector(), parent.ID, parent.IgnoresWhichTeam, rte.grassID, 5) < 0 then
 						healTarget.Health = math.min(healTarget.Health + self.healStrength, healTarget.MaxHealth);

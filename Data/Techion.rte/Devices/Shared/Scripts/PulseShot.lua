@@ -53,7 +53,7 @@ function PulsarDissipate(self, inverted)
 				local melter = CreateMOPixel("Disintegrator", "Techion.rte");
 				melter.Pos = self.Pos;
 				melter.Team = self.Team;
-				melter.Sharpness = mo.RootID;
+				melter:SetNumberValue("TargetUniqueID", mo:GetRootParent().UniqueID);
 				melter.PinStrength = self.disintegrationStrength or 1;
 				MovableMan:AddMO(melter);
 			end

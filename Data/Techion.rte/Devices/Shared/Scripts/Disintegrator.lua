@@ -8,8 +8,8 @@ function Create(self)
 	self.disintegrationSound = CreateSoundContainer("Disintegration Sound", "Techion.rte");
 
 	local strength = math.random(self.PinStrength * 0.5, self.PinStrength);
-	--Get assigned target from Sharpness because MOPixels cannot carry NumberValues
-	local target = MovableMan:GetMOFromID(self.Sharpness);
+	--Get assigned target by UniqueID, since MOIDs can be reassigned before this particle's first update
+	local target = self:NumberValueExists("TargetUniqueID") and MovableMan:FindObjectByUniqueID(self:GetNumberValue("TargetUniqueID")) or nil;
 	--[[Alternative: find suitable target from nearby
 	local dist = Vector();
 	local actor = MovableMan:GetClosestEnemyActor(self.Team, self.Pos, strength, dist);
@@ -37,13 +37,7 @@ function Create(self)
 
 				self.disintegrationSound:Play(actor.Pos);
 				
-				if IsAHuman(actor) then
-					self.target = ToAHuman(actor);
-				elseif IsACrab(actor) then
-					self.target = ToACrab(actor);
-				else
-					self.target = actor;
-				end
+				self.targetUniqueID = actor.UniqueID;
 			end
 			--Flag this actor as being hit by a disintegrator particle
 			actor:SetNumberValue("ToDisintegrate", actor:GetNumberValue("ToDisintegrate") + 1);
@@ -66,6 +60,22 @@ function Create(self)
 end
 
 function Update(self)
+	--The target can be deleted at any time, so look it up fresh by UniqueID every update instead of holding onto a stale reference
+	self.target = nil;
+	if self.targetUniqueID then
+		local target = MovableMan:FindObjectByUniqueID(self.targetUniqueID);
+		if target and IsActor(target) then
+			if IsAHuman(target) then
+				self.target = ToAHuman(target);
+			elseif IsACrab(target) then
+				self.target = ToACrab(target);
+			else
+				self.target = ToActor(target);
+			end
+		else
+			self.targetUniqueID = nil;
+		end
+	end
 	if self.target and self.target.ID ~= rte.NoMOID then
 		self.target.ToSettle = false;
 		self.target.Vel = (self.target.Vel * 0.9) - (SceneMan.GlobalAcc * TimerMan.DeltaTimeSecs);
@@ -146,6 +156,7 @@ function Update(self)
 		if self.setScale < self.minScale then
 
 			self.target.ToDelete = true;
+			self.ToDelete = true;
 		end
 	else
 		self.ToDelete = true;

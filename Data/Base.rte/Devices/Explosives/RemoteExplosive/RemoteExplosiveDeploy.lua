@@ -17,7 +17,8 @@ function Update(self)
 		explosive.Sharpness = self.alliedTeam;
 		MovableMan:AddParticle(explosive);
 
-		if self.user and IsAHuman(self.user) then
+		-- The user can be deleted at any time, so check that it still exists without touching it.
+		if self.user and MovableMan:IsActor(self.user) then
 			if self.user:IsPlayerControlled() then
 				if not self.user:HasObject("Detonator") then
 					self.user:AddInventoryItem(CreateHDFirearm("Base.rte/Detonator"));

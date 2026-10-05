@@ -71,8 +71,9 @@ function MetaFight:BrainCheck()
 					end
 				-- We do have a brain
 				else
-					-- Save the last known position of this player's brain
-					self.LastBrainPos[player] = self:GetPlayerBrain(player).Pos;
+					-- Save the last known position of this player's brain (as a copy, since Pos refers into the brain which can be deleted at any time)
+					local brainPos = self:GetPlayerBrain(player).Pos;
+					self.LastBrainPos[player] = Vector(brainPos.X, brainPos.Y);
 					-- Continually set the observation target to the brain during play, so that if/when it dies, the view flies to it in observation mode
 					if self.ActivityState ~= Activity.OVER and self:GetViewState(player) ~= Activity.OBSERVE then
 						self:SetObservationTarget(self:GetPlayerBrain(player).Pos, player);

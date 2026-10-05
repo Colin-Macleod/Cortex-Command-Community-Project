@@ -10,7 +10,8 @@ function Update(self)
 		self.ToSettle = true;
 	end
 
-	if self.craft and IsActor(self.craft) and self.craft.AIMode == Actor.AIMODE_STAY then
+	--The craft can be deleted at any time, so check that it still exists without touching it.
+	if self.craft and MovableMan:IsActor(self.craft) and self.craft.AIMode == Actor.AIMODE_STAY then
 		--Disable collisions with the ship
 		self.craft:SetWhichMOToNotHit(self, 100);
 		--Pin the ship and pull it nicely into the docking unit.

@@ -70,7 +70,8 @@ function Siege:StartActivity()
 		-- Look for a brain among actors created by the deployments
 		for actor in MovableMan.AddedActors do
 			if actor.Team == self.PlayerTeam and actor:IsInGroup("Brains") then
-				playerBrainsLocation = actor.Pos;
+				-- Copy the position, as Pos refers into the actor which can be deleted at any time
+				playerBrainsLocation = Vector(actor.Pos.X, actor.Pos.Y);
 				break;
 			end
 		end
@@ -334,7 +335,8 @@ function Siege:UpdateActivity()
 				if Brain then
 					players = players + 1;
 					self:SetObservationTarget(Brain.Pos, player);
-					self.BrainLocations = Brain.Pos;
+					-- Copy the position, as Pos refers into the brain which can be deleted at any time
+					self.BrainLocations = Vector(Brain.Pos.X, Brain.Pos.Y);
 					-- self:AddObjectivePoint("Protect!", Brain.AboveHUDPos, self.PlayerTeam, GameActivity.ARROWDOWN);
 				else
 					self:ResetMessageTimer(player);

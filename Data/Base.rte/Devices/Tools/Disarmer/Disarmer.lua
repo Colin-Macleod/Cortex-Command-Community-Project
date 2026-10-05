@@ -28,7 +28,8 @@ function Update(self)
 				local targetCount = 0;
 				self.actionPhase = self.actionPhase + 1;
 				for i = 1, #self.targetTable do
-					if self.targetTable[i] and IsMOSRotating(self.targetTable[i]) and SceneMan:ShortestDistance(self.MuzzlePos, self.targetTable[i].Pos, SceneMan.SceneWrapsX):MagnitudeIsLessThan(self.disarmRange + 5) then
+					-- Targets can be deleted at any time, so check that they still exist without touching them.
+					if self.targetTable[i] and MovableMan:IsParticle(self.targetTable[i]) and SceneMan:ShortestDistance(self.MuzzlePos, self.targetTable[i].Pos, SceneMan.SceneWrapsX):MagnitudeIsLessThan(self.disarmRange + 5) then
 						targetCount = targetCount + 1;
 						local detectPar = CreateMOPixel("Disarmer Detection Particle ".. (self.actionPhase == self.disarmTicks and "Safe" or "Neutral"));
 						detectPar.Pos = self.targetTable[i].Pos;
@@ -53,6 +54,8 @@ function Update(self)
 				elseif self.actionPhase == self.disarmTicks then
 					self.BaseReloadTime = 1000 + (500 * targetCount);
 					self:Reload();
+					-- The disarmed targets are about to be deleted, so forget them.
+					self.targetTable = {};
 				end
 			end
 			if self.actionPhase > 0 and self.actionPhase < self.disarmTicks then

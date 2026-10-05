@@ -1,9 +1,10 @@
 function Create(self)
 	self.speed = self.Vel.Magnitude;
-	if self.Sharpness ~= rte.NoMOID then
-		local mo = MovableMan:GetMOFromID(self.Sharpness);
+	if self:NumberValueExists("CollectTargetUniqueID") then
+		local mo = MovableMan:FindObjectByUniqueID(self:GetNumberValue("CollectTargetUniqueID"));
 		if mo then
 			self.target = mo;
+			self.targetUniqueID = mo.UniqueID;
 			self.Sharpness = 0;
 		end
 	else
@@ -12,6 +13,8 @@ function Create(self)
 end
 
 function Update(self)
+	-- The target can be deleted at any time, so look it up again by its unique ID.
+	self.target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID) or nil;
 	if self.target and self.target.ID ~= rte.NoMOID then
 		self:NotResting();
 		targetPos = IsHDFirearm(self.target) and ToHDFirearm(self.target).MuzzlePos or self.target.Pos;

@@ -146,7 +146,9 @@ end
 
 function OnCollideWithMO(self, mo, rootMO)
 	if self.user then
-		if self.throwSpeed > 1 and IsActor(self.user) and self.momentum > 10 then
+		-- The thrower can be deleted at any time, so make sure it still exists before reading it.
+		local userExists = MovableMan:IsActor(self.user);
+		if self.throwSpeed > 1 and userExists and self.momentum > 10 then
 			self.Vel = (self.Vel + SceneMan:ShortestDistance(self.Pos, self.user.Pos, SceneMan.SceneWrapsX):SetMagnitude(self.throwSpeed)) * 0.3;
 			self.AngularVel = self.AngularVel * -0.6;
 			
@@ -159,7 +161,9 @@ function OnCollideWithMO(self, mo, rootMO)
 			MovableMan:AddParticle(part);
 			mo:AddForce(self.PrevVel * (self.Mass + self.momentum), Vector());
 		else
-			self.Vel = (self.Vel + SceneMan:ShortestDistance(self.Pos, self.user.Pos, SceneMan.SceneWrapsX):SetMagnitude(self.throwSpeed)) * 0.3;
+			if userExists then
+				self.Vel = (self.Vel + SceneMan:ShortestDistance(self.Pos, self.user.Pos, SceneMan.SceneWrapsX):SetMagnitude(self.throwSpeed)) * 0.3;
+			end
 			self.user = nil;
 		end
 

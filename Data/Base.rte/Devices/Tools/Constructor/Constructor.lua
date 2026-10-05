@@ -358,11 +358,11 @@ function Update(self)
 												px.ToDelete = true;
 												px = CreateMOPixel("Gold Particle", "Base.rte");
 												px.Pos = checkPos;
-												--Sharpness temporarily stores the ID of the target
-												px.Sharpness = actor.ID;
+												--Pass the unique ID of the target, as MOIDs can be reassigned before the particle's script runs
+												px:SetNumberValue("CollectTargetUniqueID", actor.UniqueID);
 												MovableMan:AddParticle(px);
 											else
-												px.Sharpness = self.ID;
+												px:SetNumberValue("CollectTargetUniqueID", self.UniqueID);
 												px.Lifetime = 1000;
 												speed = speed + (1 - digWeight) * 5;
 												digWeightTotal = digWeightTotal + digWeight;

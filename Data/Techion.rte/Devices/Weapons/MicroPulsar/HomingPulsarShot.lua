@@ -26,7 +26,7 @@ function Create(self)
 				if distCheck2.Magnitude - mo.Radius < shortDist then
 
 					if SceneMan:CastStrengthRay(self.Pos, toCheckPos, 0, Vector(), 3, rte.airID, SceneMan.SceneWrapsX) == false and SceneMan:CastStrengthRay(checkPos, distCheck2:SetMagnitude(distCheck2.Magnitude - mo.Radius), 0, Vector(), 3, 0, SceneMan.SceneWrapsX) == false then
-						self.target = mo;
+						self.targetUniqueID = mo.UniqueID;
 						longDist = distCheck.Magnitude - mo.Radius;
 						shortDist = distCheck2.Magnitude - mo.Radius;
 					end
@@ -37,6 +37,11 @@ function Create(self)
 end
 
 function Update(self)
+	--The target can be deleted at any time, so look it up by UniqueID every update instead of holding onto a stale reference
+	self.target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID) or nil;
+	if self.target == nil then
+		self.targetUniqueID = nil;
+	end
 	if self.delayTimer:IsPastSimMS(25) and self.target and self.target.ID ~= rte.NoMOID then
 		local checkVel = SceneMan:ShortestDistance(self.Pos, self.target.Pos, SceneMan.SceneWrapsX);
 		checkVel = checkVel:SetMagnitude(checkVel.Magnitude - self.target.Radius);

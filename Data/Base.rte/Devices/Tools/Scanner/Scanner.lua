@@ -11,6 +11,11 @@ function Update(self)
 	local parent = self:GetRootParent();
 	if IsActor(parent) and ToActor(parent):IsPlayerControlled() then
 		if self.detectedItemPos then
+			-- The detected item can be deleted at any time, so look it up again by its unique ID and follow it while it exists.
+			local detectedItem = MovableMan:FindObjectByUniqueID(self.detectedItemUniqueID);
+			if detectedItem then
+				self.detectedItemPos = Vector(detectedItem.Pos.X, detectedItem.Pos.Y);
+			end
 			local timerRatio = self.flashTimer.ElapsedSimTimeMS/self.flashDelay;
 			if timerRatio < 1 then
 				PrimitiveMan:DrawPrimitives(100 * timerRatio, {CirclePrimitive(self.activity:ScreenOfPlayer(ToActor(parent):GetController().Player), self.detectedItemPos, self.detectedItemRadius * timerRatio, 188)});
@@ -77,7 +82,8 @@ function OnFire(self)
 		local mo = MovableMan:GetMOFromID(SceneMan:CastMORay(self.MuzzlePos, Vector(traceBaseX, traceBaseY), self:GetRootParent().ID, Activity.NOTEAM, rte.airID, true, 1));
 		if mo and IsMOSRotating(mo) then
 			self.flashTimer:Reset();
-			self.detectedItemPos = mo:GetRootParent().Pos;
+			self.detectedItemUniqueID = mo:GetRootParent().UniqueID;
+			self.detectedItemPos = Vector(mo:GetRootParent().Pos.X, mo:GetRootParent().Pos.Y);
 			self.detectedItemRadius = 5 + mo:GetRootParent().Radius;
 			self.flashDelay = 100 + 100 * math.sqrt(self.detectedItemRadius);
 		end

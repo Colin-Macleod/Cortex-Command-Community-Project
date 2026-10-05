@@ -1,3 +1,12 @@
+-- Fuel targets are kept by unique ID and looked up every update, as they can be deleted at any time.
+local function FindFuelTarget(uniqueID)
+	local mo = uniqueID and MovableMan:FindObjectByUniqueID(uniqueID);
+	if mo and IsMOSRotating(mo) and mo.ID ~= rte.NoMOID and not mo.ToDelete then
+		return ToMOSRotating(mo);
+	end
+	return nil;
+end
+
 function Create(self)
 	self.explodeTimer = Timer();
 	self.partList = {};
@@ -49,8 +58,9 @@ function ThreadedUpdate(self)
 				if self.explodeTimer:IsPastSimMS(self.explodeTime + self.partList[i].queue) then
 					local fire = CreatePEmitter("Flame ".. math.random(2) .." Hurt Browncoat Boss Oil Bomb");
 					fire.Team = self.Team;
-					if self.partList[i].target and self.partList[i].target.ID ~= rte.NoMOID and not self.partList[i].target.ToDelete then
-						fire.Pos = self.partList[i].target.Pos + self.partList[i].stickOffset;
+					local target = FindFuelTarget(self.partList[i].targetUniqueID);
+					if target then
+						fire.Pos = target.Pos + self.partList[i].stickOffset;
 						fire.Vel = Vector(-self.partList[i].stickOffset.X, -self.partList[i].stickOffset.Y):SetMagnitude(3);
 					else
 						fire.Pos = Vector(self.partList[i].Pos.X, self.partList[i].Pos.Y);
@@ -92,14 +102,15 @@ function ThreadedUpdate(self)
 		for i = 1, #self.partList do
 			if self.partList[i] and MovableMan:IsParticle(self.partList[i]) and self.partList[i].PresetName == "Browncoat Boss Oil Bomb Fuel" then
 
-				if self.partList[i].target and self.partList[i].target.ID ~= rte.NoMOID and not self.partList[i].target.ToDelete then
+				local target = FindFuelTarget(self.partList[i].targetUniqueID);
+				if target then
 
 					if math.random() < 0.01 then
-						self.partList[i].Vel = self.partList[i].target.Vel;
-						self.partList[i].Pos = self.partList[i].target.Pos + Vector(self.partList[i].stickOffset.X, self.partList[i].stickOffset.Y):RadRotate(self.partList[i].target.RotAngle - self.partList[i].targetStickAngle);
+						self.partList[i].Vel = target.Vel;
+						self.partList[i].Pos = target.Pos + Vector(self.partList[i].stickOffset.X, self.partList[i].stickOffset.Y):RadRotate(target.RotAngle - self.partList[i].targetStickAngle);
 					end
 				else
-					self.partList[i].target = nil;
+					self.partList[i].targetUniqueID = nil;
 					local velNum = math.ceil(math.sqrt(self.partList[i].Vel.Magnitude + 1));
 
 					local mocheck = SceneMan:CastMORay(self.partList[i].Pos, Vector(velNum, 0):RadRotate(self.partList[i].Vel.AbsRadAngle), self.partList[i].ID, -2, rte.airID, true, 1);
@@ -107,7 +118,7 @@ function ThreadedUpdate(self)
 						local mo = MovableMan:GetMOFromID(MovableMan:GetMOFromID(mocheck).ID);
 						if mo and mo.Team ~= self.Team and mo.PresetName ~= self.PresetName then
 
-							self.partList[i].target = ToMOSRotating(mo);
+							self.partList[i].targetUniqueID = mo.UniqueID;
 
 							self.partList[i].targetStickAngle = mo.RotAngle;
 

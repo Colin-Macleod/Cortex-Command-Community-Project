@@ -656,6 +656,10 @@ function SignalHunt:UpdateActivity()
 			end
 		end
 
+		-- The actor holding the chip can be deleted at any time, so make sure it still exists before reading it.
+		if self.actorHoldingControlChip and not MovableMan:ValidMO(self.actorHoldingControlChip) then
+			self.actorHoldingControlChip = nil;
+		end
 		if self.actorHoldingControlChip and self.actorHoldingControlChip.Team == self.humanTeam then
 			if not self.speedrunData and self.secretIndex and SecretCodeEntry.IsValid(self.secretIndex) then
 				SecretCodeEntry.Update(self.secretIndex);

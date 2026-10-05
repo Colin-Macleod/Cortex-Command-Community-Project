@@ -88,13 +88,14 @@ local handleMinionSpawning = function(self)
 end
 
 local cleanupDeadMinions = function(self)
-	for i = 1, #self.minions do
+	-- Iterate backwards so table.remove doesn't skip the entry after each removed one.
+	for i = #self.minions, 1, -1 do
 		if not MovableMan:IsActor(self.minions[i]) or self.minions[i].Health <= 0 then
 			table.remove(self.minions, i);
 		end
 	end
 
-	for i = 1, #self.frenziedMinions do
+	for i = #self.frenziedMinions, 1, -1 do
 		if not MovableMan:IsActor(self.frenziedMinions[i]) or self.frenziedMinions[i].Health <= 0 then
 			table.remove(self.frenziedMinions, i);
 		end
@@ -147,7 +148,8 @@ local updateMinions = function(self)
 	end
 	if self:IsPlayerControlled() and self.HUDVisible then
 		for _, minion in pairs(self.minions) do
-			if minion.Age > 1000 then
+			-- Dead minions are only cleaned up periodically and can be deleted at any time, so make sure this one still exists before reading it.
+			if MovableMan:IsActor(minion) and minion.Age > 1000 then
 				PrimitiveMan:DrawBitmapPrimitive(ActivityMan:GetActivity():ScreenOfPlayer(self:GetController().Player), minion.AboveHUDPos + Vector(0, math.sin(self.Age * 0.01) * 2 - 3), self.indicatorArrow, self.Team, 0, false, false);
 			end
 		end

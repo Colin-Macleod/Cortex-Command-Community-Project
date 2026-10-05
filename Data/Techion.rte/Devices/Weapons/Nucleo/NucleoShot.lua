@@ -18,7 +18,7 @@ function Explode(self)
 			local melter = CreateMOPixel("Disintegrator");
 			melter.Pos = self.Pos;
 			melter.Team = self.Team;
-			melter.Sharpness = ToActor(parent).ID;
+			melter:SetNumberValue("TargetUniqueID", parent.UniqueID);
 			melter.PinStrength = self.disintegrationStrength * math.sqrt(math.max(1, (self.connectableParticles and #self.connectableParticles or 1)));
 			MovableMan:AddMO(melter);
 		end

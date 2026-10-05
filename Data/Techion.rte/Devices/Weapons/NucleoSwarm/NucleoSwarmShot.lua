@@ -22,7 +22,7 @@ function Create(self)
 			if moCheck ~= rte.NoMOID then
 				local actor = MovableMan:GetMOFromID(MovableMan:GetMOFromID(moCheck).RootID);
 				if actor and actor.Team ~= self.Team and actor.GetsHitByMOs then
-					self.target = actor;
+					self.targetUniqueID = actor.UniqueID;
 					break;
 				end
 			end
@@ -49,12 +49,15 @@ end
 function Update(self)
 	local useAdjust = self.adjustmentAmount;
 
+	--The target can be deleted at any time, so look it up by UniqueID every update instead of holding onto a stale reference
+	self.target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID) or nil;
 	if self.target ~= nil and self.target.ID ~= rte.NoMOID then
 		self.tPos = Vector(self.target.Pos.X, self.target.Pos.Y);
 		useAdjust = self.targetingAdjustmentAmount;
 		self.seekerDelay = 0;
 	else
 		self.target = nil;
+		self.targetUniqueID = nil;
 	end
 
 	if self.tPos ~= nil then
@@ -71,6 +74,7 @@ function Update(self)
 					if (self.lastdist == nil or (self.lastdist ~= nil and self.potentialtargetdist:MagnitudeIsLessThan(self.lastdist))) and not self.potentialtargetdist:MagnitudeIsGreaterThan(500) and SceneMan:CastStrengthRay(self.Pos, self.potentialtargetdist:SetMagnitude(self.potentialtargetdist.Magnitude - actor.Radius), 0, Vector(), 5, rte.airID, SceneMan.SceneWrapsX) == false then
 						self.lastdist = self.potentialtargetdist.Magnitude;
 						self.target = actor;
+						self.targetUniqueID = actor.UniqueID;
 						self.lasttargetpos = Vector(self.target.Pos.X, self.target.Pos.Y);
 					end
 				end
@@ -93,7 +97,7 @@ function Update(self)
 					local melter = CreateMOPixel("Disintegrator");
 					melter.Pos = self.Pos;
 					melter.Team = self.Team;
-					melter.Sharpness = ToActor(actor).ID;
+					melter:SetNumberValue("TargetUniqueID", actor.UniqueID);
 					melter.PinStrength = self.disintegrationStrength;
 					MovableMan:AddMO(melter);
 				end

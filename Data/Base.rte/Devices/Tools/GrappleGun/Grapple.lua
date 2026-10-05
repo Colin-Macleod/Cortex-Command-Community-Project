@@ -1,3 +1,8 @@
+-- The gun, its user and the hooked target can be deleted at any time, so they're kept by unique ID and looked up again every update.
+local function FindByUniqueID(uniqueID)
+	return uniqueID and MovableMan:FindObjectByUniqueID(uniqueID) or nil;
+end
+
 function Create(self)
 	self.mapWrapsX = SceneMan.SceneWrapsX;
 	self.climbTimer = Timer();
@@ -37,6 +42,7 @@ function Create(self)
 	for gun in MovableMan:GetMOsInRadius(self.Pos, 50) do
 		if gun and gun.ClassName == "HDFirearm" and gun.PresetName == "Grapple Gun" and SceneMan:ShortestDistance(self.Pos, ToHDFirearm(gun).MuzzlePos, self.mapWrapsX):MagnitudeIsLessThan(5) then
 			self.parentGun = ToHDFirearm(gun);
+			self.parentGunUID = gun.UniqueID;
 			self.parent = MovableMan:GetMOFromID(gun.RootID);
 			if MovableMan:IsActor(self.parent) then
 				self.parent = ToActor(self.parent);
@@ -57,6 +63,7 @@ function Create(self)
 
 				self.actionMode = 1;
 			end
+			self.parentUID = self.parent and self.parent.UniqueID or nil;
 			break;
 		end
 	end
@@ -66,7 +73,13 @@ function Create(self)
 	end
 end
 function Update(self)
-	if self.parent and IsMOSRotating(self.parent) and self.parent:HasObject("Grapple Gun") then
+	local parentGun = FindByUniqueID(self.parentGunUID);
+	self.parentGun = parentGun and IsHDFirearm(parentGun) and ToHDFirearm(parentGun) or nil;
+	local parent = FindByUniqueID(self.parentUID);
+	self.parent = parent and IsMOSRotating(parent) and ToMOSRotating(parent) or nil;
+	self.target = FindByUniqueID(self.targetUID);
+
+	if self.parentGun and self.parent and IsMOSRotating(self.parent) and self.parent:HasObject("Grapple Gun") then
 		local controller;
 		local startPos = self.parent.Pos;
 
@@ -78,6 +91,7 @@ function Update(self)
 
 		if self.parentGun and self.parentGun.ID ~= rte.NoMOID then
 			self.parent = ToMOSRotating(MovableMan:GetMOFromID(self.parentGun.RootID));
+			self.parentUID = self.parent.UniqueID;
 
 			if self.parentGun.Magazine then
 				self.parentGun.Magazine.Scale = 0;
@@ -170,6 +184,7 @@ function Update(self)
 				local moRay = SceneMan:CastMORay(self.Pos, ray, self.parent.ID, -2, rte.airID, false, 0);
 				if moRay ~= rte.NoMOID then
 					self.target = MovableMan:GetMOFromID(moRay);
+					self.targetUID = self.target.UniqueID;
 					-- Treat pinned MOs as terrain
 					if self.target.PinStrength > 0 then
 						self.actionMode = 2;
@@ -383,7 +398,7 @@ function Update(self)
 				end
 
 			elseif self.actionMode == 3 then	-- Stuck MO
-				if self.target.ID ~= rte.NoMOID then
+				if self.target and self.target.ID ~= rte.NoMOID then
 					self.Pos = self.target.Pos + Vector(self.stickPosition.X, self.stickPosition.Y):RadRotate(self.target.RotAngle - self.stickRotation);
 					self.RotAngle = self.stickDirection + (self.target.RotAngle - self.stickRotation);
 
@@ -475,6 +490,7 @@ function Update(self)
 		PrimitiveMan:DrawLinePrimitive(startPos, drawPos, 249);
 	elseif self.parentGun and IsHDFirearm(self.parentGun) then
 		self.parent = self.parentGun;
+		self.parentUID = self.parentGun.UniqueID;
 	else
 		self.ToDelete = true;
 	end
@@ -483,8 +499,9 @@ function Destroy(self)
 	if MovableMan:IsParticle(self.crankSound) then
 		self.crankSound.ToDelete = true;
 	end
-	if self.parentGun and self.parentGun.ID ~= rte.NoMOID then
-		self.parentGun.HUDVisible = true;
-		self.parentGun:RemoveNumberValue("GrappleMode");
+	local parentGun = FindByUniqueID(self.parentGunUID);
+	if parentGun and parentGun.ID ~= rte.NoMOID then
+		parentGun.HUDVisible = true;
+		parentGun:RemoveNumberValue("GrappleMode");
 	end
 end

@@ -1847,6 +1847,8 @@ function RefineryAssault:MonitorStage5()
 		-- give subcommander cool head and keycard
 		self.saveTable.stage6subCommander.Head = CreateAttachable("Browncoat Heavy Alt Head A", "Browncoats.rte");
 		self.saveTable.stage6subCommander:AddInventoryItem(self.saveTable.stage6Keycard);
+		-- These can be deleted at any time, so remember their unique IDs to look them up with (see FindStage6MO).
+		self.stage6UniqueIDs = {stage6subCommander = self.saveTable.stage6subCommander.UniqueID, stage6Keycard = self.saveTable.stage6Keycard.UniqueID};
 		
 		table.insert(self.saveTable.enemyActorTables.stage6SubCommanderSquad, self.saveTable.stage6subCommander);
 		
@@ -1888,20 +1890,37 @@ function RefineryAssault:MonitorStage5()
 
 end
 
+-- Stage 6's saved MOs can be deleted at any time and then mustn't be touched at all, so they're looked up by unique ID before being read (nil if gone).
+-- Unique IDs change on load, but the saved MOs have just been loaded then, so it's safe to read a missing unique ID from them.
+local function FindStage6MO(self, key)
+	self.stage6UniqueIDs = self.stage6UniqueIDs or {};
+	local mo = self.saveTable[key];
+	if mo and self.stage6UniqueIDs[key] == nil then
+		self.stage6UniqueIDs[key] = mo.UniqueID;
+	end
+	local uniqueID = mo and self.stage6UniqueIDs[key];
+	return uniqueID and MovableMan:FindObjectByUniqueID(uniqueID) or nil;
+end
+
 function RefineryAssault:MonitorStage6()
 
 	if not self.saveTable.stage6subCommanderKilled then
-		if not self.saveTable.stage6subCommander or (self.saveTable.stage6subCommander.HasEverBeenAddedToMovableMan and not MovableMan:ValidMO(self.saveTable.stage6subCommander)) or self.saveTable.stage6subCommander:IsDead() then
+		local subCommander = FindStage6MO(self, "stage6subCommander");
+		if not subCommander or (subCommander.HasEverBeenAddedToMovableMan and not MovableMan:ValidMO(subCommander)) or ToActor(subCommander):IsDead() then
 			self.HUDHandler:RemoveObjective(self.humanTeam, "S6KillSubcommander");
 			self.saveTable.stage6subCommanderKilled = true;
 		end
 	end	
 	
-	if not self.saveTable.stage6Keycard or (self.saveTable.stage6Keycard.HasEverBeenAddedToMovableMan and not MovableMan:ValidMO(self.saveTable.stage6Keycard)) then
+	local keycard = FindStage6MO(self, "stage6Keycard");
+	if not keycard or (keycard.HasEverBeenAddedToMovableMan and not MovableMan:ValidMO(keycard)) then
 		-- spawn a new one
 		self.saveTable.stage6Keycard = CreateHeldDevice("Browncoat Military Keycard", "Browncoats.rte");
 		self.saveTable.stage6Keycard.Pos = self.stage6SubcommanderDoor.Pos
 		MovableMan:AddItem(self.saveTable.stage6Keycard);
+		self.stage6UniqueIDs.stage6Keycard = self.saveTable.stage6Keycard.UniqueID;
+		-- Point the objective at the new keycard, since the old one may be deleted.
+		self.HUDHandler:SetObjectivePosition(self.humanTeam, "S6GetKeycard", self.saveTable.stage6Keycard);
 	end
 
 end

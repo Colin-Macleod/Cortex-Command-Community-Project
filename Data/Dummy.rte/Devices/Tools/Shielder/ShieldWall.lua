@@ -10,7 +10,9 @@ function Create(self)
 end
 
 function Update(self)
-	if self.glow and self.glow.UniqueID == self.glowID then
+	--The glow can be deleted at any time, so look it up by UniqueID every update instead of holding onto a stale reference
+	self.glow = self.glowID and MovableMan:FindObjectByUniqueID(self.glowID) or nil;
+	if self.glow then
 		self.glow.Pos = self.Pos;
 		if self.AngularVel ~= 0 then
 			self.glow.EffectRotAngle = self.RotAngle;
@@ -18,6 +20,7 @@ function Update(self)
 		--To-do: add flicker
 	else
 		self.glow = nil;
+		self.glowID = nil;
 	end
 
 	self.AngularVel = 0;
@@ -34,6 +37,7 @@ function Update(self)
 end
 
 function Destroy(self)
+	self.glow = self.glowID and MovableMan:FindObjectByUniqueID(self.glowID) or nil;
 	if self.glow then
 		self.glow.ToDelete = true;
 	end
