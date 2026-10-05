@@ -574,7 +574,8 @@ function SkirmishDefense:UpdateActivity()
 						elseif self.AI[team].EngineerTimer:IsPastSimMS(self.AI[team].timeToEngineer) then
 							self.AI[team].EngineerTimer:Reset();
 
-							if not self.AI[team].Engineer or not MovableMan:IsActor(self.AI[team].Engineer) then
+							-- self.AI[team].Engineer is looked up by unique ID every update, so it's still set while the engineer is on its way in a craft's inventory (where MovableMan:IsActor is false); don't order another one then
+							if not self.AI[team].Engineer then
 								local digPosX = self.LZmap:FindSafeLZ(team);
 								if digPosX then
 									local Craft = RandomACDropShip("Craft", self.AI[team].TechID); -- Pick a drop-ship to deliver with
