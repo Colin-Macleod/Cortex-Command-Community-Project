@@ -558,6 +558,8 @@ namespace RTE {
 			SDL_KeyboardID id{0};
 			std::array<bool, SDL_SCANCODE_COUNT> keyStates{};
 			std::array<bool, SDL_SCANCODE_COUNT> changedKeyStates{};
+			std::array<bool, SDL_SCANCODE_COUNT> downSinceCapture{}; //!< During virtual input: keys pressed since the local input was last captured, so a quick tap between captures isn't lost.
+			std::array<bool, SDL_SCANCODE_COUNT> releasePending{}; //!< During virtual input: keys whose tap was delivered as a press, and whose release is delivered with the next capture.
 		};
 		std::unordered_map<SDL_KeyboardID, Keyboard> m_KeyboardStates; //!< Keyboard state when multi keyboard support is enabled.
 
@@ -565,6 +567,8 @@ namespace RTE {
 			SDL_MouseID id{0};
 			std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS> state{};
 			std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS> change{};
+			std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS> downSinceCapture{}; //!< See Keyboard::downSinceCapture.
+			std::array<bool, MouseButtons::MAX_MOUSE_BUTTONS> releasePending{}; //!< See Keyboard::releasePending.
 			Vector position{};
 			Vector relativeMotion{};
 			Vector analogAim{};
@@ -628,6 +632,9 @@ namespace RTE {
 		bool m_BypassVirtualInput = false; //!< Set while capturing local input, so queries read the real devices.
 		int m_RawInputScopeDepth = 0; //!< Number of live RawInputScopes.
 		int m_LocalVirtualPlayer = Players::NoPlayer; //!< The player controlled from this machine while virtual input is active.
+
+		/// Forgets keys and buttons pressed since the local input was last captured (see CaptureLocalInputFrame).
+		void ClearInputLatches();
 		std::array<bool, Players::MaxPlayerCount> m_IsVirtualPlayer{}; //!< Which players' input is virtual.
 		std::array<VirtualPlayerInput, Players::MaxPlayerCount> m_VirtualInput; //!< Virtual input state of each player.
 		std::array<InputScheme, Players::MaxPlayerCount> m_SavedControlSchemes; //!< The local control schemes, saved while virtual input is active.

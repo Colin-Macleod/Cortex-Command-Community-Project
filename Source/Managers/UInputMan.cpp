@@ -1031,10 +1031,12 @@ void UInputMan::HandleInputEvent(const SDL_Event& inputEvent) {
 			keyboard.id = inputEvent.key.which;
 			keyboard.changedKeyStates[inputEvent.key.scancode] = (inputEvent.key.down != keyboard.keyStates[inputEvent.key.scancode]);
 			keyboard.keyStates[inputEvent.key.scancode] = inputEvent.key.down;
+			keyboard.downSinceCapture[inputEvent.key.scancode] |= inputEvent.key.down;
 
 			if (inputEvent.key.which != 0) {
 				m_KeyboardStates[0].changedKeyStates[inputEvent.key.scancode] = (inputEvent.key.down != m_KeyboardStates[0].keyStates[inputEvent.key.scancode]);
 				m_KeyboardStates[0].keyStates[inputEvent.key.scancode] = inputEvent.key.down;
+				m_KeyboardStates[0].downSinceCapture[inputEvent.key.scancode] |= inputEvent.key.down;
 			}
 
 			break;
@@ -1110,9 +1112,11 @@ void UInputMan::HandleInputEvent(const SDL_Event& inputEvent) {
 			mouse.id = inputEvent.button.which;
 			mouse.change[inputEvent.button.button] = inputEvent.button.down != mouse.state[inputEvent.button.button];
 			mouse.state[inputEvent.button.button] = inputEvent.button.down;
+			mouse.downSinceCapture[inputEvent.button.button] |= inputEvent.button.down;
 			if (inputEvent.button.which != 0) {
 				m_MouseStates[0].change[inputEvent.button.button] = inputEvent.button.down != m_MouseStates[0].state[inputEvent.button.button];
 				m_MouseStates[0].state[inputEvent.button.button] = inputEvent.button.down;
+				m_MouseStates[0].downSinceCapture[inputEvent.button.button] |= inputEvent.button.down;
 			}
 			break;
 		}
@@ -1551,6 +1555,7 @@ void UInputMan::BeginVirtualInput(int localPlayer, const std::array<InputDevice,
 	if (m_VirtualInputActive) {
 		EndVirtualInput();
 	}
+	ClearInputLatches();
 	m_SavedControlSchemes = m_ControlScheme;
 	m_SavedEnableMultiMouseKeyboard = m_EnableMultiMouseKeyboard;
 	m_EnableMultiMouseKeyboard = false;
@@ -1650,10 +1655,39 @@ VirtualInputFrame UInputMan::CaptureLocalInputFrame() {
 	}
 	// Typing into the console shouldn't move the player's actor.
 	if (g_ConsoleMan.IsEnabled() && !g_ConsoleMan.IsReadOnly()) {
+		ClearInputLatches();
 		return frame;
 	}
 
 	m_BypassVirtualInput = true;
+
+	// Input is captured once per sim update, but read from the devices every frame, and the sim can stall (waiting for other players) for many frames.
+	// A key or button pressed and released between two captures would then be lost: it's seen as released, with no press. Deliver such a tap as
+	// pressed (and held) in this capture, and its release in the next one.
+	std::vector<std::pair<bool*, bool*>> tapsToRelease; // (state, change) of the taps adjusted below, to undo after capturing.
+	auto latch = [&tapsToRelease](bool& state, bool& change, bool& downSinceCapture, bool& releasePending) {
+		if (releasePending && !state && !change) {
+			change = true; // The release of last capture's tap.
+		}
+		releasePending = false;
+		if (downSinceCapture && !state) {
+			state = true;
+			change = true;
+			releasePending = true;
+			tapsToRelease.emplace_back(&state, &change);
+		}
+		downSinceCapture = false;
+	};
+	for (auto& [keyboardID, keyboard]: m_KeyboardStates) {
+		for (size_t scancode = 0; scancode < keyboard.keyStates.size(); ++scancode) {
+			latch(keyboard.keyStates[scancode], keyboard.changedKeyStates[scancode], keyboard.downSinceCapture[scancode], keyboard.releasePending[scancode]);
+		}
+	}
+	for (auto& [mouseID, mouse]: m_MouseStates) {
+		for (size_t button = 0; button < mouse.state.size(); ++button) {
+			latch(mouse.state[button], mouse.change[button], mouse.downSinceCapture[button], mouse.releasePending[button]);
+		}
+	}
 
 	for (int element = 0; element < InputElements::INPUT_COUNT; ++element) {
 		const uint64_t elementBit = 1ULL << element;
@@ -1709,8 +1743,24 @@ VirtualInputFrame UInputMan::CaptureLocalInputFrame() {
 	frame.MousePosition[0] = std::clamp(mousePosition.m_X, 0.0F, static_cast<float>(g_WindowMan.GetResX() - 1));
 	frame.MousePosition[1] = std::clamp(mousePosition.m_Y, 0.0F, static_cast<float>(g_WindowMan.GetResY() - 1));
 
+	// The taps were only pressed for this capture.
+	for (auto [state, change]: tapsToRelease) {
+		*state = false;
+	}
+
 	m_BypassVirtualInput = false;
 	return frame;
+}
+
+void UInputMan::ClearInputLatches() {
+	for (auto& [keyboardID, keyboard]: m_KeyboardStates) {
+		keyboard.downSinceCapture.fill(false);
+		keyboard.releasePending.fill(false);
+	}
+	for (auto& [mouseID, mouse]: m_MouseStates) {
+		mouse.downSinceCapture.fill(false);
+		mouse.releasePending.fill(false);
+	}
 }
 
 void UInputMan::ApplyVirtualInputFrame(int player, const VirtualInputFrame& frame) {
