@@ -85,6 +85,7 @@ namespace {
 	constexpr int c_LeaveConfirmMS = 3000; //!< How long a first Esc press stays armed.
 	constexpr int c_ConnectionTimeoutMS = 30000; //!< How long a connection may go silent before it's considered lost. Generous, as loading a big scene on a slow machine can starve the network thread.
 	constexpr int c_ReconnectIntervalMS = 2000; //!< How often a client retries connecting to a host that isn't up yet.
+	constexpr int c_HelloTimeoutMS = 30000; //!< How long the host keeps a connection that hasn't been accepted (no valid hello yet) before closing it, so it doesn't hold a slot forever.
 	constexpr int c_LagIdleMS = 10000; //!< After lagging this long, a player's held input is no longer repeated, so their actor stops instead of e.g. firing forever.
 	constexpr long long c_MaxInputLead = 600; //!< Input or checksums for sim updates further ahead than this are ignored (a buggy or malicious peer could otherwise grow the queues without bound).
 	constexpr int c_StalledEscapeDelayMS = 3000; //!< How long the sim must have been stalled before Esc is read outside the sim update.
@@ -1635,6 +1636,18 @@ void LockstepMan::Update() {
 	}
 
 	if (m_Role == Role::Host) {
+		for (Peer& peer: m_Peers) {
+			if (peer.Connected && !peer.Accepted && ElapsedMS(peer.ConnectedSince) > c_HelloTimeoutMS) {
+				g_ConsoleMan.PrintString("CO-OP: " + peer.Address + " didn't say hello in time, closing the connection.");
+				m_Peer->CloseConnection(RakNet::AddressOrGUID(RakNet::RakNetGUID(peer.Guid)), true);
+				peer.Connected = false;
+			}
+		}
+		if (!m_MatchRunning && !m_MatchStartPending) {
+			// Players' owner indices point into the list only during a match, so disconnected entries can go between matches.
+			m_Peers.erase(std::remove_if(m_Peers.begin(), m_Peers.end(), [](const Peer& peer) { return !peer.Connected; }), m_Peers.end());
+		}
+
 		if (ElapsedMS(m_LastPingTime) > 500) {
 			m_LastPingTime = std::chrono::steady_clock::now();
 			MessageWriter ping(MsgPing);
