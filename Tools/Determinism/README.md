@@ -69,6 +69,8 @@ Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console o
 | `activity-sweep` | Several stock activities in turn. |
 | `long` | 20000 sim updates of Determinism Chaos. |
 
+Memory errors: build with `meson setup build-asan -Db_sanitize=address -Dbuildtype=debugoptimized -Db_lto=false` (and `ASAN_OPTIONS=detect_leaks=0` while building, as LuaJIT's build tool leaks on purpose), then run sessions with `--binary build-asan/CortexCommand`. On Linux, crash reports name the Lua script that was running and print its Lua traceback. Note that ASan also turns stale object reads that many shipped scripts do (harmless in a normal build, where freed objects stay in the engine's memory pools) into crashes.
+
 ## Micro-tests (`micro/`)
 
 Standalone programs. Build each one with different compilers, standard libraries or flags and compare the output.

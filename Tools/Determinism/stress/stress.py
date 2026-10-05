@@ -129,7 +129,7 @@ SCENARIOS = [
         "name": "activity-sweep",
         "doc": "Several stock Activities in turn, two peers each, different bot seeds.",
         "sweep": [("Wave Defense", "First Signs"), ("One-Man Army", ""), ("Massacre", ""), ("Survival", ""), ("Skirmish Defense", ""),
-                  ("Harvester", ""), ("Keepie Uppie", ""), ("Brain vs Brain", "")],
+                  ("Harvester", ""), ("Keepie Uppie", ""), ("Brain vs Brain", "Highlands Bunkers")],
         "ticks": 1200,
         "peers": [peer(), peer()],
     },
