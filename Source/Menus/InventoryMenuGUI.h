@@ -371,10 +371,14 @@ namespace RTE {
 		/// @param drawPos The position at which to draw the carousel.
 		void DrawCarouselMode(BITMAP* targetBitmap, const Vector& drawPos) const;
 
-		/// Draws the InventoryMenuGUI when it's in Full MenuMode.
+		/// Positions (and, while it's being enabled or disabled, sizes) the GUI of the Full MenuMode on its player's screen, above its target.
+		/// Only the GUI's controls change, which is why this is const (it's also used when drawing).
+		/// @param screenSceneOffset The scene position of the top left corner of the player's screen.
+		void PositionFullModeGUI(const Vector& screenSceneOffset) const;
+
+		/// Draws the InventoryMenuGUI when it's in Full MenuMode, where PositionFullModeGUI put it.
 		/// @param targetBitmap A pointer to a BITMAP to draw on. Generally a screen BITMAP.
-		/// @param drawPos The position at which to draw the GUI.
-		void DrawFullMode(BITMAP* targetBitmap, const Vector& drawPos) const;
+		void DrawFullMode(BITMAP* targetBitmap) const;
 
 		/// Draws the specified CarouselItemBox's background to the carousel background Bitmap.
 		/// @param itemBoxToDraw The CarouselItemBox to draw.

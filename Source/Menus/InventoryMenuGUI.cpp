@@ -1,6 +1,10 @@
 #include "InventoryMenuGUI.h"
 
 #include "WindowMan.h"
+#include "ActivityMan.h"
+#include "CameraMan.h"
+#include "SceneMan.h"
+#include "TimerMan.h"
 #include "FrameMan.h"
 #include "UInputMan.h"
 #include "MovableMan.h"
@@ -399,8 +403,11 @@ void InventoryMenuGUI::Draw(BITMAP* targetBitmap, const Vector& targetPos) const
 			if (!m_InventoryActor) {
 				return;
 			}
-			drawPos -= Vector((m_GUITopLevelBoxFullSize.GetX() - static_cast<float>(m_GUIInventoryItemsScrollbar->IsEnabled() ? m_GUIInventoryItemsScrollbar->GetWidth() : 0)) / 2.0F, m_GUITopLevelBoxFullSize.GetY() + c_FullMenuVerticalOffset);
-			DrawFullMode(targetBitmap, drawPos);
+			if (!g_TimerMan.IsInDeterministicMode()) {
+				// Follow the screen exactly, screen shake included. In deterministic (co-op) play the position from UpdateFullMode is kept instead, since every computer must agree on it.
+				PositionFullModeGUI(targetPos);
+			}
+			DrawFullMode(targetBitmap);
 			break;
 		case MenuMode::Transfer:
 			break;
@@ -548,6 +555,24 @@ void InventoryMenuGUI::UpdateFullMode() {
 	UpdateFullModeScrollbar(inventory);
 
 	UpdateFullModeInventoryItemButtons(inventory);
+
+	// Where the GUI is on the screen decides what mouse clicks hit, so it's positioned here and not only when drawing: in a co-op match every computer
+	// updates every player's menu, but only draws its own player's screen.
+	Vector screenSceneOffset;
+	if (const Activity* activity = g_ActivityMan.GetActivity(); activity && m_MenuController) {
+		const int player = m_MenuController->GetPlayer();
+		if (const int screen = activity->ScreenOfPlayer(player); screen >= 0) {
+			screenSceneOffset = g_CameraMan.GetOffset(screen);
+		}
+		// Like when drawing: scenes narrower or shorter than the screen are drawn in its middle.
+		if (const int screenWidth = g_FrameMan.GetPlayerFrameBufferWidth(player); !g_SceneMan.SceneWrapsX() && screenWidth > g_SceneMan.GetSceneWidth()) {
+			screenSceneOffset.m_X += static_cast<float>((screenWidth - g_SceneMan.GetSceneWidth()) / 2);
+		}
+		if (const int screenHeight = g_FrameMan.GetPlayerFrameBufferHeight(player); !g_SceneMan.SceneWrapsY() && screenHeight > g_SceneMan.GetSceneHeight()) {
+			screenSceneOffset.m_Y += static_cast<float>((screenHeight - g_SceneMan.GetSceneHeight()) / 2);
+		}
+	}
+	PositionFullModeGUI(screenSceneOffset);
 
 	m_GUIControlManager->Update(true);
 
@@ -1424,8 +1449,10 @@ void InventoryMenuGUI::DrawCarouselItemBoxForeground(const CarouselItemBox& item
 	m_SmallFont->DrawAligned(carouselAllegroBitmap, itemBoxToDraw.IconCenterPosition.GetFloorIntX(), itemBoxToDraw.IconCenterPosition.GetFloorIntY() - ((itemBoxToDraw.CurrentSize.GetFloorIntY() + m_SmallFont->GetFontHeight()) / 2) + 1, massString, GUIFont::Centre);
 }
 
-void InventoryMenuGUI::DrawFullMode(BITMAP* targetBitmap, const Vector& drawPos) const {
-	m_GUITopLevelBox->SetPositionAbs(drawPos.GetFloorIntX(), drawPos.GetFloorIntY());
+void InventoryMenuGUI::PositionFullModeGUI(const Vector& screenSceneOffset) const {
+	Vector guiPos = m_CenterPos - screenSceneOffset;
+	guiPos -= Vector((m_GUITopLevelBoxFullSize.GetX() - static_cast<float>(m_GUIInventoryItemsScrollbar->IsEnabled() ? m_GUIInventoryItemsScrollbar->GetWidth() : 0)) / 2.0F, m_GUITopLevelBoxFullSize.GetY() + c_FullMenuVerticalOffset);
+	m_GUITopLevelBox->SetPositionAbs(guiPos.GetFloorIntX(), guiPos.GetFloorIntY());
 
 	if (IsEnablingOrDisabling()) {
 		float enableDisableProgress = static_cast<float>(m_EnableDisableAnimationTimer.GetRealTimeLimitProgress());
@@ -1435,7 +1462,9 @@ void InventoryMenuGUI::DrawFullMode(BITMAP* targetBitmap, const Vector& drawPos)
 		m_GUITopLevelBox->SetSize(static_cast<int>(m_GUITopLevelBoxFullSize.GetX() * enableDisableProgress), static_cast<int>(m_GUITopLevelBoxFullSize.GetY() * enableDisableProgress));
 		m_GUITopLevelBox->SetPositionAbs(m_GUITopLevelBox->GetXPos() + ((m_GUITopLevelBoxFullSize.GetFloorIntX() - m_GUITopLevelBox->GetWidth()) / 2), m_GUITopLevelBox->GetYPos() + ((m_GUITopLevelBoxFullSize.GetFloorIntY() - m_GUITopLevelBox->GetHeight()) / 2));
 	}
+}
 
+void InventoryMenuGUI::DrawFullMode(BITMAP* targetBitmap) const {
 	AllegroScreen guiScreen(targetBitmap);
 	m_GUIControlManager->Draw(&guiScreen);
 	if (IsEnabled() && !m_GUIDisplayOnly && m_MenuController->IsMouseControlled()) {
