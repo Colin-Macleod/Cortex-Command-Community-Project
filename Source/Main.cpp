@@ -330,12 +330,17 @@ void RunGameLoop() {
 		bool serverUpdated = false;
 		updateStartTime = g_TimerMan.GetAbsoluteTime();
 
+		// Code that only this computer runs mustn't change the simulation. CCCP_DT_LOCAL_AUDIT checks that it doesn't, with these sections.
+		DeterminismHarness::BeginLocalOnly("Input polling");
 		PollSDLEvents();
 		g_WindowMan.Update();
 		g_WindowMan.ClearBackbuffer();
+		DeterminismHarness::EndLocalOnly();
 
 		g_TimerMan.Update();
+		DeterminismHarness::BeginLocalOnly("Networking");
 		g_LockstepMan.Update();
+		DeterminismHarness::EndLocalOnly();
 
 		if (int harnessSimUpdates = DeterminismHarness::GetSimUpdatesForThisFrame(); harnessSimUpdates >= 0) {
 			// Decouple the sim from wall-clock time: a fixed number of fixed-length sim updates per frame.
@@ -438,9 +443,11 @@ void RunGameLoop() {
 		updateTotalTime = updateEndAndDrawStartTime - updateStartTime;
 		drawStartTime = updateEndAndDrawStartTime;
 
+		DeterminismHarness::BeginLocalOnly("Drawing");
 		g_FrameMan.Draw();
 		g_WindowMan.DrawPostProcessBuffer();
 		g_WindowMan.UploadFrame();
+		DeterminismHarness::EndLocalOnly();
 		DeterminismHarness::SleepFrameJitter();
 
 		drawTotalTime = g_TimerMan.GetAbsoluteTime() - drawStartTime;

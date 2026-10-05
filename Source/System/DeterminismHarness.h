@@ -94,6 +94,19 @@ namespace RTE {
 		/// @param pathPrefix The start of the dump file paths.
 		static void WriteDumpRing(const std::string& pathPrefix);
 
+		/// Testing aid, active with CCCP_DT_LOCAL_AUDIT=1 during deterministic (co-op) play: checks that the code only this computer runs (drawing its
+		/// player's screen, polling its devices, networking) leaves the simulation alone. Marks the start of such code, and takes the simulation state hashes.
+		/// @param section What the code does, for the report.
+		static void BeginLocalOnly(const char* section);
+
+		/// Marks the end of code started with BeginLocalOnly. With CCCP_DT_LOCAL_AUDIT, reports any change to the simulation state hashes in between.
+		static void EndLocalOnly();
+
+		/// Called where the simulation is changed in ways the state hashes don't show (unique IDs handed out, scripts run, Lua random numbers drawn).
+		/// With CCCP_DT_LOCAL_AUDIT, reports it, with a stack trace, if it happens on the main thread between BeginLocalOnly and EndLocalOnly.
+		/// @param what What happened, for the report.
+		static void CheckSimAccess(const char* what);
+
 	private:
 		static bool s_Enabled; //!< Whether the harness is active.
 		static std::ofstream s_Log; //!< The per-tick hash log.

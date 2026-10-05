@@ -13,6 +13,7 @@
 #include "Serializable.h"
 #include "System.h"
 #include "PostProcessMan.h"
+#include "DeterminismHarness.h"
 
 #include "Base64/base64.h"
 #include "tracy/Tracy.hpp"
@@ -26,6 +27,7 @@ AbstractClassInfo(MovableObject, SceneObject);
 std::atomic<long> MovableObject::m_UniqueIDCounter = 1;
 
 long MovableObject::GetNextUniqueID() {
+	DeterminismHarness::CheckSimAccess("A unique ID was handed out");
 	if (LuaStateWrapper* luaState = g_LuaMan.GetThreadLuaStateOverride(); luaState && luaState != &g_LuaMan.GetMasterScriptState()) {
 		return luaState->GetNextUniqueID();
 	}

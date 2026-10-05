@@ -7,6 +7,7 @@
 #include "ThreadMan.h"
 #include "System.h"
 #include "TimerMan.h"
+#include "DeterminismHarness.h"
 
 #include "tracy/Tracy.hpp"
 #include "tracy/TracyLua.hpp"
@@ -318,6 +319,7 @@ namespace {
 	/// Testing aid: with CCCP_DT_LUA_RNG_LOG=<path>, every draw scripts make from a Lua state's generator is logged with the sim update and the
 	/// Lua call stack, so the logs of two co-op peers show which script drew differently.
 	void LogLuaRandomDraw(lua_State* state, const char* kind) {
+		DeterminismHarness::CheckSimAccess("A Lua script drew a random number");
 		static const char* logPath = std::getenv("CCCP_DT_LUA_RNG_LOG");
 		if (!logPath) {
 			return;
@@ -597,6 +599,7 @@ const std::unordered_map<std::string, PerformanceMan::ScriptTiming>& LuaStateWra
 }
 
 int LuaStateWrapper::RunScriptFunctionString(const std::string& functionName, const std::string& selfObjectName, const std::vector<std::string_view>& variablesToSafetyCheck, const std::vector<const Entity*>& functionEntityArguments, const std::vector<std::string_view>& functionLiteralArguments) {
+	DeterminismHarness::CheckSimAccess("A Lua script was run");
 	std::stringstream scriptString;
 	if (!variablesToSafetyCheck.empty()) {
 		scriptString << "if ";
@@ -652,6 +655,7 @@ int LuaStateWrapper::RunScriptFunctionString(const std::string& functionName, co
 }
 
 int LuaStateWrapper::RunScriptString(const std::string& scriptString, bool consoleErrors) {
+	DeterminismHarness::CheckSimAccess("A Lua script was run");
 	if (scriptString.empty()) {
 		return -1;
 	}
@@ -679,6 +683,7 @@ int LuaStateWrapper::RunScriptString(const std::string& scriptString, bool conso
 }
 
 int LuaStateWrapper::RunScriptFunctionObject(const LuabindObjectWrapper* functionObject, const std::string& selfGlobalTableName, const std::string& selfGlobalTableKey, const std::vector<const Entity*>& functionEntityArguments, const std::vector<std::string_view>& functionLiteralArguments, const std::vector<LuabindObjectWrapper*>& functionObjectArguments) {
+	DeterminismHarness::CheckSimAccess("A Lua script was run");
 	int status = 0;
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
@@ -760,6 +765,7 @@ int LuaStateWrapper::RunScriptFunctionObject(const LuabindObjectWrapper* functio
 }
 
 int LuaStateWrapper::RunScriptConditionalTestFunctionObject(const LuabindObjectWrapper* functionObject, const std::string& selfGlobalTableName, const std::string& selfGlobalTableKey, bool& returnParam, const std::vector<const Entity*>& functionEntityArguments, const std::vector<std::string_view>& functionLiteralArguments, const std::vector<LuabindObjectWrapper*>& functionObjectArguments) {
+	DeterminismHarness::CheckSimAccess("A Lua script was run");
 	int status = 0;
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
@@ -836,6 +842,7 @@ int LuaStateWrapper::RunScriptConditionalTestFunctionObject(const LuabindObjectW
 }
 
 int LuaStateWrapper::RunScriptFile(const std::string& filePath, bool consoleErrors, bool doInSandboxedEnvironment) {
+	DeterminismHarness::CheckSimAccess("A Lua script was run");
 	const std::string fullScriptPath = g_PresetMan.GetFullModulePath(filePath);
 	if (fullScriptPath.empty()) {
 		m_LastError = "Can't run a script file with an empty filepath!";

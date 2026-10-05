@@ -26,11 +26,15 @@
 #include <cstring>
 #include <sstream>
 
+#include <thread>
+
+#ifdef __linux__
+#include <execinfo.h>
+#endif
+
 #ifdef RTE_RNG_TRACE
 #include <dlfcn.h>
-#include <execinfo.h>
 #include <mutex>
-#include <thread>
 #endif
 
 using namespace RTE;
@@ -473,4 +477,113 @@ void DeterminismHarness::WriteStateDump(const std::string& path) {
 			terrainDump.write(reinterpret_cast<const char*>(materialBitmap->line[y]), materialBitmap->w);
 		}
 	}
+}
+
+namespace {
+	/// State of the CCCP_DT_LOCAL_AUDIT testing aid.
+	struct LocalAudit {
+		bool Enabled = false; //!< Whether CCCP_DT_LOCAL_AUDIT is set.
+		std::thread::id MainThread; //!< The thread that runs the game loop.
+		const char* Section = nullptr; //!< The code only this computer runs that's running now, if any.
+		const Activity* SectionActivity = nullptr; //!< The Activity when the section started. If it changed, the section started or ended a match.
+		long long SectionSimUpdate = 0; //!< The sim update count when the section started.
+		DeterminismHarness::SimStateHashes SectionHashes; //!< The simulation state hashes when the section started.
+		std::set<std::string> Reported; //!< What was already reported, so each problem is reported once.
+		int ReportCount = 0; //!< How many reports were made, to stop at some point.
+
+		LocalAudit() {
+			const char* value = std::getenv("CCCP_DT_LOCAL_AUDIT");
+			Enabled = value && std::atoi(value) != 0;
+			MainThread = std::this_thread::get_id();
+		}
+
+		/// Whether the audit applies right now: deterministic play in an Activity.
+		static bool Applies() { return g_TimerMan.IsInDeterministicMode() && g_ActivityMan.IsInActivity() && g_ActivityMan.GetActivity(); }
+
+		/// Prints a report to standard error and the console, once per distinct key, with a stack trace if asked.
+		void Report(const std::string& key, const std::string& message, bool withStackTrace) {
+			if (ReportCount >= 50 || !Reported.insert(key).second) {
+				return;
+			}
+			++ReportCount;
+			std::fprintf(stderr, "LOCALAUDIT: %s\n", message.c_str());
+#ifdef __linux__
+			if (withStackTrace) {
+				// Resolve the "(+0x...)" offsets with addr2line -f -C -e <binary>.
+				void* frames[48];
+				int frameCount = backtrace(frames, 48);
+				if (char** symbols = backtrace_symbols(frames, frameCount)) {
+					for (int i = 1; i < frameCount; ++i) {
+						std::fprintf(stderr, "LOCALAUDIT stack: %s\n", symbols[i]);
+					}
+					std::free(symbols);
+				}
+			}
+#endif
+			std::fflush(stderr);
+			g_ConsoleMan.PrintString("ERROR: " + message);
+		}
+	};
+
+	LocalAudit& GetLocalAudit() {
+		static LocalAudit localAudit;
+		return localAudit;
+	}
+} // namespace
+
+void DeterminismHarness::BeginLocalOnly(const char* section) {
+	LocalAudit& audit = GetLocalAudit();
+	if (!audit.Enabled || std::this_thread::get_id() != audit.MainThread) {
+		return;
+	}
+	audit.Section = nullptr;
+	if (!LocalAudit::Applies()) {
+		return;
+	}
+	audit.SectionActivity = g_ActivityMan.GetActivity();
+	audit.SectionSimUpdate = g_TimerMan.GetSimUpdateCount();
+	audit.SectionHashes = HashSimState(false);
+	audit.Section = section;
+}
+
+void DeterminismHarness::EndLocalOnly() {
+	LocalAudit& audit = GetLocalAudit();
+	if (!audit.Enabled || !audit.Section || std::this_thread::get_id() != audit.MainThread) {
+		return;
+	}
+	const char* section = audit.Section;
+	audit.Section = nullptr;
+	if (!LocalAudit::Applies() || g_ActivityMan.GetActivity() != audit.SectionActivity || g_TimerMan.GetSimUpdateCount() != audit.SectionSimUpdate) {
+		return;
+	}
+	SimStateHashes hashes = HashSimState(false);
+	const std::pair<const char*, bool> parts[] = {{"RNG", hashes.RNG != audit.SectionHashes.RNG}, {"Lua RNG", hashes.LuaRNG != audit.SectionHashes.LuaRNG},
+	                                              {"actors", hashes.Actors != audit.SectionHashes.Actors || hashes.ActorCount != audit.SectionHashes.ActorCount},
+	                                              {"items", hashes.Items != audit.SectionHashes.Items || hashes.ItemCount != audit.SectionHashes.ItemCount},
+	                                              {"particles", hashes.Particles != audit.SectionHashes.Particles || hashes.ParticleCount != audit.SectionHashes.ParticleCount},
+	                                              {"activity", hashes.Activity != audit.SectionHashes.Activity}};
+	for (const auto& [part, changed]: parts) {
+		if (changed) {
+			audit.Report(std::string(section) + "/" + part, std::string(section) + " changed the simulation state (" + part + ") at sim update " + std::to_string(g_TimerMan.GetSimUpdateCount()), false);
+		}
+	}
+}
+
+void DeterminismHarness::CheckSimAccess(const char* what) {
+	LocalAudit& audit = GetLocalAudit();
+	if (!audit.Enabled || !audit.Section || std::this_thread::get_id() != audit.MainThread) {
+		return;
+	}
+	std::string key = std::string(audit.Section) + "/" + what;
+#ifdef __linux__
+	// Report each call site once: key on the return addresses of the few innermost frames.
+	void* frames[6];
+	int frameCount = backtrace(frames, 6);
+	for (int i = 1; i < frameCount; ++i) {
+		char address[32];
+		std::snprintf(address, sizeof(address), " %p", frames[i]);
+		key += address;
+	}
+#endif
+	audit.Report(key, std::string(what) + " during " + audit.Section + " at sim update " + std::to_string(g_TimerMan.GetSimUpdateCount()), true);
 }
