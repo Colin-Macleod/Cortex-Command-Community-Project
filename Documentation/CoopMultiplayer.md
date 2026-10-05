@@ -122,7 +122,8 @@ Always on:
 
 Test-only options:
 
-- `-coop-bot <seed>`: drives the local player with a pseudo-random input bot.
+- `-coop-bot <seed>`: drives the local player with a pseudo-random input bot. Besides moving, aiming and firing, it opens the pie menu and picks slices, and clicks around the screen, so it also uses the buy menu, the inventory menu and the build phase editor.
+- `-coop-deploy <0|1>` and `-coop-clear-path <0|1>` (host): whether the automatic Activity deploys the scene's units (default 1; with 0, Activities like Skirmish Defense start with a build phase) and whether brains placed in a build phase need a clear path to orbit (default 0).
 - `-coop-inject-desync <update>`: deliberately perturbs the simulation on one computer, to check the desync detector.
 - `-coop-sim-latency <ms>` and `-coop-sim-jitter <ms>`: hold back every message this computer sends by the given latency plus a random 0 to jitter ms, keeping message order (like a reliable ordered connection over a slow link). Pass them to every game instance to test a slow network with all instances on one machine.
 - `-coop-chain "Activity@Scene;Activity@Scene;..."` (host) and `-coop-match-updates <N>` (every computer): play the listed activities one after another in the same game instances, each match ending after N sim updates, to catch state left over from one match to the next.
