@@ -5,6 +5,8 @@
 #include "ConsoleMan.h"
 #include "ActivityMan.h"
 #include "System.h"
+#include "LuaMan.h"
+#include "lua.hpp"
 
 #include <SDL3/SDL_messagebox.h>
 
@@ -44,6 +46,35 @@ std::source_location RTEError::s_LastIgnoredAssertLocation = {};
 
 #if (defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)))
 backward::SignalHandling sh;
+
+#include <csignal>
+
+namespace {
+	std::array<struct sigaction, 32> s_PreviousCrashHandlers{};
+
+	/// Says which Lua script was running, with a Lua stack traceback, before handing a crash on to the previous handler (backward's stack trace).
+	/// A crash inside a script binding (e.g. a script touching an object that was deleted) otherwise only shows a C++ stack through LuaJIT.
+	void LuaCrashContextHandler(int signalNumber, siginfo_t* info, void* context) {
+		if (LuaStateWrapper* luaState = g_LuaMan.GetThreadCurrentLuaState()) {
+			const std::string_view scriptPath = luaState->GetCurrentlyRunningScriptFilePath();
+			std::fprintf(stderr, "Crashed while running Lua script \"%.*s\"\n", static_cast<int>(scriptPath.size()), scriptPath.data());
+			lua_State* state = luaState->GetLuaState();
+			luaL_traceback(state, state, nullptr, 0);
+			const char* traceback = lua_tostring(state, -1);
+			std::fprintf(stderr, "%s\n", traceback ? traceback : "(no Lua traceback)");
+			std::fflush(stderr);
+		}
+		const struct sigaction& previous = s_PreviousCrashHandlers[signalNumber];
+		if (previous.sa_flags & SA_SIGINFO) {
+			previous.sa_sigaction(signalNumber, info, context);
+		} else if (previous.sa_handler != SIG_DFL && previous.sa_handler != SIG_IGN) {
+			previous.sa_handler(signalNumber);
+		} else {
+			std::signal(signalNumber, SIG_DFL);
+			std::raise(signalNumber);
+		}
+	}
+} // namespace
 #endif
 #ifdef _WIN32
 /// <summary>
@@ -199,8 +230,15 @@ void RTEError::SetExceptionHandlers() {
 	std::set_terminate(terminateHandler);
 #endif
 #else
-	// TODO: Deal with segfaults and such on other systems. Probably need to use Unix signal junk to get any meaningful information. Good luck and godspeed to whoever deals with this.
+	// Segfaults and such get a stack trace from backward (see sh above). Chain a handler in front of it that adds which Lua script was running.
 	std::set_terminate(terminateHandler);
+	for (int signalNumber: {SIGSEGV, SIGBUS, SIGFPE, SIGILL}) {
+		struct sigaction action {};
+		action.sa_sigaction = LuaCrashContextHandler;
+		action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+		sigemptyset(&action.sa_mask);
+		sigaction(signalNumber, &action, &s_PreviousCrashHandlers[signalNumber]);
+	}
 #endif
 }
 
