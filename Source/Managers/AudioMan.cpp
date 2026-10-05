@@ -486,7 +486,7 @@ bool AudioMan::ChangeSoundContainerPlayingChannelsPosition(const SoundContainer*
 }
 
 float AudioMan::GetSoundContainerAudibleVolume(const SoundContainer* soundContainer) {
-	if (!m_AudioEnabled || !soundContainer || !soundContainer->IsBeingPlayed()) {
+	if (!m_AudioEnabled || !soundContainer || soundContainer->GetPlayingChannels()->empty()) {
 		return 0.0F;
 	}
 
@@ -510,7 +510,7 @@ float AudioMan::GetSoundContainerAudibleVolume(const SoundContainer* soundContai
 }
 
 bool AudioMan::ChangeSoundContainerPlayingChannelsVolume(const SoundContainer* soundContainer, float newVolume) {
-	if (!m_AudioEnabled || !soundContainer || !soundContainer->IsBeingPlayed()) {
+	if (!m_AudioEnabled || !soundContainer || soundContainer->GetPlayingChannels()->empty()) {
 		return false;
 	}
 	if (m_IsInMultiplayerMode) {
@@ -542,7 +542,7 @@ bool AudioMan::ChangeSoundContainerPlayingChannelsVolume(const SoundContainer* s
 }
 
 bool AudioMan::ChangeSoundContainerPlayingChannelsPitch(const SoundContainer* soundContainer) {
-	if (!m_AudioEnabled || !soundContainer || !soundContainer->IsBeingPlayed()) {
+	if (!m_AudioEnabled || !soundContainer || soundContainer->GetPlayingChannels()->empty()) {
 		return false;
 	}
 	if (m_IsInMultiplayerMode) {
@@ -564,7 +564,7 @@ bool AudioMan::ChangeSoundContainerPlayingChannelsPitch(const SoundContainer* so
 }
 
 bool AudioMan::ChangeSoundContainerPlayingChannelsCustomPanValue(const SoundContainer* soundContainer) {
-	if (!m_AudioEnabled || !soundContainer || !soundContainer->IsBeingPlayed()) {
+	if (!m_AudioEnabled || !soundContainer || soundContainer->GetPlayingChannels()->empty()) {
 		return false;
 	}
 	if (m_IsInMultiplayerMode) {
@@ -585,8 +585,21 @@ bool AudioMan::ChangeSoundContainerPlayingChannelsCustomPanValue(const SoundCont
 	return result == FMOD_OK;
 }
 
+void AudioMan::DetachSoundContainerChannels(const SoundContainer* soundContainer) {
+	if (!m_AudioEnabled || !soundContainer) {
+		return;
+	}
+	for (int channelIndex: *soundContainer->GetPlayingChannels()) {
+		FMOD::Channel* soundChannel;
+		void* userData = nullptr;
+		if (m_AudioSystem->getChannel(channelIndex, &soundChannel) == FMOD_OK && soundChannel->getUserData(&userData) == FMOD_OK && userData == soundContainer) {
+			soundChannel->setUserData(nullptr);
+		}
+	}
+}
+
 bool AudioMan::StopSoundContainerPlayingChannels(SoundContainer* soundContainer, int player) {
-	if (!m_AudioEnabled || !soundContainer || !soundContainer->IsBeingPlayed()) {
+	if (!m_AudioEnabled || !soundContainer || soundContainer->GetPlayingChannels()->empty()) {
 		return false;
 	}
 	if (m_IsInMultiplayerMode) {
@@ -609,7 +622,7 @@ bool AudioMan::StopSoundContainerPlayingChannels(SoundContainer* soundContainer,
 }
 
 void AudioMan::FadeOutSoundContainerPlayingChannels(SoundContainer* soundContainer, int fadeOutTime) {
-	if (!m_AudioEnabled || !soundContainer || !soundContainer->IsBeingPlayed()) {
+	if (!m_AudioEnabled || !soundContainer || soundContainer->GetPlayingChannels()->empty()) {
 		return;
 	}
 	if (m_IsInMultiplayerMode) {
@@ -678,7 +691,7 @@ void AudioMan::Update3DEffectsForSFXChannels() {
 				float doubleMinimumDistanceForPanning = m_MinimumDistanceForPanning * 2.0F;
 				void* userData;
 				result = result == FMOD_OK ? soundChannel->getUserData(&userData) : result;
-				if (result == FMOD_OK) {
+				if (result == FMOD_OK && userData) {
 					const SoundContainer* soundContainer = static_cast<SoundContainer*>(userData);
 					if (sqrDistanceToPlayer < (m_MinimumDistanceForPanning * m_MinimumDistanceForPanning) || soundContainer->GetCustomPanValue() != 0.0f) {
 						result = soundChannel->set3DLevel(0);
@@ -772,7 +785,7 @@ FMOD_RESULT AudioMan::UpdatePositionalEffectsForSoundChannel(FMOD::Channel* soun
 	lowpassFrequency = std::clamp(lowpassFrequency, 350.0f, 22000.0f);
 	result = (result == FMOD_OK) ? dsp_multibandeq->setParameterFloat(1, lowpassFrequency) : result;
 
-	if (channelSoundContainer->GetCustomPanValue() != 0.0f) {
+	if (channelSoundContainer && channelSoundContainer->GetCustomPanValue() != 0.0f) {
 		result = (result == FMOD_OK) ? soundChannel->setPan(channelSoundContainer->GetCustomPanValue()) : result;
 	}
 
@@ -807,8 +820,9 @@ FMOD_RESULT F_CALLBACK AudioMan::SoundChannelEndedCallback(FMOD_CHANNELCONTROL* 
 		void* userData;
 		result = (result == FMOD_OK) ? channel->getUserData(&userData) : result;
 		if (result == FMOD_OK) {
+			// Null if the SoundContainer was deleted while this sound kept playing (see DetachSoundContainerChannels).
 			SoundContainer* channelSoundContainer = static_cast<SoundContainer*>(userData);
-			if (channelSoundContainer->IsBeingPlayed()) {
+			if (channelSoundContainer) {
 				channelSoundContainer->RemovePlayingChannel(channelIndex);
 			}
 			result = (result == FMOD_OK) ? channel->setUserData(nullptr) : result;
@@ -818,7 +832,7 @@ FMOD_RESULT F_CALLBACK AudioMan::SoundChannelEndedCallback(FMOD_CHANNELCONTROL* 
 			}
 
 			if (result != FMOD_OK) {
-				g_ConsoleMan.PrintString("ERROR: An error occurred when Ending a sound in SoundContainer " + channelSoundContainer->GetPresetName() + ": " + std::string(FMOD_ErrorString(result)));
+				g_ConsoleMan.PrintString("ERROR: An error occurred when Ending a sound in SoundContainer " + (channelSoundContainer ? channelSoundContainer->GetPresetName() : std::string("(deleted)")) + ": " + std::string(FMOD_ErrorString(result)));
 				return result;
 			}
 		} else {

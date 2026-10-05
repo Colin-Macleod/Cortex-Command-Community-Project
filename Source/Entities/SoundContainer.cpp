@@ -28,6 +28,8 @@ SoundContainer::SoundContainer(const SoundContainer& reference) {
 }
 
 SoundContainer::~SoundContainer() {
+	// Its sounds may still be playing (e.g. a gib sound of an object deleted right after gibbing). Their channels point back at this, so let go.
+	g_AudioMan.DetachSoundContainerChannels(this);
 	Destroy(true);
 }
 

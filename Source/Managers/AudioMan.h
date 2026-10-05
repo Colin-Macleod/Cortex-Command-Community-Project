@@ -396,6 +396,11 @@ namespace RTE {
 		/// @return
 		bool StopSoundContainerPlayingChannels(SoundContainer* soundContainer, int player);
 
+		/// Lets the sounds a SoundContainer is playing carry on without it, by forgetting it on their channels. Called when a SoundContainer is
+		/// deleted while its sounds are still playing (e.g. a gib sound), so the audio system doesn't use the deleted object afterwards.
+		/// @param soundContainer The SoundContainer being deleted.
+		void DetachSoundContainerChannels(const SoundContainer* soundContainer);
+
 		/// Fades out playback a SoundContainer.
 		/// @param soundContainer A pointer to a SoundContainer object. Ownership is NOT transferred!
 		/// @param fadeOutTime The amount of time, in ms, to fade out over.
