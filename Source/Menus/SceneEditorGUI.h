@@ -169,6 +169,9 @@ namespace RTE {
 		/// @param brainPos The designated position of the brain.
 		void UpdateBrainSkyPathAndCost(Vector brainPos);
 
+		/// Waits until the path request made by UpdateBrainSkyPathAndCost, if any, is complete, so the brain's path cost is known.
+		void WaitForBrainSkyPath();
+
 		enum BlinkMode {
 			NOBLINK = 0,
 			OBJECTBLINKON,

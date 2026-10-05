@@ -23,6 +23,8 @@
 #include "SettingsMan.h"
 #include "Deployment.h"
 #include "BunkerAssemblyScheme.h"
+#include "PathFinder.h"
+#include "TimerMan.h"
 
 #include "GLResourceMan.h"
 #include "tracy/Tracy.hpp"
@@ -261,7 +263,7 @@ bool SceneEditorGUI::TestBrainResidence(bool noBrainIsOK) {
 	}
 
 	// Block on our path request completing
-	while (m_PathRequest && !m_PathRequest->complete) {};
+	WaitForBrainSkyPath();
 
 	// Nope! Not valid spot for this brain we found, need to force user to re-place it
 	if (m_BrainSkyPathCost > MAXBRAINPATHCOST && m_RequireClearPathToOrbit) {
@@ -747,7 +749,7 @@ void SceneEditorGUI::Update() {
 			// Placing governor brain, which actually just puts it back into the resident brain roster
 			if (m_PreviousMode == INSTALLINGBRAIN) {
 				// Force our path request to complete so we know whether we can place or not
-				while (m_PathRequest && !m_PathRequest->complete) {};
+				WaitForBrainSkyPath();
 
 				// Only place if the brain has a clear path to the sky!
 				if (m_BrainSkyPathCost <= MAXBRAINPATHCOST || !m_RequireClearPathToOrbit) {
@@ -1439,6 +1441,15 @@ void SceneEditorGUI::UpdateBrainSkyPathAndCost(Vector brainPos) {
 		                                                          m_BrainSkyPath = const_cast<std::list<Vector>&>(pathRequest->path);
 		                                                          m_BrainSkyPathCost = pathRequest->totalCost;
 	                                                          });
+}
+
+void SceneEditorGUI::WaitForBrainSkyPath() {
+	if (m_PathRequest && !m_PathRequest->complete && g_TimerMan.IsInDeterministicMode()) {
+		// In deterministic (co-op) play, path results only become visible at a fixed point of the sim update (when they're published, in a fixed order),
+		// which is later in this update than here, so waiting for this one would never end. Publish the results now instead, as every computer does here.
+		PathFinder::PublishDeterministicResults();
+	}
+	while (m_PathRequest && !m_PathRequest->complete) {};
 }
 
 bool SceneEditorGUI::UpdateBrainPath() {
