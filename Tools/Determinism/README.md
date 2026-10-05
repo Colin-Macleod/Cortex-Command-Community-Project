@@ -60,7 +60,7 @@ Tools/Determinism/stress/stress.py chaos memory --quick # chosen scenarios, a qu
 Tools/Determinism/stress/stress.py --jobs 2             # two scenarios at a time
 ```
 
-Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console output and `results.json` go to `--out` (default `/tmp/cccp-stress`).
+Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console output and `results.json` go to `--out` (default `/tmp/cccp-stress`). Each game instance gets its own Xvfb display, numbered 200-900 and skipping any display that's in use, so other X servers are left alone. A session whose activity ends before the target number of sim updates (e.g. Keepie Uppie when the bots lose the rocket) passes if every peer stopped at the same sim update with identical logs.
 
 | Scenario | What's different between the peers |
 |---|---|

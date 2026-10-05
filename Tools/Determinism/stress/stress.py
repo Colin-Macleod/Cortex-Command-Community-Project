@@ -21,6 +21,7 @@ import random
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -142,34 +143,77 @@ SCENARIOS = [
 ]
 
 
+def display_in_use(number):
+    return os.path.exists(f"/tmp/.X{number}-lock") or os.path.exists(f"/tmp/.X11-unix/X{number}")
+
+
 class Display:
-    """An Xvfb server on a free display number."""
+    """An Xvfb server on a display number nothing else uses (other runs of this script, or anyone's own X servers)."""
 
     lock = threading.Lock()
     used = set()
 
     def __init__(self):
-        with Display.lock:
-            while True:
-                number = random.randint(200, 900)
-                if number not in Display.used and not os.path.exists(f"/tmp/.X{number}-lock"):
-                    Display.used.add(number)
-                    break
-        self.number = number
-        self.proc = subprocess.Popen(["Xvfb", f":{number}", "-screen", "0", "1280x720x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1)
+        for attempt in range(20):
+            with Display.lock:
+                number = next(n for n in iter(lambda: random.randint(200, 900), None) if n not in Display.used and not display_in_use(n))
+                Display.used.add(number)
+            self.number = number
+            # No TCP listener: it's not needed, and its port (6000 + display) could be taken.
+            self.proc = subprocess.Popen(["Xvfb", f":{number}", "-screen", "0", "1280x720x24", "-nolisten", "tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Ready once its socket exists. If it exits instead, another server took the number between the check and the start: try another.
+            deadline = time.time() + 15
+            while self.proc.poll() is None and not os.path.exists(f"/tmp/.X11-unix/X{number}") and time.time() < deadline:
+                time.sleep(0.1)
+            if self.proc.poll() is None and os.path.exists(f"/tmp/.X11-unix/X{number}"):
+                return
+            self.close()
+        raise RuntimeError("couldn't start an Xvfb server")
 
     def close(self):
-        self.proc.kill()
-        self.proc.wait()
+        # SIGTERM, so Xvfb removes its lock file and socket; a killed one leaves them behind.
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
         with Display.lock:
             Display.used.discard(self.number)
+
+
+class Port:
+    """A UDP port that's free right now and not handed to another session of this run."""
+
+    lock = threading.Lock()
+    used = set()
+
+    def __init__(self):
+        with Port.lock:
+            while True:
+                number = random.randint(20000, 40000)
+                if number in Port.used:
+                    continue
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                    try:
+                        probe.bind(("", number))
+                    except OSError:
+                        continue
+                Port.used.add(number)
+                break
+        self.number = number
+
+    def close(self):
+        with Port.lock:
+            Port.used.discard(self.number)
 
 
 def count_ticks(path):
     try:
         with open(path) as f:
-            return sum(1 for line in f if line and not line.startswith("#"))
+            # Complete lines only: a game killed mid-write leaves part of one.
+            return sum(1 for line in f if line.endswith("\n") and not line.startswith("#"))
     except OSError:
         return 0
 
@@ -182,11 +226,19 @@ def read_text(path):
         return ""
 
 
+def match_ended(text):
+    """Whether a peer's console output says its match ended because the Activity ended (e.g. the players lost)."""
+    return "CO-OP: Match ended" in text and re.search(r"Activity .* was ended", text) is not None
+
+
 def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, timeout, freeze=None):
     """Runs one co-op session. Returns a result dict."""
-    port = random.randint(20000, 40000)
+    port_holder = Port()
+    port = port_holder.number
     displays, procs, logs, outs = [], [], [], []
     started = time.time()
+    ended_early = False
+    killed_by_us = set()
     try:
         for index, p in enumerate(peers):
             display = Display()
@@ -218,6 +270,7 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
 
         frozen = False
         last_progress, last_ticks = time.time(), -1
+        host_exited_at = None
         while True:
             if all(proc.poll() is not None for proc in procs[1:]):
                 break
@@ -229,6 +282,19 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
                 last_progress, last_ticks = time.time(), ticks_now
             elif time.time() - last_progress > (300 if ticks_now == 0 else 180):
                 break
+            # The Activity ended before the tick target (e.g. Keepie Uppie when the bots lose the rocket): the peers go back to the menus and
+            # never reach it. Stop once every peer says so and no log has grown for a while; judge() checks the logs match up to there.
+            if ticks_now > 0 and time.time() - last_progress > 15 and all(match_ended(read_text(o)) for o in outs):
+                ended_early = True
+                break
+            # A host that crashed or quit leaves the clients waiting for it until the watchdog fires.
+            if procs[0].poll() is not None:
+                host_exited_at = host_exited_at or time.time()
+                if time.time() - max(host_exited_at, last_progress) > 30:
+                    break
+            # Rejected clients stay in the menus, so there's nothing more to wait for.
+            if all("rejected the connection" in read_text(o) for o in outs[1:]):
+                break
             if freeze and not frozen and count_ticks(logs[freeze["peer"]]) >= freeze["at_tick"]:
                 procs[freeze["peer"]].send_signal(signal.SIGSTOP)
                 time.sleep(freeze["seconds"])
@@ -239,18 +305,23 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
         deadline = time.time() + 30
         while procs[0].poll() is None and time.time() < deadline:
             time.sleep(1)
-        timed_out = any(proc.poll() is None for proc in procs)
+        # The host's match can end when the last client leaves, before it reaches its own (later) target; it then waits in the menus,
+        # which is fine once every client finished.
+        host_done = procs[0].poll() is not None or (all(proc.poll() == 0 for proc in procs[1:]) and "CO-OP: Match ended" in read_text(outs[0]))
+        timed_out = not ended_early and (not host_done or any(proc.poll() is None for proc in procs[1:]))
     finally:
-        for proc in procs:
+        for index, proc in enumerate(procs):
             if proc.poll() is None:
                 proc.send_signal(signal.SIGCONT)
                 proc.kill()
+                killed_by_us.add(index)
             proc.wait()
         for display in displays:
             display.close()
+        port_holder.close()
 
     result = {"name": name, "seconds": round(time.time() - started), "exit_codes": [proc.returncode for proc in procs],
-              "ticks": [count_ticks(log) for log in logs], "timed_out": timed_out, "comparisons": []}
+              "ticks": [count_ticks(log) for log in logs], "timed_out": timed_out, "ended_early": ended_early, "comparisons": []}
     host = compare_logs.load(logs[0]) if os.path.exists(logs[0]) else {}
     for index in range(1, len(peers)):
         client = compare_logs.load(logs[index]) if os.path.exists(logs[index]) else {}
@@ -266,6 +337,8 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
     texts = [read_text(o) for o in outs]
     result["desync_reported"] = any("DESYNC" in text for text in texts)
     result["rejected"] = any("rejected the connection" in text for text in texts[1:])
+    # Killed by something else, e.g. the kernel's out-of-memory killer when the machine is short of memory.
+    result["killed"] = [index for index, code in enumerate(result["exit_codes"]) if code == -signal.SIGKILL and index not in killed_by_us]
     result["crashed"] = any(code not in (0, None) and code != -signal.SIGKILL for code in result["exit_codes"]) or any(
         "Stack trace" in text or "Segmentation fault" in text or "ERROR: Assertion" in text or "Abort in file" in text for text in texts)
     # Script and engine errors, minus the audio system's complaints about having no sound device.
@@ -289,11 +362,18 @@ def judge(scenario, result, ticks):
         return True, f"divergence caught at tick {diverged[0]['diverged']['tick']} and reported in game"
     if result["crashed"]:
         return False, f"a peer crashed (exit codes {result['exit_codes']})"
+    if result["killed"]:
+        return False, f"peer {result['killed'][0]} was killed from outside (out of memory?), exit codes {result['exit_codes']}"
     if diverged:
         d = diverged[0]
         return False, f"peer {d['peer']} diverged at tick {d['diverged']['tick']} ({', '.join(d['diverged']['components'])})"
     if result["desync_reported"]:
         return False, "desync reported in game"
+    if result.get("ended_early"):
+        # Every peer's log has to stop at the same tick: a peer that fell behind or dropped out isn't a clean end.
+        if len(set(result["ticks"])) == 1 and all(c["common_ticks"] == result["ticks"][0] for c in result["comparisons"]):
+            return True, f"identical for {result['ticks'][0]} ticks on {len(result['ticks'])} peers (the activity ended before {ticks})"
+        return False, f"the activity ended early, but the peers stopped at different ticks {result['ticks']}"
     short = [c for c in result["comparisons"] if c["common_ticks"] < ticks]
     if short or result["timed_out"]:
         return False, f"incomplete: compared {[c['common_ticks'] for c in result['comparisons']]} of {ticks} ticks" + (" (timed out)" if result["timed_out"] else "")

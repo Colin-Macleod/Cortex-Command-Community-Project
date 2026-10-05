@@ -11,9 +11,13 @@ def load(path):
         for line in f:
             if line.startswith("#"):
                 continue
-            counts, hashes, combined = line.split("|")
-            counts = counts.split()
-            tick = int(counts[0])
+            try:
+                counts, hashes, combined = line.split("|")
+                counts = counts.split()
+                tick = int(counts[0])
+            except ValueError:
+                # The last line of a log whose game was killed while writing it.
+                continue
             rows[tick] = {"counts": tuple(int(c) for c in counts[1:]), "hashes": hashes.split(), "combined": combined.strip()}
     return rows
 
