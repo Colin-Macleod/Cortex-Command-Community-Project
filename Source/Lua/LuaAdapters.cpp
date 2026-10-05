@@ -324,6 +324,10 @@ void LuaAdaptersAHuman::ReloadFirearms(AHuman* luaSelfObject) {
 	luaSelfObject->ReloadFirearms(false);
 }
 
+bool LuaAdaptersAHuman::EquipShieldInBGArm(AHuman* luaSelfObject) {
+	return luaSelfObject->EquipShieldInBGArm();
+}
+
 float LuaAdaptersSceneObject::GetTotalValue(const SceneObject* luaSelfObject, int nativeModule, float foreignMult) {
 	return luaSelfObject->GetTotalValue(nativeModule, foreignMult, 1.0F);
 }
@@ -516,6 +520,14 @@ void LuaAdaptersMovableMan::AddParticle(MovableMan& movableMan, MovableObject* p
 	}
 }
 
+const std::vector<MovableObject*>* LuaAdaptersMovableMan::GetMOsAtPosition1(const MovableMan& movableMan, int pixelX, int pixelY) {
+	return movableMan.GetMOsAtPosition(pixelX, pixelY, Activity::NoTeam, false);
+}
+
+const std::vector<MovableObject*>* LuaAdaptersMovableMan::GetMOsAtPosition2(const MovableMan& movableMan, int pixelX, int pixelY, int ignoreTeam) {
+	return movableMan.GetMOsAtPosition(pixelX, pixelY, ignoreTeam, false);
+}
+
 void LuaAdaptersMovableMan::SendGlobalMessage1(MovableMan& movableMan, const std::string& message) {
 	GAScripted* scriptedActivity = dynamic_cast<GAScripted*>(g_ActivityMan.GetActivity());
 	if (scriptedActivity) {
@@ -630,6 +642,10 @@ MOID LuaAdaptersSceneMan::CastMORay1(SceneMan& sceneMan, const Vector& start, co
 MOID LuaAdaptersSceneMan::CastMORay2(SceneMan& sceneMan, const Vector& start, const Vector& ray, MOID ignoreMOID, int ignoreTeam, unsigned char ignoreMaterial, bool ignoreAllTerrain, int skip) {
 	std::vector<MOID> ignoreMOIDs = {ignoreMOID};
 	return sceneMan.CastMORay(start, ray, ignoreMOIDs, ignoreTeam, ignoreMaterial, ignoreAllTerrain, skip);
+}
+
+bool LuaAdaptersSceneMan::CastFindMORay(SceneMan& sceneMan, const Vector& start, const Vector& ray, MOID targetMOID, Vector& resultPos, unsigned char ignoreMaterial, bool ignoreAllTerrain, int skip) {
+	return sceneMan.CastFindMORay(start, ray, targetMOID, resultPos, ignoreMaterial, ignoreAllTerrain, skip);
 }
 
 const std::vector<MovableObject*>* LuaAdaptersSceneMan::CastAllMOsRay(SceneMan& sceneMan, const Vector& start, const Vector& ray, const luabind::object& ignoreMOIDs, int ignoreTeam, unsigned char ignoreMaterial, bool ignoreAllTerrain, int skip) {

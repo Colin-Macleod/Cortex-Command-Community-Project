@@ -327,6 +327,7 @@ namespace RTE {
 #pragma region AHuman Lua Adapters
 	struct LuaAdaptersAHuman {
 		static void ReloadFirearms(AHuman* luaSelfObject);
+		static bool EquipShieldInBGArm(AHuman* luaSelfObject);
 	};
 #pragma endregion
 
@@ -430,6 +431,9 @@ namespace RTE {
 
 		static void SendGlobalMessage1(MovableMan& movableMan, const std::string& message);
 		static void SendGlobalMessage2(MovableMan& movableMan, const std::string& message, luabind::object context);
+
+		static const std::vector<MovableObject*>* GetMOsAtPosition1(const MovableMan& movableMan, int pixelX, int pixelY);
+		static const std::vector<MovableObject*>* GetMOsAtPosition2(const MovableMan& movableMan, int pixelX, int pixelY, int ignoreTeam);
 	};
 #pragma endregion
 
@@ -558,6 +562,9 @@ namespace RTE {
 		/// for optimization reasons. 0 = every pixel is checked.
 		/// @return A vector of pointers to all MovableObjects met along the ray, who aren't ignored.
 		static const std::vector<MovableObject*>* CastAllMOsRay(SceneMan& sceneMan, const Vector& start, const Vector& ray, const luabind::object& ignoreMOIDs, int ignoreTeam = Activity::NoTeam, unsigned char ignoreMaterial = 0, bool ignoreAllTerrain = false, int skip = 0);
+
+		/// Traces along a vector and shows where a specific MOID has been found, also checking the target's child MOIDs.
+		static bool CastFindMORay(SceneMan& sceneMan, const Vector& start, const Vector& ray, MOID targetMOID, Vector& resultPos, unsigned char ignoreMaterial, bool ignoreAllTerrain, int skip);
 		
 		/// Traces along a vector and returns the length of how far the trace went
 		/// without hitting any non-ignored terrain material or MOID at all.
