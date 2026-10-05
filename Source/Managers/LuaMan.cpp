@@ -928,8 +928,10 @@ int LuaStateWrapper::RunScriptFileAndRetrieveFunctions(const std::string& filePa
 
 void LuaStateWrapper::Update() {
 	for (const auto& [mo, registrationOrder]: m_AddedRegisteredMOs) {
-		m_RegisteredMOs.emplace(registrationOrder, mo);
-		m_RegisteredMOOrder.emplace(mo, registrationOrder);
+		// Only one entry per MO, or unregistering it would leave a dangling one behind.
+		if (m_RegisteredMOOrder.emplace(mo, registrationOrder).second) {
+			m_RegisteredMOs.emplace(registrationOrder, mo);
+		}
 	}
 	m_AddedRegisteredMOs.clear();
 }

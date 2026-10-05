@@ -78,9 +78,14 @@ namespace RTE {
 #pragma endregion
 
 #pragma region Script Responsibility Handling
-		/// Registers an MO as using us.
+		/// Registers an MO as using us. Does nothing if it's already registered: an MO whose Create function failed tries to initialize its scripts (and register) again every update,
+		/// and registering it again under a new order would leave entries behind when it's unregistered.
 		/// @param moToRegister The MO to register with us. Ownership is NOT transferred!
-		void RegisterMO(MovableObject* moToRegister) { m_AddedRegisteredMOs.emplace(moToRegister, m_NextRegistrationOrder++); }
+		void RegisterMO(MovableObject* moToRegister) {
+			if (m_RegisteredMOOrder.find(moToRegister) == m_RegisteredMOOrder.end() && m_AddedRegisteredMOs.find(moToRegister) == m_AddedRegisteredMOs.end()) {
+				m_AddedRegisteredMOs.emplace(moToRegister, m_NextRegistrationOrder++);
+			}
+		}
 
 		/// Unregisters an MO as using us.
 		/// @param moToUnregister The MO to unregister as using us. Ownership is NOT transferred!
