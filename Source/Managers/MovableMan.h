@@ -12,6 +12,7 @@
 #include "BS_thread_pool.hpp"
 
 #include <mutex>
+#include <shared_mutex>
 #include <map>
 #include <future>
 #include <unordered_set>
@@ -499,6 +500,13 @@ namespace RTE {
 			return knownObject != m_KnownObjects.end() ? knownObject->second : nullptr;
 		}
 
+		/// Gets whether an object that was stored in an earlier sim update still exists, i.e. hasn't been deleted since.
+		/// Unlike ValidMO, IsActor etc., which only compare addresses, this can't mistake a new object that was given the deleted object's memory for it.
+		/// @param mo The stored object.
+		/// @param uniqueID The unique ID the object had when it was stored.
+		/// @return Whether the object still exists. It may or may not be in this' lists (it can be attached to something, or in an inventory), so check that separately where it matters.
+		bool StoredObjectExists(const MovableObject* mo, long uniqueID) { return mo && FindObjectByUniqueID(uniqueID) == mo; }
+
 		/// Returns the size of the object registry collection
 		/// @return Size of the objects registry.
 		unsigned int GetKnownObjectsCount() { return m_KnownObjects.size(); }
@@ -583,6 +591,27 @@ namespace RTE {
 		std::unordered_set<const MovableObject*> m_ValidActors;
 		std::unordered_set<const MovableObject*> m_ValidItems;
 		std::unordered_set<const MovableObject*> m_ValidParticles;
+		// Guards the three sets above. Scripts read them (MovableMan:ValidMO, IsActor, IsDevice, IsParticle) and add to them (MovableMan:AddParticle etc.) in ThreadedUpdate, which runs the Lua states on several threads at once outside deterministic mode, and an insert can rehash a set while another thread is looking something up in it.
+		// Only hold it around the set operations themselves: the code between them can run scripts, which take it again.
+		std::shared_mutex m_ValidMOsMutex;
+
+		/// Adds an MO to one of the valid MO sets, thread-safely.
+		void AddValidMO(std::unordered_set<const MovableObject*>& validMOs, const MovableObject* mo) {
+			std::unique_lock<std::shared_mutex> lock(m_ValidMOsMutex);
+			validMOs.insert(mo);
+		}
+
+		/// Removes an MO from one of the valid MO sets, thread-safely.
+		void RemoveValidMO(std::unordered_set<const MovableObject*>& validMOs, const MovableObject* mo) {
+			std::unique_lock<std::shared_mutex> lock(m_ValidMOsMutex);
+			validMOs.erase(mo);
+		}
+
+		/// Clears one of the valid MO sets, thread-safely.
+		void ClearValidMOs(std::unordered_set<const MovableObject*>& validMOs) {
+			std::unique_lock<std::shared_mutex> lock(m_ValidMOsMutex);
+			validMOs.clear();
+		}
 
 		// Mutexes to ensure MOs aren't being removed from separate threads at the same time
 		std::mutex m_ActorsMutex;
