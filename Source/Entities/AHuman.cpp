@@ -2930,7 +2930,8 @@ void AHuman::DrawHUD(BITMAP* pTargetBitmap, const Vector& targetPos, int whichSc
 		}
 
 		// Pickup GUI
-		if (!m_Controller.IsState(PIE_MENU_ACTIVE) && m_pItemInReach) {
+		// The item may have been deleted since this actor's update checked it (later in the same sim update).
+		if (!m_Controller.IsState(PIE_MENU_ACTIVE) && m_pItemInReach && g_MovableMan.IsDevice(m_pItemInReach)) {
 			std::snprintf(str, sizeof(str), " %c %s", -49, m_pItemInReach->GetPresetName().c_str());
 			pSmallFont->DrawAligned(&allegroBitmap, drawPos.GetFloorIntX(), drawPos.GetFloorIntY() + m_HUDStack + 3, str, GUIFont::Centre);
 			m_HUDStack -= 9;
@@ -2961,18 +2962,20 @@ void AHuman::SetLimbPathPushForce(MovementState movementState, float newForce) {
 
 int AHuman::WhilePieMenuOpenListener(const PieMenu* pieMenu) {
 	int result = Actor::WhilePieMenuOpenListener(pieMenu);
+	// The item may have been deleted since this actor's update last checked it.
+	const HeldDevice* itemInReach = g_MovableMan.IsDevice(m_pItemInReach) ? m_pItemInReach : nullptr;
 
 	for (PieSlice* pieSlice: GetPieMenu()->GetPieSlices()) {
 		switch (pieSlice->GetType()) {
 			case PieSliceType::Pickup:
 			case PieSliceType::Reload:
-				pieSlice->SetType(m_pItemInReach ? PieSliceType::Pickup : PieSliceType::Reload);
-				pieSlice->SetIcon(dynamic_cast<Icon*>(g_PresetMan.GetEntityPreset("Icon", m_pItemInReach ? "Pick Up" : "Refresh")->Clone()));
+				pieSlice->SetType(itemInReach ? PieSliceType::Pickup : PieSliceType::Reload);
+				pieSlice->SetIcon(dynamic_cast<Icon*>(g_PresetMan.GetEntityPreset("Icon", itemInReach ? "Pick Up" : "Refresh")->Clone()));
 
 				if (pieSlice->GetType() == PieSliceType::Pickup) {
-					if (m_pFGArm || (m_pBGArm && m_pItemInReach->IsOneHanded())) {
+					if (m_pFGArm || (m_pBGArm && itemInReach->IsOneHanded())) {
 						pieSlice->SetEnabled(m_Status != INACTIVE);
-						pieSlice->SetDescription("Pick Up " + m_pItemInReach->GetPresetName());
+						pieSlice->SetDescription("Pick Up " + itemInReach->GetPresetName());
 					} else {
 						pieSlice->SetEnabled(false);
 						pieSlice->SetDescription("No Arm");
