@@ -45,7 +45,6 @@ std::string RTEError::s_LastIgnoredAssertDescription = "";
 std::source_location RTEError::s_LastIgnoredAssertLocation = {};
 
 #if (defined(__linux__) || (defined(__APPLE__) && defined(__MACH__)))
-backward::SignalHandling sh;
 
 #include <csignal>
 
@@ -230,8 +229,11 @@ void RTEError::SetExceptionHandlers() {
 	std::set_terminate(terminateHandler);
 #endif
 #else
-	// Segfaults and such get a stack trace from backward (see sh above). Chain a handler in front of it that adds which Lua script was running.
+	// Segfaults and such get a stack trace from backward. Chain a handler in front of it that adds which Lua script was running.
 	std::set_terminate(terminateHandler);
+	// Constructed here rather than as a global, so it's certainly installed before the handler below chains to it (globals in different files are
+	// constructed in no particular order, and SetExceptionHandlers runs during static initialization).
+	static backward::SignalHandling backwardSignalHandling;
 	for (int signalNumber: {SIGSEGV, SIGBUS, SIGFPE, SIGILL}) {
 		struct sigaction action {};
 		action.sa_sigaction = LuaCrashContextHandler;
