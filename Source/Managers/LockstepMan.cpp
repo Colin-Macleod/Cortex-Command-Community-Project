@@ -460,9 +460,28 @@ void LockstepMan::HandleCommandLine(int argCount, char** argValue) {
 		} else if (arg == "-coop-sim-jitter" && hasNext) {
 			m_Options.SimulatedJitterMS = std::max(0, std::atoi(next.c_str()));
 			++i;
+		} else if (arg == "-coop-chain" && hasNext) {
+			// "Activity@Scene;Activity@Scene;...", the scene being optional.
+			std::istringstream stream(next);
+			std::string entry;
+			while (std::getline(stream, entry, ';')) {
+				if (!entry.empty()) {
+					const size_t at = entry.find('@');
+					m_Options.AutoChain.emplace_back(entry.substr(0, at), at == std::string::npos ? std::string() : entry.substr(at + 1));
+				}
+			}
+			++i;
+		} else if (arg == "-coop-match-updates" && hasNext) {
+			m_Options.MatchUpdates = std::max(0LL, std::atoll(next.c_str()));
+			++i;
 		}
 	}
 
+	if (!m_Options.AutoChain.empty()) {
+		m_AutoChainIndex = 0;
+		m_Options.AutoActivity = m_Options.AutoChain.front().first;
+		m_Options.AutoScene = m_Options.AutoChain.front().second;
+	}
 	if (!hostPort.empty()) {
 		StartHosting(static_cast<unsigned short>(std::atoi(hostPort.c_str())));
 	} else if (!joinAddress.empty()) {
@@ -1656,6 +1675,12 @@ void LockstepMan::EndMatch() {
 	if (m_Role == Role::Host) {
 		m_StatusMessage.clear();
 		BroadcastLobbyStatus();
+		if (m_AutoStartDone && m_AutoChainIndex + 1 < m_Options.AutoChain.size()) {
+			++m_AutoChainIndex;
+			m_Options.AutoActivity = m_Options.AutoChain[m_AutoChainIndex].first;
+			m_Options.AutoScene = m_Options.AutoChain[m_AutoChainIndex].second;
+			m_AutoStartDone = false;
+		}
 	} else if (m_ConnectedToHost) {
 		m_StatusMessage = "Waiting for the host to start an activity...";
 	}
@@ -1964,6 +1989,12 @@ void LockstepMan::EndSimUpdate() {
 		}
 	}
 	++m_NextSimUpdate;
+	if (m_Options.MatchUpdates > 0 && m_NextSimUpdate >= m_Options.MatchUpdates && g_ActivityMan.IsInActivity()) {
+		// Testing: every peer ends the match at the same sim update (the host then starts the next chained Activity, if any).
+		g_ConsoleMan.PrintString("CO-OP: Ending the match after " + std::to_string(m_NextSimUpdate) + " sim updates.");
+		g_ActivityMan.EndActivity();
+		g_ActivityMan.SetInActivity(false);
+	}
 	HostBuildBundles();
 }
 

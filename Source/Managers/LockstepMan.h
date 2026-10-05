@@ -216,6 +216,8 @@ namespace RTE {
 			bool InputDelayFixed = false; //!< Whether the input delay was set on the command line. Otherwise the host picks it from the measured round trip times.
 			int SimulatedLatencyMS = 0; //!< Testing: artificial delay added to every outgoing message.
 			int SimulatedJitterMS = 0; //!< Testing: additional random delay (0 to this) added to every outgoing message. Message order is preserved.
+			std::vector<std::pair<std::string, std::string>> AutoChain; //!< Testing: Activities (and scenes) to start automatically one after another, in the same processes.
+			long long MatchUpdates = 0; //!< Testing: if positive, every peer ends each match after this many sim updates (at the same update everywhere).
 		};
 
 		Role m_Role = Role::None; //!< What this machine is doing in a session.
@@ -236,6 +238,7 @@ namespace RTE {
 		bool m_ChangedResolution = false; //!< Whether joining or leaving changed the resolution and the menus haven't been rebuilt for it yet.
 		LaunchOptions m_Options; //!< Configuration from the command line.
 		bool m_AutoStartDone = false; //!< Host: whether the automatic Activity start has happened.
+		size_t m_AutoChainIndex = 0; //!< Host: which entry of the automatic Activity chain is being played.
 		std::chrono::steady_clock::time_point m_LastPingTime; //!< Host: when round trip measurements were last sent.
 
 		// Match state
