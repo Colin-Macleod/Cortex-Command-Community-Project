@@ -1477,7 +1477,11 @@ VirtualInputFrame LockstepMan::CaptureLocalInput() {
 			// Open the pie menu, point at one of eight directions and release it a while later, which picks the slice there.
 			m_BotHeld.ElementHeld |= 1ULL << InputElements::INPUT_PIEMENU_ANALOG;
 			m_BotHeld.MouseHeld |= 1 << MouseButtons::MOUSE_RIGHT;
+			// In a build phase, half the time to the left, where the editor's Done Building slice is.
 			float angle = static_cast<float>(m_BotRNG() % 8) * c_QuarterPI;
+			if (editing && chance(50)) {
+				angle = c_PI;
+			}
 			m_BotHeld.MouseMovement[0] = std::cos(angle) * 10.0F;
 			m_BotHeld.MouseMovement[1] = -std::sin(angle) * 10.0F;
 			m_BotHoldUpdates = 15 + static_cast<int>(m_BotRNG() % 40);
