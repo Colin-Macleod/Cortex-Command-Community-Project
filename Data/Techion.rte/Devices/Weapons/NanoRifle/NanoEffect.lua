@@ -69,7 +69,9 @@ function Update(self)
 			if IsAttachable(self.target) then
 				local parent = ToAttachable(self.target):GetParent();
 				self.nextTargetID = parent and parent.UniqueID or nil;
-				self.nextTargetOffset = ToAttachable(self.target).ParentOffset;
+				-- A copy: ParentOffset refers to the attachable's own memory, which is gone once it's deleted.
+				local parentOffset = ToAttachable(self.target).ParentOffset;
+				self.nextTargetOffset = Vector(parentOffset.X, parentOffset.Y);
 			end
 
 			if self.healing then
