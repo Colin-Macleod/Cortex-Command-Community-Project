@@ -1021,7 +1021,8 @@ function DecisionDay:UpdateCamera()
 			scrollTargetAndSpeed = {nil, fastScroll};
 		else
 			local dropShipToFollow = #self.initialDropShipsAndVelocities > 0 and self.initialDropShipsAndVelocities[1].dropShip or nil;
-			if dropShipToFollow then
+			-- It can have been deleted since the list was last cleaned up.
+			if dropShipToFollow and MovableMan:ValidMO(dropShipToFollow) then
 				scrollTargetAndSpeed = {dropShipToFollow.Pos, veryFastScroll};
 			else
 				scrollTargetAndSpeed = {self.initialDropShipSpawnArea.Center, veryFastScroll};
