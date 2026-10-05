@@ -1,5 +1,7 @@
 #include "LuaMan.h"
 
+#include <random>
+
 #include "LuabindObjectWrapper.h"
 #include "LuaBindingRegisterDefinitions.h"
 #include "ThreadMan.h"
@@ -278,6 +280,33 @@ void LuaStateWrapper::Initialize() {
 
 	if (g_SettingsMan.EnableLuaDebugging()) {
 		luaL_dostring(m_State, "require(\"mobdebug\").coro(); require(\"mobdebug\").start();");
+	}
+
+	// Testing aid: with CCCP_DT_PAIRS_AUDIT set, pairs() reports (once per call site) every loop over a table with keys that aren't strings or numbers. Those
+	// keys (objects, tables, functions) are hashed by their address in the Lua heap, so such a loop visits them in an order that differs between computers,
+	// and between processes with different histories. Any such loop whose result depends on the order desyncs co-op.
+	if (const char* audit = std::getenv("CCCP_DT_PAIRS_AUDIT"); audit && audit[0] != '\0') {
+		luaL_dostring(m_State,
+		              "do local rawPairs = pairs; local reported = {};\n"
+		              "pairs = function(t) if type(t) == 'table' then for k in next, t do local keyType = type(k); if keyType ~= 'string' and keyType ~= 'number' then\n"
+		              "local info = debug and debug.getinfo(2, 'Sl'); local site = info and (info.short_src .. ':' .. tostring(info.currentline)) or '?';\n"
+		              "if not reported[site] then reported[site] = true; ConsoleMan:PrintString('PAIRSAUDIT ' .. site .. ' ' .. keyType); end break; end end end return rawPairs(t); end; end\n");
+	}
+	// Testing aid: with CCCP_DT_LUA_HEAP_SHUFFLE=<seed>, garbage of seeded random sizes is allocated and kept, so this state's heap layout (and so the order
+	// pairs() visits non-string, non-number keys in) differs from that of a peer started with another seed, as it would on another computer.
+	if (const char* shuffle = std::getenv("CCCP_DT_LUA_HEAP_SHUFFLE"); shuffle && shuffle[0] != '\0') {
+		static unsigned int stateIndex = 0;
+		std::minstd_rand shuffleRNG(static_cast<unsigned int>(std::atoll(shuffle)) * 7919U + (++stateIndex));
+		std::string code = "_HeapShuffle = {};\n";
+		const int count = 50 + static_cast<int>(shuffleRNG() % 200);
+		for (int i = 0; i < count; ++i) {
+			code += "_HeapShuffle[" + std::to_string(i + 1) + "] = {";
+			for (unsigned int element = shuffleRNG() % 40; element > 0; --element) {
+				code += "0,";
+			}
+			code += "};\n";
+		}
+		luaL_dostring(m_State, code.c_str());
 	}
 }
 
