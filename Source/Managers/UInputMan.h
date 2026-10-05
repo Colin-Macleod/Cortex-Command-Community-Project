@@ -179,9 +179,17 @@ namespace RTE {
 		bool AnyPress() const;
 
 		/// Gets whether there are any start key/button presses at all. MUST call Update before calling this for it to work properly!
+		/// During a lockstep session, Esc and space presses come from the players' synced keys (any player's), like other raw key queries.
 		/// @param includeSpacebar Whether to check for space bar presses or not.
 		/// @return Whether any start buttons or keys have been pressed at all since last frame.
 		bool AnyStartPress(bool includeSpacebar = true);
+
+		/// Gets whether a player pressed a start key or button. During a lockstep session only that player's synced input counts; otherwise this is the same as AnyStartPress,
+		/// as the keyboard isn't any one player's.
+		/// @param whichPlayer The player to check.
+		/// @param includeSpacebar Whether to check for space bar presses or not.
+		/// @return Whether the player pressed a start button or key since last frame.
+		bool StartPressedByPlayer(int whichPlayer, bool includeSpacebar = true);
 
 		/// Gets whether there are any back button presses at all. MUST call Update before calling this for it to work properly!
 		/// @return Whether any back buttons have been pressed at all since last frame.

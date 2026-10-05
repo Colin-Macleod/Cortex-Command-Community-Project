@@ -1573,7 +1573,7 @@ void BuyMenuGUI::Update() {
 			} else {
 				SetEnabled(false);
 			}
-		} else if (m_pController->IsState(PRESS_SECONDARY) || g_UInputMan.AnyStartPress(false)) {
+		} else if (m_pController->IsState(PRESS_SECONDARY) || g_UInputMan.StartPressedByPlayer(m_pController->GetPlayer(), false)) {
 			if (m_SelectingEquipment) {
 				EnableEquipmentSelection(false);
 			} else {

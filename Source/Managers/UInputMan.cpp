@@ -272,8 +272,9 @@ bool UInputMan::AnyPress() const {
 }
 
 bool UInputMan::AnyStartPress(bool includeSpacebar) {
-	// Raw key presses are local to this machine, so they can't be part of the simulation during virtual input.
-	if (!m_VirtualInputActive && (KeyPressed(SDLK_ESCAPE) || (includeSpacebar && KeyPressed(SDLK_SPACE)))) {
+	// During virtual input these read the players' synced keys (any player's), so every peer gets the same answer. Keyboard players have no INPUT_START,
+	// so they need these to e.g. leave the game over screen.
+	if (KeyPressed(SDLK_ESCAPE) || (includeSpacebar && KeyPressed(SDLK_SPACE))) {
 		return true;
 	}
 	for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
@@ -282,6 +283,13 @@ bool UInputMan::AnyStartPress(bool includeSpacebar) {
 		}
 	}
 	return false;
+}
+
+bool UInputMan::StartPressedByPlayer(int whichPlayer, bool includeSpacebar) {
+	if (!RawInputVirtualized() || whichPlayer < Players::PlayerOne || whichPlayer >= Players::MaxPlayerCount) {
+		return AnyStartPress(includeSpacebar);
+	}
+	return GetKeyboardButtonState(SDL_SCANCODE_ESCAPE, InputState::Pressed, whichPlayer) || (includeSpacebar && GetKeyboardButtonState(SDL_SCANCODE_SPACE, InputState::Pressed, whichPlayer)) || ElementPressed(whichPlayer, InputElements::INPUT_START);
 }
 
 bool UInputMan::AnyBackPress() {
@@ -1239,7 +1247,10 @@ void UInputMan::HandleSpecialInput() {
 		RawInputScope localShortcuts;
 		// In a lockstep session only purely local shortcuts are allowed. Anything that pauses, restarts, reloads or retimes the simulation on this
 		// machine alone would desync it from the other peers.
-		if (g_ActivityMan.IsInActivity() && KeyPressed(SDLK_ESCAPE)) {
+		// Esc also closes the buy menu (through the synced input, a few sim updates later), so only arm leaving when this machine's player has none open.
+		const GameActivity* gameActivity = dynamic_cast<const GameActivity*>(g_ActivityMan.GetActivity());
+		const bool localMenuOpen = gameActivity && m_LocalVirtualPlayer >= Players::PlayerOne && m_LocalVirtualPlayer < Players::MaxPlayerCount && gameActivity->IsBuyGUIVisible(m_LocalVirtualPlayer);
+		if (g_ActivityMan.IsInActivity() && KeyPressed(SDLK_ESCAPE) && !localMenuOpen) {
 			g_LockstepMan.RequestLeave();
 		}
 		if (m_SkipHandlingSpecialInput) {
