@@ -152,6 +152,7 @@ A later AddressSanitizer sweep over every stock activity found more objects bein
 
 ## Known limitations
 
+- **Rare desyncs under heavy CPU load.** The stress suite and AddressSanitizer sweeps still occasionally turn up a desync when the machines are heavily loaded (in the last round: one 20000-update release run out of several, and three of eight AddressSanitizer runs while compiling alongside): it starts in a few particles' motion while every object is otherwise identical, and doesn't reproduce with the same inputs. The desync detector reports it in game. `CCCP_DT_DUMP_RING` and `CCCP_DT_LUA_RNG_LOG` are there to pin it down.
 - **Same build only.** Windows and Linux builds can't play together; neither can different compilers or compiler settings. See the feasibility report for what cross-platform play needs: own RNG distributions and a deterministic math library.
 - **Same game resolution on every computer.** Joining switches to the host's resolution automatically (and back when leaving); the window can still be scaled.
 - **One player per computer.** No local split-screen in a co-op match.
