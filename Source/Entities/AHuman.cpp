@@ -776,7 +776,6 @@ bool AHuman::EquipLoadedFirearmInGroup(const std::string& group, const std::stri
 
 				// We want to preserve inventory order, so rotate it to the device in question.
 				std::rotate(m_Inventory.begin(), m_Inventory.begin() + device_offset, m_Inventory.end());
-				m_Inventory.pop_front();
 
 				// Erase the inventory entry containing the device we now have switched to
 				*m_Inventory.begin() = 0;
@@ -1112,7 +1111,10 @@ bool AHuman::EquipShieldInBGArm(bool depositToFront) {
 			if (HeldDevice* heldDevice = m_pBGArm->GetHeldDevice()) {
 				heldDevice->Deactivate();
 				if (depositToFront) {
-					AddToInventoryFront(m_pBGArm->RemoveAttachable(heldDevice));
+					// Putting it in front moves the found device back one place.
+					if (AddToInventoryFront(m_pBGArm->RemoveAttachable(heldDevice))) {
+						++device_offset;
+					}
 				} else {
 					AddToInventoryBack(m_pBGArm->RemoveAttachable(heldDevice));
 				}
