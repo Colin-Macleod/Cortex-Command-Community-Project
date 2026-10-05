@@ -49,7 +49,7 @@ Without `-coop-scene`, the Activity's default scene is used, or the first compat
 ### During a match
 
 - Your screen shows only your own player, filling the window.
-- **Esc twice** leaves the match, also while the game is waiting for other players. If the host leaves, the match ends for everyone.
+- **Esc twice** leaves the match, also while the game is waiting for other players. If your buy menu is open, Esc closes it first. If the host leaves, the match ends for everyone.
 - Pausing, restarting, quick save/load and script reloading are disabled, because doing them on one computer only would break the sync. For the same reason the console doesn't run commands during a match.
 - The buy menu offers the built-in loadouts only, not the ones you saved yourself (each computer would otherwise use its own file for every player). Your saved loadouts are kept for single player.
 - On Linux the game restarts itself once at start-up, to use the same math library code on every CPU (see below). `-no-math-restart` skips that, e.g. when debugging, at the risk of being refused when joining.
@@ -102,6 +102,7 @@ Always on:
 - Per-state RNGs and unique ID ranges.
 - Each scripted object runs in the Lua state picked by its unique ID. It used to be whichever state's turn it was, and every object loading scripts on the main thread took a turn, including ones outside the simulation, so the same object could run in a different state (and draw from a different random generator) on another computer.
 - Ordered script registration.
+- Every match starts from the same state, however many matches a game instance played before: the cameras, the Lua modules loaded with `require()` (and any state kept in them), Lua garbage and the collision frame counter are reset when a co-op match starts.
 - Terrain cleaning and fog-of-war reveal processing done in the sim update instead of when drawing.
 - LuaJIT built without randomised string hashing, and with string IDs (which Lua tables hash string keys by) computed from the string's content instead of the order strings were created in. Otherwise `pairs()` over string keys would depend on everything a Lua state had ever done, which differs between computers.
 - Folder scans (module `.ini` files, Lua's `GetDirectoryList`/`GetFileList`) sorted by name, instead of file system order.
@@ -154,7 +155,7 @@ A later AddressSanitizer sweep over every stock activity found more objects bein
 ## Known limitations
 
 - **Mods' scripts that keep objects between updates** and check them with `MovableMan:IsParticle`/`IsActor`/`ValidMO` can still, rarely, act on the wrong object after theirs was deleted, which desyncs. Mods should keep `UniqueID`s and use `MovableMan:FindObjectByUniqueID`. The desync detector reports such cases; `CCCP_DT_DUMP_RING` and `CCCP_DT_LUA_RNG_LOG` (see `Tools/Determinism/README.md`) help pin them down.
-- **AddressSanitizer builds** still show an occasional desync in the *Determinism Chaos* test activity (one of three 1500-update runs in the last check), starting in a single flame particle's velocity with every other object identical. ASan gives every object its own allocation at an address that differs between runs, which the normal build's pools don't; it hasn't been seen in normal builds since the fixes above (the full stress suite, including a 20000-update match, and six further 4000-update chaos matches were identical).
+- **AddressSanitizer builds** used to show an occasional desync in the *Determinism Chaos* test activity, starting in a single flame particle's velocity. Two causes were found and fixed: particles remembered the object they mustn't hit by address only (so a new object at a freed one's address could be skipped), and the Techion nano effect script kept a reference into a deleted attachable's memory. Since then, three AddressSanitizer chaos matches (1200-1500 sim updates, one with each peer filling new memory with a different byte) were identical, but these runs are slow, so rarer causes can't be ruled out.
 - **Same build only.** Windows and Linux builds can't play together; neither can different compilers or compiler settings. See the feasibility report for what cross-platform play needs: own RNG distributions and a deterministic math library.
 - **Same game resolution on every computer.** Joining switches to the host's resolution automatically (and back when leaving); the window can still be scaled.
 - **One player per computer.** No local split-screen in a co-op match.
