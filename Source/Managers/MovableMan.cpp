@@ -51,6 +51,7 @@ MovableMan::~MovableMan() {
 }
 
 void MovableMan::Clear() {
+	m_SimUpdateFrameNumber = 0;
 	m_Actors.clear();
 	m_ContiguousActorIDs.clear();
 	m_Items.clear();
@@ -259,6 +260,8 @@ void MovableMan::PurgeAllMOs() {
 	m_AddedAlarmEvents.clear();
 	m_AlarmEvents.clear();
 	m_MOIDIndex.clear();
+	// Objects compare their last collision's frame number with this, so start every Activity from the same value (it was also never initialized).
+	m_SimUpdateFrameNumber = 0;
 	// We want to keep known objects around, 'cause these can exist even when not in the simulation (they're here from creation till deletion, regardless of whether they are in sim)
 	// m_KnownObjects.clear();
 }

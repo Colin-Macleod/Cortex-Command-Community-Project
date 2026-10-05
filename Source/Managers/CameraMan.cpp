@@ -41,6 +41,23 @@ void CameraMan::Clear() {
 	}
 }
 
+void CameraMan::ResetScreens() {
+	for (Screen& screen: m_Screens) {
+		screen.Offset.Reset();
+		screen.DeltaOffset.Reset();
+		screen.ScrollTarget.Reset();
+		screen.ScreenTeam = Activity::NoTeam;
+		screen.ScrollSpeed = 0.1F;
+		screen.ScrollTimer.Reset();
+		screen.ScreenOcclusion.Reset();
+		screen.TargetXWrapped = false;
+		screen.TargetYWrapped = false;
+		screen.SeamCrossCount[Axes::X] = 0;
+		screen.SeamCrossCount[Axes::Y] = 0;
+		screen.ScreenShakeMagnitude = 0.0F;
+	}
+}
+
 void CameraMan::SetOffset(const Vector& offset, int screenId) {
 	m_Screens[screenId].Offset = offset.GetFloored();
 	CheckOffset(screenId);

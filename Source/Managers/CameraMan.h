@@ -149,6 +149,10 @@ namespace RTE {
 		float GetDefaultShakeFromRecoilMaximum() const { return m_DefaultShakeFromRecoilMaximum; }
 #pragma endregion
 
+		/// Puts every screen's camera back where it starts (offset, scroll target and speed, wrapping, occlusion and shake), forgetting where it was in an
+		/// earlier Activity. Scripts read camera offsets, so in a co-op match every computer must start from the same camera state.
+		void ResetScreens();
+
 #pragma region Screen Shake Actions
 		/// Resets all screen shake and the screen scroll timers that affect it.
 		void ResetAllScreenShake();

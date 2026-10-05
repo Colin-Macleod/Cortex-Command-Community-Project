@@ -419,6 +419,11 @@ void LuaMan::ResetStatesForNewActivity() {
 	m_GarbageCollectionTask.wait();
 	auto collectAllGarbage = [](LuaStateWrapper& luaState) {
 		std::lock_guard<std::recursive_mutex> lock(luaState.GetMutex());
+		if (g_TimerMan.IsInDeterministicMode()) {
+			// Modules loaded with require() are kept by Lua between Activities, along with any state in them (e.g. utility singletons like the landing zone
+			// map), which depends on what this process did before. In a co-op match, start them afresh, so every computer has the same.
+			luaL_dostring(luaState.GetLuaState(), "_ClearRequiredPackages();");
+		}
 		lua_gc(luaState.GetLuaState(), LUA_GCCOLLECT, 0);
 		lua_gc(luaState.GetLuaState(), LUA_GCSTOP, 0);
 	};

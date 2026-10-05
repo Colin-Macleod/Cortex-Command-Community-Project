@@ -293,6 +293,11 @@ int Activity::Start() {
 	SeedRNG();
 	g_LuaMan.ResetStatesForNewActivity();
 	MovableObject::ResetUniqueIDCounter();
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// The cameras would otherwise start from wherever they were at the end of the previous Activity, which can differ between the computers in a co-op
+		// match (e.g. a client that left a match a little earlier than the host).
+		g_CameraMan.ResetScreens();
+	}
 	PathFinder::ClearDeterministicResults();
 
 	if (m_ActivityState != ActivityState::Editing) {
