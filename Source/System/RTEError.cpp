@@ -8,6 +8,10 @@
 #include "LuaMan.h"
 #include "lua.hpp"
 
+#ifdef __SANITIZE_ADDRESS__
+#include <sanitizer/asan_interface.h>
+#endif
+
 #include <SDL3/SDL_messagebox.h>
 
 #ifdef _WIN32
@@ -256,6 +260,10 @@ void RTEError::SetExceptionHandlers() {
 	// constructed in no particular order, and SetExceptionHandlers runs during static initialization).
 	static backward::SignalHandling backwardSignalHandling;
 	std::set_new_handler(AllocationFailureHandler);
+#ifdef __SANITIZE_ADDRESS__
+	// AddressSanitizer reports and aborts on its own, so also say which Lua script was running when it found an error (often a script touching a deleted object).
+	__asan_set_error_report_callback([](const char*) { PrintLuaContext("AddressSanitizer error"); });
+#endif
 	for (int signalNumber: {SIGSEGV, SIGBUS, SIGFPE, SIGILL}) {
 		struct sigaction action {};
 		action.sa_sigaction = LuaCrashContextHandler;
