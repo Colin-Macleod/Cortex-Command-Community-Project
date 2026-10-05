@@ -107,9 +107,24 @@ namespace {
 			std::transform(text.begin(), text.end(), text.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
 			return text;
 		};
+		// Files the game never loads that operating systems, editors and version control leave around, and which shouldn't make two installations differ.
+		auto isJunk = [&lowercase](const std::filesystem::path& path) {
+			const std::string name = lowercase(path.filename().string());
+			const std::string extension = lowercase(path.extension().string());
+			return name.empty() || name.front() == '.' || name.back() == '~' || name == "thumbs.db" || name == "desktop.ini" ||
+			       extension == ".bak" || extension == ".swp" || extension == ".swo" || extension == ".tmp" || extension == ".orig" || extension == ".rej";
+		};
 		std::vector<std::string> files;
 		std::error_code error;
 		for (auto itr = std::filesystem::recursive_directory_iterator(modulePath, error); !error && itr != std::filesystem::recursive_directory_iterator(); itr.increment(error)) {
+			if (isJunk(itr->path())) {
+				// Hidden directories (e.g. .git) are skipped entirely.
+				std::error_code directoryError;
+				if (itr->is_directory(directoryError)) {
+					itr.disable_recursion_pending();
+				}
+				continue;
+			}
 			std::error_code typeError;
 			if (!itr->is_regular_file(typeError)) {
 				continue;
