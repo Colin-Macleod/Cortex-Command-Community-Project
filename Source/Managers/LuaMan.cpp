@@ -419,12 +419,21 @@ void LuaMan::ResetStatesForNewActivity() {
 	// Collect all the garbage left over from before this Activity (menus, an earlier Activity, single player), so Lua-owned engine objects from then are freed now,
 	// before unique IDs start over, rather than at some point during the Activity. How much is left over differs between computers in a co-op match.
 	m_GarbageCollectionTask.wait();
+	if (g_TimerMan.IsInDeterministicMode()) {
+		// Path requests made before this Activity (e.g. in single player, before a co-op match) can still be calculating. When they finish, their script
+		// callbacks would run during this Activity, on this computer only. Let them finish, and drop the callbacks.
+		g_ThreadMan.GetBackgroundThreadPool().wait_for_tasks();
+		std::scoped_lock lock(m_ScriptCallbacksMutex);
+		m_ScriptCallbacks.clear();
+	}
 	auto collectAllGarbage = [](LuaStateWrapper& luaState) {
 		std::lock_guard<std::recursive_mutex> lock(luaState.GetMutex());
 		if (g_TimerMan.IsInDeterministicMode()) {
 			// Modules loaded with require() are kept by Lua between Activities, along with any state in them (e.g. utility singletons like the landing zone
 			// map), which depends on what this process did before. In a co-op match, start them afresh, so every computer has the same.
 			luaL_dostring(luaState.GetLuaState(), "_ClearRequiredPackages();");
+			// Callbacks of path requests made before this Activity won't be called anymore (see below), and are dropped.
+			luaL_dostring(luaState.GetLuaState(), "_AsyncPathCallbacks = {};");
 		}
 		lua_gc(luaState.GetLuaState(), LUA_GCCOLLECT, 0);
 		lua_gc(luaState.GetLuaState(), LUA_GCSTOP, 0);
