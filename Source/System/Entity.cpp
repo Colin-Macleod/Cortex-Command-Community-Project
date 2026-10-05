@@ -3,7 +3,26 @@
 #include "PresetMan.h"
 #include "DataModule.h"
 
+#include <cstdlib>
+#include <functional>
+#include <random>
+#include <thread>
+
 namespace RTE {
+
+	namespace {
+		/// Testing aid: with CCCP_DT_POOL_SHUFFLE=<seed> set, the entity pools hand out memory in a random order, so objects get different addresses
+		/// than with another seed, as they would on another computer with a different history. Running co-op peers with different seeds makes
+		/// anything in the simulation that depends on memory addresses desync quickly, without the slowness of an AddressSanitizer build.
+		/// @return The seed, or -1 if shuffling is off.
+		long long PoolShuffleSeed() {
+			static const long long seed = []() {
+				const char* value = std::getenv("CCCP_DT_POOL_SHUFFLE");
+				return (value && value[0] != '\0') ? std::atoll(value) : -1LL;
+			}();
+			return seed;
+		}
+	} // namespace
 
 	Entity::ClassInfo Entity::m_sClass("Entity");
 	Entity::ClassInfo* Entity::ClassInfo::s_ClassHead = 0;
@@ -285,6 +304,10 @@ namespace RTE {
 		// Take the memory that was returned longest ago. Scripts can keep a reference to an object after it's deleted, and its checks of it
 		// (MovableMan:IsParticle and the like) compare addresses, so if the memory were reused right away for a new object (as taking the most
 		// recently returned memory did), the script would mistake the new object for its old one and e.g. move or delete it.
+		if (const long long shuffleSeed = PoolShuffleSeed(); shuffleSeed >= 0 && m_AllocatedPool.size() > 1) {
+			thread_local std::minstd_rand shuffleRNG(static_cast<unsigned int>(shuffleSeed) ^ static_cast<unsigned int>(std::hash<std::thread::id>()(std::this_thread::get_id())));
+			std::swap(m_AllocatedPool.front(), m_AllocatedPool[shuffleRNG() % m_AllocatedPool.size()]);
+		}
 		void* foundMemory = m_AllocatedPool.front();
 		m_AllocatedPool.pop_front();
 
