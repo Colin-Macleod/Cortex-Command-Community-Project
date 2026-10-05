@@ -52,7 +52,7 @@ Without `-coop-scene`, the Activity's default scene is used, or the first compat
 - **Esc twice** leaves the match, also while the game is waiting for other players. If your buy menu is open, Esc closes it first. If the host leaves, the match ends for everyone.
 - Pausing, restarting, quick save/load and script reloading are disabled, because doing them on one computer only would break the sync. For the same reason the console doesn't run commands during a match.
 - The buy menu offers the built-in loadouts only, not the ones you saved yourself (each computer would otherwise use its own file for every player). Your saved loadouts are kept for single player.
-- On Linux the game restarts itself once at start-up, to use the same math library code on every CPU (see below). `-no-math-restart` skips that, e.g. when debugging, at the risk of being refused when joining.
+- On Linux the game restarts itself once at start-up, to use the same math library code on every CPU (see below). `-no-math-restart` skips that, e.g. when debugging, at the risk of being refused when joining. The console says at start-up whether the game restarted and, if not, why.
 
 ### What's checked when you join
 
@@ -109,6 +109,9 @@ Always on:
 - Uninitialised fields that could carry leftover memory from a previous object (path nodes, atoms, actors' movement state) are initialised.
 - Shipped scripts that looped over tables keyed by objects (`pairs()` order follows memory addresses, which differ between computers) now use `SortedPairs` from `Base.rte/Utilities.lua`, ordered arrays, or tie-breaks on `UniqueID`.
 - **The same math library code on every CPU.** The x86-64 math libraries choose faster FMA-based versions of double-precision `sin`, `cos`, `exp`, `log`, `pow`, `atan2` and others on CPUs that support FMA. These give a slightly different result for a fraction of a percent of inputs, enough to desync a Haswell-or-newer PC from an older one (or a low-end Pentium/Celeron) over time; Lua's `math` functions and `^` use them. On Windows the game switches the FMA versions off at start-up. On Linux it restarts itself once at start-up with FMA hidden from glibc (`GLIBC_TUNABLES`), since a session can be hosted or joined at any time. A fingerprint of the math library's results is part of the join check, so any remaining difference is refused instead of desyncing.
+  - The restart is skipped on CPUs without FMA, where glibc already uses the non-FMA code.
+  - Some distributions build their libraries for newer CPUs only (x86-64-v3, e.g. RHEL 10), and the dynamic loader refuses to load those with FMA hidden. So before restarting, the game first starts a copy of itself with FMA hidden that exits as soon as it's loaded (a few milliseconds). If that fails, the game doesn't restart and says why in the console; such a computer can play with computers whose math library gives the same results, and others refuse it at join with a message naming the math library. `CCCP_MATH_PROBE_TEST_FAIL=1` makes that test start fail, to test this.
+  - The restarted game gets the same command line and environment, apart from `GLIBC_TUNABLES`, which it puts back for any program it starts. A marker in the environment (`CCCP_MATH_RESTARTED`, removed again after the restart) stops it from restarting more than once; setting it by hand skips the restart.
 
 ## Testing
 

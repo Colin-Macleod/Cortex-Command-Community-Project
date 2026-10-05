@@ -807,6 +807,8 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 				}
 				if (mismatch == "modules") {
 					rejectReason = "Installed or enabled mods don't match the host's (" + FirstModuleMismatch(GetCompatibilityString(), compatibility) + ").";
+				} else if (mismatch == "math") {
+					rejectReason = "Your math library gives different results from the host's (see the console at start-up on both computers), so the games would desync.";
 				} else {
 					rejectReason = "Game version or settings don't match the host's (" + mismatch + ").";
 				}

@@ -492,6 +492,10 @@ int main(int argc, char** argv) {
 	InitializeManagers();
 
 	HandleMainArgs(argc, argv);
+	// After the arguments, so -cout prints it too.
+	if (!MathConsistency::GetStartupReport().empty()) {
+		g_ConsoleMan.PrintString(MathConsistency::GetStartupReport());
+	}
 	DeterminismHarness::Initialize();
 	g_LockstepMan.HandleCommandLine(argc, argv);
 
