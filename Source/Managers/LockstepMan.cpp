@@ -500,8 +500,14 @@ void LockstepMan::HandleCommandLine(int argCount, char** argValue) {
 bool LockstepMan::StartHosting(unsigned short port) {
 	m_Peer = RakNet::RakPeerInterface::GetInstance();
 	RakNet::SocketDescriptor socketDescriptor(port, nullptr);
-	if (m_Peer->Startup(c_MaxClients, &socketDescriptor, 1) != RakNet::RAKNET_STARTED) {
-		g_ConsoleMan.PrintString("ERROR: CO-OP: Could not start hosting on port " + std::to_string(port) + "!");
+	if (const RakNet::StartupResult result = m_Peer->Startup(c_MaxClients, &socketDescriptor, 1); result != RakNet::RAKNET_STARTED) {
+		// Also for -coop-host, so the Multiplayer screen says why there's no session.
+		if (result == RakNet::SOCKET_PORT_ALREADY_IN_USE || result == RakNet::SOCKET_FAILED_TO_BIND) {
+			m_StatusMessage = "Could not host on port " + std::to_string(port) + ". Is another program (or another copy of the game) using it? Try another port.";
+		} else {
+			m_StatusMessage = "Could not host on port " + std::to_string(port) + " (network error " + std::to_string(static_cast<int>(result)) + ").";
+		}
+		g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_StatusMessage);
 		RakNet::RakPeerInterface::DestroyInstance(m_Peer);
 		m_Peer = nullptr;
 		return false;
@@ -518,7 +524,8 @@ bool LockstepMan::StartJoining(const std::string& address, unsigned short port) 
 	m_Peer = RakNet::RakPeerInterface::GetInstance();
 	RakNet::SocketDescriptor socketDescriptor;
 	if (m_Peer->Startup(1, &socketDescriptor, 1) != RakNet::RAKNET_STARTED) {
-		g_ConsoleMan.PrintString("ERROR: CO-OP: Could not start networking!");
+		m_StatusMessage = "Could not start networking.";
+		g_ConsoleMan.PrintString("ERROR: CO-OP: " + m_StatusMessage);
 		RakNet::RakPeerInterface::DestroyInstance(m_Peer);
 		m_Peer = nullptr;
 		return false;
@@ -535,7 +542,6 @@ bool LockstepMan::StartJoining(const std::string& address, unsigned short port) 
 bool LockstepMan::HostSession(unsigned short port) {
 	LeaveSession();
 	if (!StartHosting(port)) {
-		m_StatusMessage = "Could not host on port " + std::to_string(port) + ". Is another program using it?";
 		return false;
 	}
 	// Computed now rather than when the first player says hello, as hashing the modules takes a moment.
@@ -562,7 +568,6 @@ bool LockstepMan::JoinSession(const std::string& address) {
 	}
 	GetCompatibilityString();
 	if (!StartJoining(host, port)) {
-		m_StatusMessage = "Could not start networking.";
 		return false;
 	}
 	return true;
