@@ -150,6 +150,14 @@ SCENARIOS = [
         "freeze": {"peer": 2, "at_tick": 700, "seconds": 5},
     },
     {
+        "name": "stall-recovery",
+        "doc": "The client is frozen for 5 s, later the host. After each, the peers must be back in step within 15 s: after the client's freeze it must catch up (and the host say so), after the host's nobody may be left behind.",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 2000,
+        "peers": [peer(), peer()],
+        "freeze": [{"peer": 1, "at_tick": 600, "seconds": 5}, {"peer": 0, "at_tick": 1300, "seconds": 5}],
+        "recover_within": 15,
+    },
+    {
         "name": "activity-sweep",
         "doc": "Several stock Activities in turn, two peers each, different bot seeds.",
         "sweep": [("Wave Defense", "First Signs"), ("One-Man Army", ""), ("Massacre", ""), ("Survival", ""), ("Skirmish Defense", ""),
@@ -254,8 +262,22 @@ def match_ended(text):
     return "CO-OP: Match ended" in text and re.search(r"Activity .* was ended", text) is not None
 
 
+def input_delay(host_text):
+    """The input delay the host's match uses, from its console output, or None if it hasn't said yet."""
+    found = re.findall(r"input delay: (\d+) sim updates", host_text)
+    return int(found[-1]) if found else None
+
+
+def lag_outstanding(host_text, player):
+    """Whether the host said the player's input is late and hasn't said since that they caught up."""
+    late = host_text.rfind(f"Input from player {player} is late")
+    return late >= 0 and host_text.rfind(f"Player {player} caught up") < late
+
+
 def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, timeout, freeze=None):
-    """Runs one co-op session. Returns a result dict."""
+    """Runs one co-op session. Returns a result dict.
+    freeze: a freeze or a list of them, each {"peer": index, "at_tick": tick, "seconds": duration}: the peer is stopped (SIGSTOP) once its log reaches
+    the tick. After each, how far apart the peers' sim updates are is sampled until they're back in step (see sample_stall)."""
     port_holder = Port()
     port = port_holder.number
     displays, procs, logs, outs = [], [], [], []
@@ -294,7 +316,9 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
             if index == 0:
                 time.sleep(2)
 
-        frozen = False
+        freezes = [] if not freeze else ([freeze] if isinstance(freeze, dict) else list(freeze))
+        stalls = []  # One per freeze done: when it ended, and how far apart the peers' sim updates were afterwards.
+        tracking = None
         last_progress, last_ticks = time.time(), -1
         host_exited_at = None
         while True:
@@ -321,12 +345,19 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
             # Rejected clients stay in the menus, so there's nothing more to wait for.
             if all("rejected the connection" in read_text(o) for o in outs[1:]):
                 break
-            if freeze and not frozen and count_ticks(logs[freeze["peer"]]) >= freeze["at_tick"]:
-                procs[freeze["peer"]].send_signal(signal.SIGSTOP)
-                time.sleep(freeze["seconds"])
-                procs[freeze["peer"]].send_signal(signal.SIGCONT)
-                frozen = True
-            time.sleep(1)
+            if tracking:
+                sample_stall(tracking, logs, procs, outs)
+                if tracking["recovered_after"] is not None or time.time() - tracking["resumed"] > 120:
+                    tracking = None
+            if freezes and not tracking and count_ticks(logs[freezes[0]["peer"]]) >= freezes[0]["at_tick"]:
+                f = freezes.pop(0)
+                procs[f["peer"]].send_signal(signal.SIGSTOP)
+                stopped_at = [count_ticks(log) for log in logs]
+                time.sleep(f["seconds"])
+                procs[f["peer"]].send_signal(signal.SIGCONT)
+                tracking = {"peer": f["peer"], "seconds": f["seconds"], "ticks_at_stop": stopped_at, "resumed": time.time(), "samples": [], "recovered_after": None, "limit": None}
+                stalls.append(tracking)
+            time.sleep(0.25 if tracking else 1)
         # Give the host a moment to log its last ticks and notice the clients leaving.
         deadline = time.time() + 30
         while procs[0].poll() is None and time.time() < deadline:
@@ -348,6 +379,13 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
 
     result = {"name": name, "seconds": round(time.time() - started), "exit_codes": [proc.returncode for proc in procs],
               "ticks": [count_ticks(log) for log in logs], "timed_out": timed_out, "ended_early": ended_early, "comparisons": []}
+    if stalls:
+        result["stalls"] = [{"peer": st["peer"], "seconds": st["seconds"], "ticks_at_stop": st["ticks_at_stop"], "recovered_after": st["recovered_after"],
+                             "max_apart": max((apart for _, _, apart in st["samples"]), default=None),
+                             "last_apart": st["samples"][-1][2] if st["samples"] else None, "limit": st["limit"]} for st in stalls]
+        # The samples: seconds since the frozen peer was resumed, each peer's sim updates, how far apart they are.
+        with open(os.path.join(out, f"{name}_stalls.json"), "w") as f:
+            json.dump([{k: v for k, v in st.items() if k != "resumed"} for st in stalls], f, indent=1)
     host = compare_logs.load(logs[0]) if os.path.exists(logs[0]) else {}
     for index in range(1, len(peers)):
         client = compare_logs.load(logs[index]) if os.path.exists(logs[index]) else {}
@@ -370,6 +408,25 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
     # Script and engine errors, minus the audio system's complaints about having no sound device.
     result["lua_errors"] = sum(1 for text in texts for line in text.splitlines() if "ERROR:" in line and "sound" not in line.lower())
     return result
+
+
+def sample_stall(tracking, logs, procs, outs):
+    """After a freeze, records how far apart the running peers' sim updates are, and when they're back in step: no further apart than the input
+    delay (plus a little, as the logs are read one after another), with no player still marked late by the host."""
+    now = time.time() - tracking["resumed"]
+    counts = [count_ticks(log) for log, proc in zip(logs, procs) if proc.poll() is None]
+    if len(counts) < 2:
+        return
+    apart = max(counts) - min(counts)
+    tracking["samples"].append((round(now, 2), counts, apart))
+    host_text = read_text(outs[0])
+    delay = input_delay(host_text)
+    if delay is None:
+        return
+    tracking["limit"] = delay + 5
+    late = any(lag_outstanding(host_text, player) for player in range(2, len(logs) + 1))
+    if tracking["recovered_after"] is None and apart <= tracking["limit"] and not late:
+        tracking["recovered_after"] = round(now, 2)
 
 
 def judge(scenario, result, ticks):
@@ -395,6 +452,15 @@ def judge(scenario, result, ticks):
         return False, f"peer {d['peer']} diverged at tick {d['diverged']['tick']} ({', '.join(d['diverged']['components'])})"
     if result["desync_reported"]:
         return False, "desync reported in game"
+    if scenario.get("recover_within"):
+        limit = scenario["recover_within"]
+        for st in result.get("stalls", []):
+            who = "the host" if st["peer"] == 0 else f"peer {st['peer']}"
+            if st["recovered_after"] is None or st["recovered_after"] > limit:
+                return False, (f"not back in step within {limit} s after freezing {who} for {st['seconds']} s: up to {st['max_apart']} sim updates apart, "
+                               f"{st['last_apart']} when last sampled (limit {st['limit']})")
+        if len(result.get("stalls", [])) < len(scenario["freeze"]):
+            return False, "the session didn't get far enough for every freeze"
     if result.get("ended_early"):
         # Every peer's log has to stop at the same tick: a peer that fell behind or dropped out isn't a clean end.
         if len(set(result["ticks"])) == 1 and all(c["common_ticks"] == result["ticks"][0] for c in result["comparisons"]):
@@ -403,7 +469,9 @@ def judge(scenario, result, ticks):
     short = [c for c in result["comparisons"] if c["common_ticks"] < ticks]
     if short or result["timed_out"]:
         return False, f"incomplete: compared {[c['common_ticks'] for c in result['comparisons']]} of {ticks} ticks" + (" (timed out)" if result["timed_out"] else "")
-    return True, f"identical for {ticks} ticks on {len(result['ticks'])} peers"
+    stalls = "".join(f"; {'host' if st['peer'] == 0 else 'peer ' + str(st['peer'])} frozen {st['seconds']} s: back in step after {st['recovered_after']} s"
+                     f" (up to {st['max_apart']} apart)" for st in result.get("stalls", []) if st["recovered_after"] is not None)
+    return True, f"identical for {ticks} ticks on {len(result['ticks'])} peers" + stalls
 
 
 def run_scenario(scenario, args):

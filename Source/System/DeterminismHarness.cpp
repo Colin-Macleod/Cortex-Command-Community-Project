@@ -421,6 +421,8 @@ void DeterminismHarness::EndOfSimUpdate() {
 	              s_Tick, hashes.ActorCount, hashes.ItemCount, hashes.ParticleCount,
 	              hashes.RNG, hashes.LuaRNG, hashes.Actors, hashes.Items, hashes.Particles, s_LastTerrainHash, hashes.Activity, combined.m_Hash);
 	s_Log << line;
+	// Written out every sim update, so tools watching the log (e.g. the stress suite measuring how far apart co-op peers are) see each one when it happens.
+	s_Log.flush();
 
 	if (s_Tick == s_SaveSettingsAtTick) {
 		g_SettingsMan.UpdateSettingsFile();

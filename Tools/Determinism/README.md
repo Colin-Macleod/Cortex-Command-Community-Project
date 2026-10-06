@@ -78,6 +78,7 @@ Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console o
 | `environment` | The client has a different locale and time zone. |
 | `settings-mismatch` | The host starts with no settings file (in-memory defaults), the client with its own gameplay settings (DeltaTime 0.02 and others). Every computer must play with the host's. |
 | `bad-network` | 120-270 ms on every message, three players, and one client frozen for 5 s mid-match (it must catch up in sync). |
+| `stall-recovery` | The client is frozen for 5 s mid-match, later the host. After each freeze the peers' sim updates must be no further apart than the input delay plus 5 (and the host must have said the client caught up) within 15 s. The time it took and how far apart they got are in the report and in `<scenario>_stalls.json`. |
 | `activity-sweep` | Several stock activities in turn. |
 | `long` | 20000 sim updates of Determinism Chaos. |
 
