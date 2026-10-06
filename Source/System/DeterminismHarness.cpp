@@ -57,6 +57,7 @@ bool DeterminismHarness::s_ObserveOnly = false;
 bool DeterminismHarness::s_RandomTicksPerFrame = false;
 std::minstd_rand DeterminismHarness::s_FrameRNG;
 int DeterminismHarness::s_FrameJitterMS = 0;
+long long DeterminismHarness::s_SaveSettingsAtTick = -1;
 
 namespace {
 	/// FNV-1a, 64 bit. Hashes the exact bytes so any float bit difference shows up.
@@ -253,6 +254,9 @@ void DeterminismHarness::Initialize() {
 	if (const char* value = std::getenv("CCCP_DT_FRAME_JITTER_MS")) {
 		s_FrameJitterMS = std::max(0, std::atoi(value));
 	}
+	if (const char* value = std::getenv("CCCP_DT_SAVE_SETTINGS_AT")) {
+		s_SaveSettingsAtTick = std::atoll(value);
+	}
 	if (const char* value = std::getenv("CCCP_DT_FRAME_SEED")) {
 		s_FrameRNG.seed(static_cast<unsigned int>(std::atoll(value)));
 	}
@@ -418,6 +422,10 @@ void DeterminismHarness::EndOfSimUpdate() {
 	              hashes.RNG, hashes.LuaRNG, hashes.Actors, hashes.Items, hashes.Particles, s_LastTerrainHash, hashes.Activity, combined.m_Hash);
 	s_Log << line;
 
+	if (s_Tick == s_SaveSettingsAtTick) {
+		g_SettingsMan.UpdateSettingsFile();
+		g_ConsoleMan.PrintString("DETERMINISM: Wrote the settings file at tick " + std::to_string(s_Tick) + ".");
+	}
 	if (s_DumpTicks.count(s_Tick)) {
 		WriteStateDump(s_LogPath + ".dump" + std::to_string(s_Tick));
 	}

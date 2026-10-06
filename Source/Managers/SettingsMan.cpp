@@ -8,7 +8,15 @@
 #include "AudioMan.h"
 #include "PerformanceMan.h"
 #include "UInputMan.h"
+#include "LockstepMan.h"
 #include "System.h"
+
+#include <cstdlib>
+#include <map>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace RTE;
 
@@ -217,6 +225,37 @@ int SettingsMan::ReadProperty(const std::string_view& propName, Reader& reader) 
 int SettingsMan::Save(Writer& writer) const {
 	Serializable::Save(writer);
 
+	// During a co-op match the settings that affect gameplay have the host's values, which aren't ours to keep: whatever writes the settings file then
+	// (e.g. a resolution or fullscreen change), it gets our own values, as does a game that quits or crashes before the match ends.
+	const std::map<std::string, std::string>* localValues = g_LockstepMan.GetLocalValuesOfSessionSettings();
+	std::set<std::string> localValuesWritten;
+	auto localValue = [localValues, &localValuesWritten](const std::string& key) -> const std::string* {
+		if (localValues) {
+			if (auto itr = localValues->find(key); itr != localValues->end()) {
+				localValuesWritten.insert(key);
+				return &itr->second;
+			}
+		}
+		return nullptr;
+	};
+	auto writeSetting = [&writer, &localValue](const std::string& key, const auto& currentValue) {
+		if (const std::string* local = localValue(key)) {
+			writer.NewPropertyWithValue(key, *local);
+		} else {
+			writer.NewPropertyWithValue(key, currentValue);
+		}
+	};
+	auto localList = [&localValue](const std::string& key) {
+		std::vector<std::string> list;
+		std::istringstream stream(*localValue(key));
+		for (std::string item; std::getline(stream, item, ';');) {
+			if (!item.empty()) {
+				list.push_back(item);
+			}
+		}
+		return list;
+	};
+
 	writer.NewDivider(false);
 	writer.NewLineString("// Display Settings", false);
 	writer.NewLine(false);
@@ -253,20 +292,20 @@ int SettingsMan::Save(Writer& writer) const {
 	writer.NewDivider(false);
 	writer.NewLineString("// Gameplay Settings", false);
 	writer.NewLine(false);
-	writer.NewPropertyWithValue("ShowForeignItems", m_ShowForeignItems);
+	writeSetting("ShowForeignItems", m_ShowForeignItems);
 	writer.NewPropertyWithValue("FlashOnBrainDamage", m_FlashOnBrainDamage);
-	writer.NewPropertyWithValue("BlipOnRevealUnseen", m_BlipOnRevealUnseen);
-	writer.NewPropertyWithValue("MaxUnheldItems", g_MovableMan.m_MaxDroppedItems);
+	writeSetting("BlipOnRevealUnseen", m_BlipOnRevealUnseen);
+	writeSetting("MaxUnheldItems", g_MovableMan.m_MaxDroppedItems);
 	writer.NewPropertyWithValue("UnheldItemsHUDDisplayRange", m_UnheldItemsHUDDisplayRange);
 	writer.NewPropertyWithValue("AlwaysDisplayUnheldItemsInStrategicMode", m_AlwaysDisplayUnheldItemsInStrategicMode);
-	writer.NewPropertyWithValue("SubPieMenuHoverOpenDelay", m_SubPieMenuHoverOpenDelay);
+	writeSetting("SubPieMenuHoverOpenDelay", m_SubPieMenuHoverOpenDelay);
 	writer.NewPropertyWithValue("EndlessMetaGameMode", m_EndlessMetaGameMode);
-	writer.NewPropertyWithValue("EnableCrabBombs", m_EnableCrabBombs);
-	writer.NewPropertyWithValue("CrabBombThreshold", m_CrabBombThreshold);
+	writeSetting("EnableCrabBombs", m_EnableCrabBombs);
+	writeSetting("CrabBombThreshold", m_CrabBombThreshold);
 	writer.NewPropertyWithValue("ShowEnemyHUD", m_ShowEnemyHUD);
-	writer.NewPropertyWithValue("SmartBuyMenuNavigation", m_EnableSmartBuyMenuNavigation);
-	writer.NewPropertyWithValue("ScrapCompactingHeight", g_SceneMan.m_ScrapCompactingHeight);
-	writer.NewPropertyWithValue("AutomaticGoldDeposit", m_AutomaticGoldDeposit);
+	writeSetting("SmartBuyMenuNavigation", m_EnableSmartBuyMenuNavigation);
+	writeSetting("ScrapCompactingHeight", g_SceneMan.m_ScrapCompactingHeight);
+	writeSetting("AutomaticGoldDeposit", m_AutomaticGoldDeposit);
 
 	writer.NewLine(false, 2);
 	writer.NewDivider(false);
@@ -294,17 +333,22 @@ int SettingsMan::Save(Writer& writer) const {
 	writer.NewLine(false);
 	writer.NewPropertyWithValue("DisableLuaJIT", m_DisableLuaJIT);
 	writer.NewPropertyWithValue("EnableLuaDebugging", m_EnableLuaDebugging);
-	writer.NewPropertyWithValue("RecommendedMOIDCount", m_RecommendedMOIDCount);
+	writeSetting("RecommendedMOIDCount", m_RecommendedMOIDCount);
 	writer.NewPropertyWithValue("SceneBackgroundAutoScaleMode", m_SceneBackgroundAutoScaleMode);
-	writer.NewPropertyWithValue("DisableFactionBuyMenuThemes", m_DisableFactionBuyMenuThemes);
+	writeSetting("DisableFactionBuyMenuThemes", m_DisableFactionBuyMenuThemes);
 	writer.NewPropertyWithValue("DisableFactionBuyMenuThemeCursors", m_DisableFactionBuyMenuThemeCursors);
-	writer.NewPropertyWithValue("PathFinderGridNodeSize", m_PathFinderGridNodeSize);
-	writer.NewPropertyWithValue("AIUpdateInterval", m_AIUpdateInterval);
+	writeSetting("PathFinderGridNodeSize", m_PathFinderGridNodeSize);
+	writeSetting("AIUpdateInterval", m_AIUpdateInterval);
 	writer.NewPropertyWithValue("NumberOfLuaStatesOverride", m_NumberOfLuaStatesOverride);
 	writer.NewPropertyWithValue("ForceImmediatePathingRequestCompletion", m_ForceImmediatePathingRequestCompletion);
-	writer.NewPropertyWithValue("EnableParticleSettling", g_MovableMan.m_SettlingEnabled);
-	writer.NewPropertyWithValue("EnableMOSubtraction", g_MovableMan.m_MOSubtractionEnabled);
-	writer.NewPropertyWithValue("DeltaTime", g_TimerMan.GetDeltaTimeSecs());
+	writeSetting("EnableParticleSettling", g_MovableMan.m_SettlingEnabled);
+	writeSetting("EnableMOSubtraction", g_MovableMan.m_MOSubtractionEnabled);
+	if (const std::string* localDeltaTimeTicks = localValue("DeltaTimeTicks")) {
+		// As TimerMan::SetDeltaTimeTicks works it out.
+		writer.NewPropertyWithValue("DeltaTime", static_cast<float>(std::atoi(localDeltaTimeTicks->c_str())) / static_cast<float>(g_TimerMan.GetTicksPerSecond()));
+	} else {
+		writer.NewPropertyWithValue("DeltaTime", g_TimerMan.GetDeltaTimeSecs());
+	}
 
 	// No experimental settings right now :)
 	// writer.NewLine(false, 2);
@@ -354,12 +398,13 @@ int SettingsMan::Save(Writer& writer) const {
 	writer.NewPropertyWithValue("PrintDebugInfo", m_PrintDebugInfo);
 	writer.NewPropertyWithValue("MeasureModuleLoadTime", m_MeasureModuleLoadTime);
 
-	if (!m_VisibleAssemblyGroupsList.empty()) {
+	const std::vector<std::string> visibleAssemblyGroups = localValue("VisibleAssemblyGroups") ? localList("VisibleAssemblyGroups") : std::vector<std::string>(m_VisibleAssemblyGroupsList.begin(), m_VisibleAssemblyGroupsList.end());
+	if (!visibleAssemblyGroups.empty()) {
 		writer.NewLine(false, 2);
 		writer.NewDivider(false);
 		writer.NewLineString("// Enabled Bunker Assembly Groups", false);
 		writer.NewLine(false);
-		for (const std::string& visibleAssembly: m_VisibleAssemblyGroupsList) {
+		for (const std::string& visibleAssembly: visibleAssemblyGroups) {
 			writer.NewPropertyWithValue("VisibleAssemblyGroup", visibleAssembly);
 		}
 	}
@@ -376,15 +421,23 @@ int SettingsMan::Save(Writer& writer) const {
 		}
 	}
 
+	std::vector<std::string> enabledGlobalScripts;
+	if (localValue("EnabledGlobalScripts")) {
+		enabledGlobalScripts = localList("EnabledGlobalScripts");
+	} else {
+		for (const auto& [scriptPresetName, scriptEnabled]: m_EnabledGlobalScripts) {
+			if (scriptEnabled) {
+				enabledGlobalScripts.push_back(scriptPresetName);
+			}
+		}
+	}
 	if (!m_EnabledGlobalScripts.empty()) {
 		writer.NewLine(false, 2);
 		writer.NewDivider(false);
 		writer.NewLineString("// Enabled Global Scripts", false);
 		writer.NewLine(false);
-		for (const auto& [scriptPresetName, scriptEnabled]: m_EnabledGlobalScripts) {
-			if (scriptEnabled) {
-				writer.NewPropertyWithValue("EnableGlobalScript", scriptPresetName);
-			}
+		for (const std::string& scriptPresetName: enabledGlobalScripts) {
+			writer.NewPropertyWithValue("EnableGlobalScript", scriptPresetName);
 		}
 	}
 
@@ -405,10 +458,21 @@ int SettingsMan::Save(Writer& writer) const {
 		writer.NewDivider(false);
 		writer.NewLineString("// Player " + playerNum, false);
 		writer.NewLine(false);
-		writer.NewPropertyWithValue("Player" + playerNum + "Scheme", g_UInputMan.m_ControlScheme[player]);
+		// During a co-op match the control schemes are set up for the match (devices and aim speeds as the host recorded them, this computer's player one
+		// mapping in its player's slot), and our own are kept aside.
+		writer.NewPropertyWithValue("Player" + playerNum + "Scheme", g_UInputMan.m_VirtualInputActive ? g_UInputMan.m_SavedControlSchemes[player] : g_UInputMan.m_ControlScheme[player]);
 	}
 
 	writer.ObjectEnd();
+
+	if (localValues) {
+		// A setting added to the ones co-op matches use the host's values of needs writing with localValue above.
+		for (const auto& [key, value]: *localValues) {
+			if (!localValuesWritten.contains(key)) {
+				g_ConsoleMan.PrintString("ERROR: The settings file got the co-op host's value of " + key + " instead of this computer's own!");
+			}
+		}
+	}
 
 	return 0;
 }

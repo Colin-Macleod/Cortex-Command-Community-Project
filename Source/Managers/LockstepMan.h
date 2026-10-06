@@ -124,6 +124,12 @@ namespace RTE {
 		/// Gets whether the host has started a match that this client hasn't started yet. Used to leave the menus.
 		/// @return Whether a match start is pending.
 		bool IsMatchStartPending() const { return m_MatchStartPending; }
+
+		/// Gets this computer's own values of the settings a co-op match uses the host's values of, while the host's are in effect. The settings file gets
+		/// these instead of the host's (see SettingsMan::Save). Keyed by their Settings.ini property names, except "DeltaTimeTicks" (DeltaTime in ticks),
+		/// "EnabledGlobalScripts" and "VisibleAssemblyGroups" (each a list of names, every one followed by ';').
+		/// @return The local values, or nullptr if the local settings are in effect.
+		const std::map<std::string, std::string>* GetLocalValuesOfSessionSettings() const { return m_SavedSettings.empty() ? nullptr : &m_SavedSettings; }
 #pragma endregion
 
 #pragma region Match Lifecycle

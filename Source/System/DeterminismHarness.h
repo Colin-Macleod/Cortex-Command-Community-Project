@@ -37,6 +37,8 @@ namespace RTE {
 	///   CCCP_DT_TRACE_TICKS Only in builds compiled with -DRTE_RNG_TRACE: log the call stack of every global RNG draw
 	///                       during the first N ticks to "<log>.rngtrace" (resolve with Tools/Determinism/symbolize_trace.py).
 	///   CCCP_DT_TRACE_FROM  With CCCP_DT_TRACE_TICKS, only trace from this tick on (tracing slows the game, which can hide timing-dependent bugs).
+	///   CCCP_DT_SAVE_SETTINGS_AT  Write the settings file at the end of this tick, as e.g. a resolution change during a co-op match does (to check that it
+	///                       keeps this computer's own values of the settings the host dictates).
 	class DeterminismHarness {
 
 	public:
@@ -126,5 +128,6 @@ namespace RTE {
 		static bool s_RandomTicksPerFrame; //!< Whether to run a random number of sim updates per frame.
 		static std::minstd_rand s_FrameRNG; //!< Generator for the random ticks-per-frame sequence. Separate from all sim generators.
 		static int s_FrameJitterMS; //!< Maximum random sleep per frame, in milliseconds. 0 for none.
+		static long long s_SaveSettingsAtTick; //!< The tick at the end of which to write the settings file. -1 for none.
 	};
 } // namespace RTE
