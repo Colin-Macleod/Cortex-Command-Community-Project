@@ -1,6 +1,7 @@
 function Create(self)
 	self.checkNodesTimer = Timer();
 	self.checkNodesTimer:SetSimTimeLimitMS(500)
+	self.automoverData = AutomoverData;
 	self.myInfoGenerated = Automovers_AddNode(self);
 
 	self:RemoveNumberValue("shouldReaddNode");
@@ -28,6 +29,10 @@ function Update(self)
 end
 
 function Destroy(self)
+	if self.automoverData ~= AutomoverData then
+		-- Deleted after the next Activity started (e.g. when a saved game was loaded): neither its automover network nor the current Activity's funds are this node's.
+		return;
+	end
 	ActivityMan:GetActivity():SetTeamFunds(ActivityMan:GetActivity():GetTeamFunds(self.Team) + self:GetGoldValue(0, 0), self.Team);
 	Automovers_RemoveNode(self);
 end

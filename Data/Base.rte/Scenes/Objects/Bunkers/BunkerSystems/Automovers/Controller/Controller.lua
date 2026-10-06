@@ -44,6 +44,7 @@ function Create(self)
 	--Constants--
 	-------------
 	--TODO make this an actual power system.
+	self.automoverData = AutomoverData;
 	AutomoverData[self.Team].energyLevel = 100;
 
 	self.currentActivity = ActivityMan:GetActivity();
@@ -209,6 +210,10 @@ function Update(self)
 end
 
 function Destroy(self)
+	if self.automoverData ~= AutomoverData then
+		-- Deleted after the next Activity started (e.g. when a saved game was loaded), whose automover networks aren't this controller's.
+		return;
+	end
 	for actor in MovableMan.Actors do
 		if actor.PresetName:find("Automover Controller") and actor.Team == self.Team and actor.UniqueID ~= self.UniqueID then
 			return;

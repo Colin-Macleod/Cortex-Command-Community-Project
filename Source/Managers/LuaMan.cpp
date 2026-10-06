@@ -277,7 +277,13 @@ void LuaStateWrapper::Initialize() {
 	              // Internal helper functions to add callbacks for async pathing requests
 	              "_AsyncPathCallbacks = {};\n"
 	              "_AddAsyncPathCallback = function(id, callback) _AsyncPathCallbacks[id] = callback; end\n"
-	              "_TriggerAsyncPathCallback = function(id, param) if _AsyncPathCallbacks[id] ~= nil then _AsyncPathCallbacks[id](param); _AsyncPathCallbacks[id] = nil; end end\n");
+	              "_TriggerAsyncPathCallback = function(id, param) if _AsyncPathCallbacks[id] ~= nil then _AsyncPathCallbacks[id](param); _AsyncPathCallbacks[id] = nil; end end\n"
+	              // Internal helper functions for scripts that keep global state belonging to the current Activity: Lua states outlive Activities, so such
+	              // state has to be reset when the next one starts (see LuaMan::ResetStatesForNewActivity). Callbacks are keyed by name, and run in name order.
+	              "_ActivityStartCallbacks = {};\n"
+	              "_AddActivityStartCallback = function(name, callback) _ActivityStartCallbacks[name] = callback; end\n"
+	              "_RunActivityStartCallbacks = function() local names = {}; for name in pairs(_ActivityStartCallbacks) do names[#names + 1] = name; end; table.sort(names);\n"
+	              "for _, name in ipairs(names) do local ok, err = pcall(_ActivityStartCallbacks[name]); if not ok then ConsoleMan:PrintString('ERROR: Activity start callback \"' .. name .. '\" failed: ' .. tostring(err)); end end end\n");
 
 	if (g_SettingsMan.EnableLuaDebugging()) {
 		luaL_dostring(m_State, "require(\"mobdebug\").coro(); require(\"mobdebug\").start();");
@@ -428,6 +434,8 @@ void LuaMan::ResetStatesForNewActivity() {
 	}
 	auto collectAllGarbage = [](LuaStateWrapper& luaState) {
 		std::lock_guard<std::recursive_mutex> lock(luaState.GetMutex());
+		// Global state scripts keep for the current Activity (e.g. the automover networks) would otherwise carry over into this one.
+		luaL_dostring(luaState.GetLuaState(), "_RunActivityStartCallbacks();");
 		if (g_TimerMan.IsInDeterministicMode()) {
 			// Modules loaded with require() are kept by Lua between Activities, along with any state in them (e.g. utility singletons like the landing zone
 			// map), which depends on what this process did before. In a co-op match, start them afresh, so every computer has the same.

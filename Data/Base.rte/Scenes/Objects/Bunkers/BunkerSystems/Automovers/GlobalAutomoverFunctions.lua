@@ -1,6 +1,9 @@
 require("Utilities");
 
-if not AutomoverData then
+-- Each team's automover network in the current Activity. Lua states outlive Activities, so it's started afresh whenever an Activity starts: otherwise
+-- an earlier Activity's nodes and energy levels would carry over into the next one (and differ between co-op players with different histories).
+-- Nodes and controllers remember which AutomoverData they belong to, as those of an earlier Activity can be deleted after the next one started.
+local function resetAutomoverData()
 	AutomoverData = {};
 	for team = Activity.NOTEAM, Activity.TEAM_4 do
 		AutomoverData[team] = {
@@ -12,6 +15,11 @@ if not AutomoverData then
 		};
 	end
 end
+
+if not AutomoverData then
+	resetAutomoverData();
+end
+_AddActivityStartCallback("AutomoverData", resetAutomoverData);
 
 function Automovers_AddNode(node)
 	local teamAutomoverData = AutomoverData[node.Team];
@@ -41,7 +49,9 @@ function Automovers_AddNode(node)
 			connectingAreas = {},
 		}
 
-		if node.PresetName == "Teleporter Node" then
+		teamAutomoverData.nodeDataCount = teamAutomoverData.nodeDataCount + 1;
+
+		if node.PresetName == "Teleporter Node" and not teamAutomoverData.teleporterNodes[node] then
 			teamAutomoverData.teleporterNodes[node] = true;
 			teamAutomoverData.teleporterNodesCount = teamAutomoverData.teleporterNodesCount + 1;
 		end
@@ -71,14 +81,17 @@ function Automovers_RemoveNode(node)
 	local removedNodeTable = teamAutomoverData.nodeData[node];
 	if type(removedNodeTable) ~= "nil" then
 		teamAutomoverData.nodeData[node] = nil;
+		teamAutomoverData.nodeDataCount = teamAutomoverData.nodeDataCount - 1;
 		for direction, nodeData in pairs(removedNodeTable.connectedNodeData) do
-			teamAutomoverData.nodeData[nodeData.node] = nil;
+			if teamAutomoverData.nodeData[nodeData.node] ~= nil then
+				teamAutomoverData.nodeData[nodeData.node] = nil;
+				teamAutomoverData.nodeDataCount = teamAutomoverData.nodeDataCount - 1;
+			end
 			nodeData.node:SetNumberValue("shouldReaddNode", 1);
 		end
-		teamAutomoverData.nodeDataCount = teamAutomoverData.nodeDataCount - 1;
 	end
 
-	if node.PresetName == "Teleporter Node" then
+	if teamAutomoverData.teleporterNodes[node] then
 		teamAutomoverData.teleporterNodes[node] = nil;
 		teamAutomoverData.teleporterNodesCount = teamAutomoverData.teleporterNodesCount - 1;
 	end
