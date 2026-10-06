@@ -41,9 +41,24 @@ COMPONENTS = compare_logs.COMPONENTS
 NO_FMA = "glibc.cpu.hwcaps=-AVX2,-FMA,-FMA4,-AVX512F,-AVX512VL,-AVX512DQ,-AVX512BW"
 
 
-def peer(env=None, args=None, wrap=None):
-    """One game instance. env: extra environment. args: extra command line. wrap: command prefix (e.g. taskset)."""
-    return {"env": env or {}, "args": args or [], "wrap": wrap or []}
+def peer(env=None, args=None, wrap=None, settings=None):
+    """One game instance. env: extra environment. args: extra command line. wrap: command prefix (e.g. taskset).
+    settings: None to start from a copy of Userdata/Settings.ini (or from no settings file, if there's none), "fresh" to start from no settings file,
+    or a dict of SettingsMan properties to start from a settings file with only those."""
+    return {"env": env or {}, "args": args or [], "wrap": wrap or [], "settings": settings}
+
+
+def prepare_settings(path, settings):
+    """Sets up a game instance's own settings file. Instances never share one: on start-up a game writes its settings file when there's none (or
+    it's incomplete), with the values it has in memory, and another instance reading it meanwhile, or afterwards, gets values that differ
+    from those (e.g. DeltaTime is written rounded)."""
+    if os.path.exists(path):
+        os.remove(path)
+    if isinstance(settings, dict):
+        with open(path, "w") as f:
+            f.write("SettingsMan\n" + "".join(f"\t{key} = {value}\n" for key, value in settings.items()))
+    elif settings is None and os.path.exists(os.path.join(REPO, "Userdata", "Settings.ini")):
+        shutil.copyfile(os.path.join(REPO, "Userdata", "Settings.ini"), path)
 
 
 # Each scenario: peers[0] is the host. 'expect' is "identical" (all logs match, no desync reported) or "desync" (the detector must fire).
@@ -116,6 +131,14 @@ SCENARIOS = [
         "doc": "Client runs under a different locale, time zone and working-set limits.",
         "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 1500,
         "peers": [peer(), peer(env={"LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "TZ": "Pacific/Chatham"})],
+    },
+    {
+        "name": "settings-mismatch",
+        "doc": "Host starts with no settings file (in-memory defaults); the client's own gameplay settings differ (its DeltaTime among them). Every computer must use the host's.",
+        "activity": "Bunker Breach", "scene": "Zekarra Mining Outpost", "ticks": 1500,
+        "peers": [peer(settings="fresh"),
+                  peer(settings={"DeltaTime": "0.02", "AIUpdateInterval": "3", "MaxUnheldItems": "40", "CrabBombThreshold": "7", "ScrapCompactingHeight": "10",
+                                 "SubPieMenuHoverOpenDelay": "500", "EnableParticleSettling": "0"})],
     },
     {
         "name": "bad-network",
@@ -254,6 +277,9 @@ def run_session(binary, out, name, activity, scene, ticks, peers, bot_base, time
             env.update({"DISPLAY": f":{display.number}", "CCCP_DT_LOG": log, "CCCP_DT_OBSERVE": "1",
                         # The host runs a little longer so every client can reach its last tick.
                         "CCCP_DT_TICKS": str(ticks + (120 if index == 0 else 0))})
+            settings_path = os.path.join(out, f"{name}_p{index}.Settings.ini")
+            prepare_settings(settings_path, p.get("settings"))
+            env["CCCP_SETTINGSPATH"] = settings_path
             env.update(p["env"])
             command = p["wrap"] + [binary, "-cout"]
             if index == 0:

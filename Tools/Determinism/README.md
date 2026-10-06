@@ -63,7 +63,7 @@ Tools/Determinism/stress/stress.py chaos memory --quick # chosen scenarios, a qu
 Tools/Determinism/stress/stress.py --jobs 2             # two scenarios at a time
 ```
 
-Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console output and `results.json` go to `--out` (default `/tmp/cccp-stress`). Each game instance gets its own Xvfb display, numbered 200-900 and skipping any display that's in use, so other X servers are left alone. A session whose activity ends before the target number of sim updates (e.g. Keepie Uppie when the bots lose the rocket) passes if every peer stopped at the same sim update with identical logs.
+Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console output and `results.json` go to `--out` (default `/tmp/cccp-stress`). Each game instance gets its own settings file (a copy of `Userdata/Settings.ini`, or none if there isn't one; `CCCP_SETTINGSPATH`), so instances never read a file another one is writing. Each game instance gets its own Xvfb display, numbered 200-900 and skipping any display that's in use, so other X servers are left alone. A session whose activity ends before the target number of sim updates (e.g. Keepie Uppie when the bots lose the rocket) passes if every peer stopped at the same sim update with identical logs.
 
 | Scenario | What's different between the peers |
 |---|---|
@@ -76,6 +76,7 @@ Needs Linux, Xvfb and a built `./CortexCommand`. Logs, each instance's console o
 | `frame-jitter` | Each peer sleeps a random 0-40 ms every frame (`CCCP_DT_FRAME_JITTER_MS`). |
 | `memory` | The client fills allocated and freed memory with junk (`MALLOC_PERTURB_`) and runs without ASLR. |
 | `environment` | The client has a different locale and time zone. |
+| `settings-mismatch` | The host starts with no settings file (in-memory defaults), the client with its own gameplay settings (DeltaTime 0.02 and others). Every computer must play with the host's. |
 | `bad-network` | 120-270 ms on every message, three players, and one client frozen for 5 s mid-match (it must catch up in sync). |
 | `activity-sweep` | Several stock activities in turn. |
 | `long` | 20000 sim updates of Determinism Chaos. |
