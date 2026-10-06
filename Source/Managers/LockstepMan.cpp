@@ -29,6 +29,7 @@
 #include "TimerMan.h"
 #include "WindowMan.h"
 #include "System.h"
+#include "GUI.h"
 #include "AllegroBitmap.h"
 #include "GUIFont.h"
 
