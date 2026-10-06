@@ -9,7 +9,8 @@ end
 
 function Update(self)
 	if self:GetNumberValue("shouldReaddNode") > 0 then
-		self.myInfoGenerated = Automovers_AddNode(self);
+		-- A new controller asks every node to readd itself, including those still in the network (e.g. when it replaces another controller).
+		self.myInfoGenerated = Automovers_AddNode(self) or AutomoverData[self.Team].nodeData[self] ~= nil;
 		self:RemoveNumberValue("shouldReaddNode");
 	end
 
