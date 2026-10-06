@@ -74,6 +74,7 @@
 #include <list>
 #include <cinttypes>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <sstream>
 
@@ -92,6 +93,8 @@ namespace {
 	constexpr int c_LagIdleMS = 10000; //!< After lagging this long, a player's held input is no longer repeated, so their actor stops instead of e.g. firing forever.
 	constexpr long long c_MaxInputLead = 600; //!< Input or checksums for sim updates further ahead than this are ignored (a buggy or malicious peer could otherwise grow the queues without bound).
 	constexpr int c_StalledEscapeDelayMS = 3000; //!< How long the sim must have been stalled before Esc is read outside the sim update.
+	constexpr int c_SelfStallMS = 500; //!< A frame taking longer than this means this computer itself was stalled, which doesn't count as waiting for other players' input.
+	constexpr long long c_CatchUpMargin = 2; //!< How many more sim updates' input than the input delay covers a computer must have before it starts catching up.
 
 	constexpr int c_MaxResolutionRequests = 2; //!< How many times a client tries switching to the host's resolution before giving up.
 	constexpr int c_MinResolution = 200; //!< Smallest resolution (each way) a client accepts switching to.
@@ -873,14 +876,20 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			SanitizeFrame(frame);
 			m_PlayerHasSentInput[peer.Player] = true;
 			if (simUpdate >= m_NextBundleUpdate) {
-				m_PendingPlayerInputs[peer.Player][simUpdate] = frame;
+				// The late input of a player who's catching up may already have been put in for this sim update (see below). Keep its presses.
+				auto [itr, inserted] = m_PendingPlayerInputs[peer.Player].try_emplace(simUpdate, frame);
+				if (!inserted) {
+					MergeFrameInto(itr->second, frame);
+				}
 				if (m_PlayerLagging[peer.Player]) {
 					m_PlayerLagging[peer.Player] = false;
-					g_ConsoleMan.PrintString("CO-OP: Player " + std::to_string(peer.Player + 1) + " caught up.");
+					char lagged[32];
+					std::snprintf(lagged, sizeof(lagged), "%.1f", static_cast<float>(ElapsedMS(m_PlayerLaggingSince[peer.Player])) / 1000.0F);
+					g_ConsoleMan.PrintString("CO-OP: Player " + std::to_string(peer.Player + 1) + " caught up after lagging for " + lagged + " s.");
 				}
 			} else if (m_PlayerLagging[peer.Player]) {
-				// Too late for its own sim update, which was bundled without it. Use it for the next bundle instead, so a player who fell behind
-				// (and can only catch up by simulating faster than real time) still gets to play meanwhile, just with more delay.
+				// Too late for its own sim update, which was bundled without it. Use it for the next bundle instead, so a player who fell behind still gets
+				// to play meanwhile, with more delay, while their computer catches up by running sim updates faster than real time (see UpdateCatchUp).
 				auto [itr, inserted] = m_PendingPlayerInputs[peer.Player].try_emplace(m_NextBundleUpdate, frame);
 				if (!inserted) {
 					MergeFrameInto(itr->second, frame);
@@ -1717,6 +1726,7 @@ void LockstepMan::BeginMatch() {
 	m_MatchEndedByHost = false;
 	m_NextSimUpdate = 0;
 	m_Waiting = false;
+	m_CatchingUp = false;
 	m_Desynced = false;
 	m_DesyncMessage.clear();
 	m_LeaveRequested = false;
@@ -1756,6 +1766,7 @@ void LockstepMan::EndMatch() {
 		pending.clear();
 	}
 	m_Waiting = false;
+	m_CatchingUp = false;
 	m_LeaveRequested = false;
 	m_Desynced = false;
 	m_DesyncMessage.clear();
@@ -1798,6 +1809,14 @@ void LockstepMan::Update() {
 		RestoreLocalResolutionIfPossible();
 		return;
 	}
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	if (m_MatchRunning && m_LastUpdateTime != std::chrono::steady_clock::time_point() && now - m_LastUpdateTime > std::chrono::milliseconds(c_SelfStallMS)) {
+		// This computer itself was stalled (e.g. its process was stopped, or the system was swapping). That's no time spent waiting for the other players:
+		// their input may still be on its way in from the network buffers, and the host would otherwise mark them as lagging right away.
+		m_WaitingSince += now - m_LastUpdateTime;
+	}
+	m_LastUpdateTime = now;
+
 	FlushDelayedMessages();
 	for (RakNet::Packet* packet = m_Peer->Receive(); packet; m_Peer->DeallocatePacket(packet), packet = m_Peer->Receive()) {
 		if (packet->length > 0) {
@@ -2009,6 +2028,32 @@ void LockstepMan::HostBuildBundles() {
 	}
 }
 
+int LockstepMan::UpdateCatchUp() {
+	if (!m_MatchRunning) {
+		m_CatchingUp = false;
+		return 0;
+	}
+	// Bundles arrive in order, and every one up to the newest is kept until its sim update runs.
+	const long long buffered = m_UpdateInputs.empty() ? 0 : std::max(0LL, m_UpdateInputs.rbegin()->first + 1 - m_NextSimUpdate);
+	// The host bundles a sim update once every player's input for it has arrived, and a player sends their input for an update when they run the one
+	// the input delay before it. So a computer that keeps up never has more than the input delay's worth of bundles it hasn't run. More means the host
+	// stopped waiting for it, and its input now arrives too late for the sim update it was meant for. Running every sim update it has the input for,
+	// as fast as it can, gets its input back in time (the input delay covers the round trip), and then the host waits for it again.
+	// A watching computer, which the host never waits for, may start catching up because of network latency alone, which does no harm.
+	if (!m_CatchingUp && buffered > m_InputDelay + c_CatchUpMargin) {
+		m_CatchingUp = true;
+		m_CatchUpStartUpdate = m_NextSimUpdate;
+		m_CatchUpSince = std::chrono::steady_clock::now();
+		g_ConsoleMan.PrintString("CO-OP: " + std::to_string(buffered) + " sim updates behind the other players at sim update " + std::to_string(m_NextSimUpdate) + ", catching up.");
+	} else if (m_CatchingUp && buffered <= 1) {
+		m_CatchingUp = false;
+		char took[32];
+		std::snprintf(took, sizeof(took), "%.1f", static_cast<float>(ElapsedMS(m_CatchUpSince)) / 1000.0F);
+		g_ConsoleMan.PrintString("CO-OP: Caught up with the other players at sim update " + std::to_string(m_NextSimUpdate) + ", after running " + std::to_string(m_NextSimUpdate - m_CatchUpStartUpdate) + " sim updates in " + took + " s.");
+	}
+	return m_CatchingUp ? static_cast<int>(std::min<long long>(buffered, c_MaxInputLead)) : 0;
+}
+
 bool LockstepMan::CanSimulateNextUpdate() {
 	if (!m_MatchRunning) {
 		return true;
@@ -2106,6 +2151,9 @@ void LockstepMan::DrawOverlay(BITMAP* targetBitmap) {
 	if (m_MatchRunning) {
 		const std::string playerText = m_LocalPlayer == Players::NoPlayer ? std::string("Watching (no free player slot)") : "Player " + std::to_string(m_LocalPlayer + 1);
 		topLine = std::string("CO-OP ") + (m_Role == Role::Host ? "HOST" : "CLIENT") + " | " + playerText + " | Sim update " + std::to_string(m_NextSimUpdate) + " | Input delay " + std::to_string(m_InputDelay);
+		if (m_CatchingUp) {
+			topLine += " | Catching up";
+		}
 		if (m_Desynced) {
 			topLine += " | DESYNCED";
 		} else if (m_Role == Role::Host && m_ChecksumsCompared > 0) {

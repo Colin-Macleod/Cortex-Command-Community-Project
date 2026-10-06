@@ -347,6 +347,12 @@ void RunGameLoop() {
 			g_TimerMan.SetAccumulatorForSimUpdates(harnessSimUpdates);
 		}
 
+		// In a co-op match, a computer that fell behind the other players runs every sim update it has their input for, within a time budget, before drawing.
+		const int catchUpSimUpdates = g_LockstepMan.UpdateCatchUp();
+		if (catchUpSimUpdates > 0) {
+			g_TimerMan.SetAccumulatorForSimUpdates(catchUpSimUpdates);
+		}
+
 		if (g_LockstepMan.IsInSession()) {
 			// In a co-op session the sim may be stalled waiting for other players, so these can't be left to the sim update loop below.
 			if (g_ActivityMan.ActivitySetToRestart()) {
@@ -437,6 +443,13 @@ void RunGameLoop() {
 				g_PerformanceMan.ResetSimUpdateTimer();
 				updateStartTime = g_TimerMan.GetAbsoluteTime();
 			}
+			if (catchUpSimUpdates > 0 && g_TimerMan.GetAbsoluteTime() - updateStartTime >= LockstepMan::c_CatchUpFrameBudgetUS) {
+				break;
+			}
+		}
+		if (catchUpSimUpdates > 0) {
+			// Whatever is left is caught up on in the next frames. From there, back to the usual pacing.
+			g_TimerMan.SetAccumulatorForSimUpdates(0);
 		}
 
 		updateEndAndDrawStartTime = g_TimerMan.GetAbsoluteTime();

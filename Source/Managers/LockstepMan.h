@@ -159,6 +159,16 @@ namespace RTE {
 		/// Pumps the network. Call once per frame, both in menus and in game.
 		void Update();
 
+		/// Call once per frame, after Update. Gets whether this computer has fallen behind the session and should run sim updates faster than real time this
+		/// frame, e.g. after the game was stalled for a few seconds and the host stopped waiting for its input. While catching up, the game loop runs every sim
+		/// update it has the input for, within c_CatchUpFrameBudgetUS per frame, so it still draws now and then. It catches up until it has run them all.
+		/// How many sim updates run per frame doesn't change what they compute (see TimerMan::SetDeterministicMode).
+		/// @return How many sim updates this computer has the input for and hasn't run yet, if it's catching up. Otherwise 0.
+		int UpdateCatchUp();
+
+		/// The longest a frame spends running sim updates while catching up, in microseconds.
+		static constexpr long long c_CatchUpFrameBudgetUS = 80000;
+
 		/// Gets whether the next sim update can run, i.e. the input for it has arrived. Always true when no match is running.
 		/// @return Whether the next sim update can run.
 		bool CanSimulateNextUpdate();
@@ -267,6 +277,10 @@ namespace RTE {
 		std::map<long long, std::array<VirtualInputFrame, Players::MaxPlayerCount>> m_UpdateInputs; //!< Input bundles for upcoming sim updates.
 		std::chrono::steady_clock::time_point m_WaitingSince; //!< When we started waiting for the next bundle.
 		bool m_Waiting = false; //!< Whether we're currently waiting for the next bundle.
+		std::chrono::steady_clock::time_point m_LastUpdateTime; //!< When Update was last called, to notice this computer itself being stalled.
+		bool m_CatchingUp = false; //!< Whether this computer fell behind the session and runs sim updates as fast as it can until it has caught up. See UpdateCatchUp.
+		long long m_CatchUpStartUpdate = 0; //!< The sim update catching up started at.
+		std::chrono::steady_clock::time_point m_CatchUpSince; //!< When catching up started.
 
 		// Host bundle building
 		std::array<std::map<long long, VirtualInputFrame>, Players::MaxPlayerCount> m_PendingPlayerInputs; //!< Host: inputs received but not yet bundled, per player.
