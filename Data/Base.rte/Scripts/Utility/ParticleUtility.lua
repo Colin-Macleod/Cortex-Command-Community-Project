@@ -94,8 +94,8 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 		if not spread then
 			spread = 15;
 		end
-		if not widthspread then
-			widthspread = 1;
+		if not widthSpread then
+			widthSpread = 1;
 		end
 		if not smokeMult then
 			smokeMult = 1;
@@ -133,7 +133,7 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 				local randVelocityMult = RangeRand(0.5, 1.5);
 				
 				local particle = CreateMOSParticle("Tiny Smoke Ball 1", "Base.rte");
-				particle.Pos = position + Vector(0, RangeRand(-widthspread/2, widthspread/2)):DegRotate(angle);
+				particle.Pos = position + Vector(0, RangeRand(-widthSpread/2, widthSpread/2)):DegRotate(angle);
 				particle.Vel = Vector(velocity.X, velocity.Y):DegRotate(randSpread) * randVelocityMult;
 				particle.Lifetime = particle.Lifetime * RangeRand(0.75, 1.75) * lingerMult;
 				particle.AirThreshold = (particle.AirThreshold / airResistanceMult) * (lingerMult/airResistanceMult);
@@ -150,12 +150,12 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 				local countFactor = i/smallSmokeCount;
 				local randSpread = (math.random(-spread*500, spread*500)/1000) * countFactor;
 				local easeFactor = math.abs(randSpread/(spread/2))
-				factor = 1 - math.cos((easeFactor * math.pi) / 2);
+				local factor = 1 - math.cos((easeFactor * math.pi) / 2);
 				randSpread = randSpread * easeFactor;
 				local randVelocityMult = RangeRand(0.5, 1.5);
 				
 				local particle = CreateMOSParticle("Small Smoke Ball 1", "Base.rte");
-				particle.Pos = position + Vector(0, RangeRand(-widthspread/2, widthspread/2)):DegRotate(angle);
+				particle.Pos = position + Vector(0, RangeRand(-widthSpread/2, widthSpread/2)):DegRotate(angle);
 				particle.Vel = Vector(velocity.X, velocity.Y):DegRotate(randSpread) * randVelocityMult;
 				particle.Lifetime = particle.Lifetime * RangeRand(0.75, 1.25) * lingerMult;
 				particle.AirThreshold = (particle.AirThreshold / airResistanceMult) * (lingerMult/airResistanceMult);
@@ -184,12 +184,12 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 				local countFactor = i/tinyExploCount;
 				local randSpread = (math.random(-spread*500, spread*500)/1000) * countFactor;
 				local easeFactor = math.abs(randSpread/(spread/2))
-				factor = 1 - math.cos((easeFactor * math.pi) / 2);
+				local factor = 1 - math.cos((easeFactor * math.pi) / 2);
 				randSpread = randSpread * easeFactor;
 				local randVelocityMult = RangeRand(0.5, 1.5);
 				
 				local particle = CreateMOSParticle("Flame Smoke 1 Micro", "Base.rte");
-				particle.Pos = position + Vector(0, RangeRand(-widthspread/2, widthspread/2)):DegRotate(angle);
+				particle.Pos = position + Vector(0, RangeRand(-widthSpread/2, widthSpread/2)):DegRotate(angle);
 				particle.Vel = Vector(velocity.X, velocity.Y):DegRotate(randSpread) * randVelocityMult;
 				particle.Lifetime = particle.Lifetime * RangeRand(0.75, 1.25) * lingerMult;
 				particle.AirThreshold = (particle.AirThreshold / airResistanceMult) * (lingerMult/airResistanceMult);
@@ -206,12 +206,12 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 				local countFactor = i/smallExploCount;
 				local randSpread = (math.random(-spread*500, spread*500)/1000) * countFactor;
 				local easeFactor = math.abs(randSpread/(spread/2))
-				factor = 1 - math.cos((easeFactor * math.pi) / 2);
+				local factor = 1 - math.cos((easeFactor * math.pi) / 2);
 				randSpread = randSpread * easeFactor;
 				local randVelocityMult = RangeRand(0.5, 1.5);
 				
 				local particle = CreateMOSParticle("Side Thruster Blast Ball 1", "Base.rte");
-				particle.Pos = position + Vector(0, RangeRand(-widthspread/2, widthspread/2)):DegRotate(angle);
+				particle.Pos = position + Vector(0, RangeRand(-widthSpread/2, widthSpread/2)):DegRotate(angle);
 				particle.Vel = Vector(velocity.X, velocity.Y):DegRotate(randSpread) * randVelocityMult;
 				particle.Lifetime = particle.Lifetime * RangeRand(0.4, 0.8) * (lingerMult);
 				particle.AirThreshold = (particle.AirThreshold / airResistanceMult);
@@ -228,12 +228,12 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 				local countFactor = i/large1ExploCount;
 				local randSpread = (math.random(-spread*500, spread*500)/1000) * countFactor;
 				local easeFactor = math.abs(randSpread/(spread/2))
-				factor = 1 - math.cos((easeFactor * math.pi) / 2);
+				local factor = 1 - math.cos((easeFactor * math.pi) / 2);
 				randSpread = randSpread * easeFactor;
 				local randVelocityMult = RangeRand(0.5, 1.5);
 				
 				local particle = CreateMOSParticle("Explosion Smoke " .. math.random(1, 2), "Base.rte");
-				particle.Pos = position + Vector(0, RangeRand(-widthspread/2, widthspread/2)):DegRotate(angle);
+				particle.Pos = position + Vector(0, RangeRand(-widthSpread/2, widthSpread/2)):DegRotate(angle);
 				particle.Vel = Vector(velocity.X, velocity.Y):DegRotate(randSpread) * randVelocityMult;
 				particle.Lifetime = particle.Lifetime * RangeRand(0.75, 1.25) * lingerMult;
 				particle.AirThreshold = (particle.AirThreshold / airResistanceMult) * (lingerMult/airResistanceMult);
@@ -250,12 +250,12 @@ function ParticleUtility:CreateDirectionalSmokeEffect(positionOrFullTable, angOr
 				local countFactor = i/large2ExploCount;
 				local randSpread = (math.random(-spread*500, spread*500)/1000) * countFactor;
 				local easeFactor = math.abs(randSpread/(spread/2))
-				factor = 1 - math.cos((easeFactor * math.pi) / 2);
+				local factor = 1 - math.cos((easeFactor * math.pi) / 2);
 				randSpread = randSpread * easeFactor;
 				local randVelocityMult = RangeRand(0.3, 1.1);
 				
 				local particle = CreateAEmitter("Explosion Trail 1", "Base.rte");
-				particle.Pos = position + Vector(0, RangeRand(-widthspread/2, widthspread/2)):DegRotate(angle);
+				particle.Pos = position + Vector(0, RangeRand(-widthSpread/2, widthSpread/2)):DegRotate(angle);
 				particle.Vel = Vector(velocity.X, velocity.Y):DegRotate(randSpread) * randVelocityMult;
 				particle.Lifetime = particle.Lifetime * RangeRand(0.75, 1.25) * lingerMult;
 				particle.AirThreshold = (particle.AirThreshold / airResistanceMult) * (lingerMult/airResistanceMult);
