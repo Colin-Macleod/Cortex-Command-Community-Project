@@ -71,7 +71,7 @@ The host rejects a player whose game version, mods, audio availability, math lib
 - recommended MOID count (scripts can read it)
 - which groups the editors' object pickers always show
 
-Local settings are restored afterwards.
+Local settings are restored afterwards. They (and your own control schemes) are also what gets saved if the settings file is written during a match, e.g. by a resolution change.
 
 ## How it works
 
@@ -103,7 +103,7 @@ Always on:
 - Per-state RNGs and unique ID ranges.
 - Each scripted object runs in the Lua state picked by its unique ID. It used to be whichever state's turn it was, and every object loading scripts on the main thread took a turn, including ones outside the simulation, so the same object could run in a different state (and draw from a different random generator) on another computer.
 - Ordered script registration.
-- Every match starts from the same state, however many matches a game instance played before: the cameras, the Lua modules loaded with `require()` (and any state kept in them), Lua garbage and the collision frame counter are reset when a co-op match starts.
+- Every match starts from the same state, however many matches a game instance played before: the cameras, the Lua modules loaded with `require()` (and any state kept in them), Lua garbage and the collision frame counter are reset when a co-op match starts. Global state that shipped scripts keep for the current Activity (the automover networks, and a constant worked out from the sim delta time, which a match takes from the host) is reset or worked out again whenever an Activity starts; scripts can register a function for that with `_AddActivityStartCallback(name, function)`.
 - Terrain cleaning and fog-of-war reveal processing done in the sim update instead of when drawing.
 - LuaJIT built without randomised string hashing, and with string IDs (which Lua tables hash string keys by) computed from the string's content instead of the order strings were created in. Otherwise `pairs()` over string keys would depend on everything a Lua state had ever done, which differs between computers.
 - Folder scans (module `.ini` files, Lua's `GetDirectoryList`/`GetFileList`) sorted by name, instead of file system order.
