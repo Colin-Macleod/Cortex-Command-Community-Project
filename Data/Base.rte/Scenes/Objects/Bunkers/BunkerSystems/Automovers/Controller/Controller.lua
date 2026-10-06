@@ -94,7 +94,7 @@ function Create(self)
 
 	for _, particleCollection in pairs({ MovableMan.Particles, MovableMan.AddedParticles }) do
 		for node in particleCollection do
-			if node and IsMOSRotating(node) and node.Team == team and node:IsInGroup("Automover Nodes") then
+			if node and IsMOSRotating(node) and node.Team == self.Team and node:IsInGroup("Automover Nodes") then
 				ToMOSRotating(node):SetNumberValue("shouldReaddNode", 1);
 			end
 		end
@@ -1023,7 +1023,7 @@ automoverActorFunctions.setupManualTeleporterData = function(self, actorData)
 
 	actorData.waypointData = nil;
 	actorData.manualTeleporterData = {};
-	manualTeleporterData = actorData.manualTeleporterData;
+	local manualTeleporterData = actorData.manualTeleporterData;
 
 	manualTeleporterData.actorTeleportationStage = 0;
 	manualTeleporterData.teleporterVisualsTimer = Timer(1000);
