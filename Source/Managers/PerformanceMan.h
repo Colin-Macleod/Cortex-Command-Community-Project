@@ -73,8 +73,8 @@ namespace RTE {
 		/// @param showGraphs Whether to show the performance graphs or not.
 		void ShowAdvancedPerformanceStats(bool showGraphs = true) { m_AdvancedPerfStats = showGraphs; }
 
-		/// Gets the average of the MSPU reading buffer, calculated each update.
-		/// @return The average value of the MSPU reading buffer.
+		/// Gets the average wall-clock time between sim updates, in milliseconds, calculated each sim update.
+		/// @return The average value of the MSPSU reading buffer.
 		float GetMSPSUAverage() const { return m_MSPSUAverage; }
 
 		/// Gets the average of the MSPF reading buffer, calculated each frame.
@@ -108,8 +108,8 @@ namespace RTE {
 			m_MSPDs.clear();
 		}
 
-		/// Resets the sim update timer.
-		void ResetSimUpdateTimer() const { m_SimUpdateTimer->Reset(); }
+		/// Restarts the measurement of the time between sim updates, e.g. after the sim was paused.
+		void ResetSimUpdateTimer();
 
 		/// Updates the frame time measurements and recalculates the averages. Supposed to be done every game loop iteration.
 		/// @param measuredUpdateTime The total sim update time measured in the game loop iteration.
@@ -117,10 +117,9 @@ namespace RTE {
 		void UpdateMSPF(long long measuredUpdateTime, long long measuredDrawTime);
 
 		/// Updates the individual sim update time measurements and recalculates the average. Supposed to be done every sim update.
-		void UpdateMSPSU() {
-			CalculateTimeAverage(m_MSPSUs, m_MSPSUAverage, static_cast<float>(m_SimUpdateTimer->GetElapsedRealTimeMS()));
-			m_SimUpdateTimer->Reset();
-		}
+		/// Measured in wall-clock time, also in TimerMan's deterministic mode (where Timers' real time is sim time, so every sim update would seem to take exactly
+		/// DeltaTime). Only for display and frame pacing: nothing the simulation computes may depend on it.
+		void UpdateMSPSU();
 
 		/// Draws the performance stats to the screen.
 		/// @param bitmapToDrawTo The BITMAP to draw the performance stats to.
@@ -151,7 +150,7 @@ namespace RTE {
 
 		int m_Sample; //!< Sample counter.
 
-		std::unique_ptr<Timer> m_SimUpdateTimer; //!< Timer for measuring milliseconds per sim update for performance stats readings.
+		long long m_LastSimUpdateTime; //!< Wall-clock time of the last sim update, in microseconds (TimerMan::GetAbsoluteTime), for measuring milliseconds per sim update.
 
 		std::deque<float> m_MSPSUs; //!< History log of single update time measurements in milliseconds, for averaging the results. In milliseconds.
 		std::deque<float> m_MSPFs; //!< History log total frame time measurements in milliseconds, for averaging the results.

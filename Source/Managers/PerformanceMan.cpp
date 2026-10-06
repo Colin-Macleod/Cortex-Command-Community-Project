@@ -27,7 +27,7 @@ void PerformanceMan::Clear() {
 	m_ShowPerfStats = false;
 	m_AdvancedPerfStats = true;
 	m_Sample = 0;
-	m_SimUpdateTimer = nullptr;
+	m_LastSimUpdateTime = 0;
 	m_MSPSUs.clear();
 	m_MSPSUAverage = 0;
 	m_MSPFs.clear();
@@ -40,7 +40,7 @@ void PerformanceMan::Clear() {
 }
 
 void PerformanceMan::Initialize() {
-	m_SimUpdateTimer = std::make_unique<Timer>();
+	m_LastSimUpdateTime = g_TimerMan.GetAbsoluteTime();
 
 	for (int counter = 0; counter < PerformanceCounters::PerfCounterCount; ++counter) {
 		for (int i = 0; i < c_MaxSamples; ++i) {
@@ -101,6 +101,16 @@ void PerformanceMan::CalculateTimeAverage(std::deque<float>& timeMeasurements, f
 		avgResult += timeMeasurement;
 	}
 	avgResult /= static_cast<float>(timeMeasurements.size());
+}
+
+void PerformanceMan::ResetSimUpdateTimer() {
+	m_LastSimUpdateTime = g_TimerMan.GetAbsoluteTime();
+}
+
+void PerformanceMan::UpdateMSPSU() {
+	const long long now = g_TimerMan.GetAbsoluteTime();
+	CalculateTimeAverage(m_MSPSUs, m_MSPSUAverage, static_cast<float>(now - m_LastSimUpdateTime) / 1000.0F);
+	m_LastSimUpdateTime = now;
 }
 
 void PerformanceMan::UpdateMSPF(long long measuredUpdateTime, long long measuredDrawTime) {

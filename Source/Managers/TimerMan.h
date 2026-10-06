@@ -74,7 +74,7 @@ namespace RTE {
 		/// @return The number of pure sim updates that have happened since the last drawn.
 		int SimUpdatesSinceDrawn() const { return m_SimUpdatesSinceDrawn; }
 
-		/// Gets the simulation speed over real time.
+		/// Gets the simulation speed over real (wall-clock) time, as measured. For display only: it's measured in wall-clock time even in deterministic mode.
 		/// @return The value of the simulation speed over real time.
 		float GetSimSpeed() const { return m_SimSpeed; }
 

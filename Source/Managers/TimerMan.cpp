@@ -94,9 +94,14 @@ void TimerMan::Update() {
 		m_SimAccumulator += static_cast<long long>(static_cast<float>(timeIncrease) * m_TimeScale);
 	}
 
-	float maxPossibleSimSpeed = GetDeltaTimeMS() / std::max(g_PerformanceMan.GetMSPSUAverage(), std::numeric_limits<float>::epsilon());
+	// How fast the sim runs compared to real time, from the wall-clock time between sim updates. Shown in the performance stats.
+	const float measuredSimSpeed = GetDeltaTimeMS() / std::max(g_PerformanceMan.GetMSPSUAverage(), std::numeric_limits<float>::epsilon());
 
-	// Make sure we don't get runaway behind schedule
+	// Make sure we don't get runaway behind schedule.
+	// In deterministic mode (a co-op match) the time spent waiting for other players' input counts in that measurement, and capping by it would keep this
+	// computer from making up for the wait, so the cap stays at what full speed allows. Either way it only decides how many sim updates run before the
+	// next frame is drawn, never what they compute.
+	const float maxPossibleSimSpeed = m_DeterministicMode ? 1.0F : measuredSimSpeed;
 	m_SimAccumulator = std::min(m_SimAccumulator, m_DeltaTime + static_cast<long long>(m_DeltaTime * maxPossibleSimSpeed));
 
 	RTEAssert(m_SimAccumulator >= 0, "Negative sim time accumulator?!");
@@ -106,5 +111,5 @@ void TimerMan::Update() {
 		m_SimUpdatesSinceDrawn = -1;
 	}
 
-	m_SimSpeed = std::min(maxPossibleSimSpeed, GetTimeScale());
+	m_SimSpeed = std::min(measuredSimSpeed, GetTimeScale());
 }
