@@ -312,11 +312,18 @@ namespace RTE {
 #pragma region Misc Settings
 		/// Gets whether the game intro is set to be skipped on game startup or not.
 		/// @return Whether intro is set to be skipped or not.
-		bool SkipIntro() const { return m_SkipIntro; }
+		bool SkipIntro() const { return m_SkipIntro || m_SkipIntroForSession; }
+
+		/// Gets the user's saved skip intro preference, ignoring any session-only override.
+		/// @return Whether the intro is set to be skipped in the user's settings.
+		bool SkipIntroSetting() const { return m_SkipIntro; }
 
 		/// Sets whether the game intro should be skipped on game startup or not.
 		/// @param play Whether to skip game intro or not.
 		void SetSkipIntro(bool play) { m_SkipIntro = play; }
+
+		/// Skips the intro for this session only (e.g. when launched straight into a mode from the command line), without changing the saved setting.
+		void SkipIntroForSession() { m_SkipIntroForSession = true; }
 
 		/// Gets whether tooltip display on certain UI elements is enabled or not.
 		/// @return Whether tooltips are displayed or not.
@@ -428,6 +435,7 @@ namespace RTE {
 		bool m_ForceImmediatePathingRequestCompletion; //!< Whether pathing requests will be forced to immediately complete for the next frame, or if they can take multiple frames to calculate.
 
 		bool m_SkipIntro; //!< Whether to play the intro of the game or skip directly to the main menu.
+		bool m_SkipIntroForSession; //!< Session-only override to skip the intro. Not saved to Settings.ini.
 		bool m_ShowToolTips; //!< Whether ToolTips are enabled or not.
 		bool m_DisableLoadingScreenProgressReport; //!< Whether to display the reader progress report during module loading or not. Greatly increases loading speeds when disabled.
 		int m_LoadingScreenProgressReportPrecision; //!< How accurately the reader progress report tells what line it's reading during module loading. Lower values equal more precision at the cost of loading speed.

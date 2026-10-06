@@ -202,7 +202,7 @@ void HandleMainArgs(int argCount, char** argValue) {
 		++i;
 	}
 	if (launchModeSet) {
-		g_SettingsMan.SetSkipIntro(true);
+		g_SettingsMan.SkipIntroForSession();
 	}
 }
 

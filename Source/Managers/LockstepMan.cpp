@@ -500,7 +500,7 @@ void LockstepMan::HandleCommandLine(int argCount, char** argValue) {
 		StartJoining(joinAddress, port);
 	}
 	if (IsInSession()) {
-		g_SettingsMan.SetSkipIntro(true);
+		g_SettingsMan.SkipIntroForSession();
 	}
 }
 

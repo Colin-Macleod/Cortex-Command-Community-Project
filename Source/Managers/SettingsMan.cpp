@@ -65,6 +65,7 @@ void SettingsMan::Clear() {
 	m_ForceImmediatePathingRequestCompletion = false;
 
 	m_SkipIntro = false;
+	m_SkipIntroForSession = false;
 	m_ShowToolTips = true;
 	m_DisableLoadingScreenProgressReport = true;
 	m_LoadingScreenProgressReportPrecision = 100;

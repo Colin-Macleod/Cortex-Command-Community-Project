@@ -16,7 +16,7 @@ SettingsMiscGUI::SettingsMiscGUI(GUIControlManager* parentControlManager) :
 	m_MiscSettingsBox = dynamic_cast<GUICollectionBox*>(m_GUIControlManager->GetControl("CollectionBoxMiscSettings"));
 
 	m_SkipIntroCheckbox = dynamic_cast<GUICheckbox*>(m_GUIControlManager->GetControl("CheckboxSkipIntro"));
-	m_SkipIntroCheckbox->SetCheck(g_SettingsMan.SkipIntro());
+	m_SkipIntroCheckbox->SetCheck(g_SettingsMan.SkipIntroSetting());
 
 	m_ShowToolTipsCheckbox = dynamic_cast<GUICheckbox*>(m_GUIControlManager->GetControl("CheckboxShowToolTips"));
 	m_ShowToolTipsCheckbox->SetCheck(g_SettingsMan.ShowToolTips());
