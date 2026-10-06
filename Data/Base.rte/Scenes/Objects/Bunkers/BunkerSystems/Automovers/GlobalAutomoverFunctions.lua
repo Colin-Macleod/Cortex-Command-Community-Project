@@ -43,8 +43,8 @@ function Automovers_AddNode(node)
 
 		teamAutomoverData.nodeData[node] = {
 			size = Vector(),
-			zoneBox,
-			zoneInternalBox,
+			zoneBox = nil,
+			zoneInternalBox = nil,
 			connectedNodeData = {},
 			connectingAreas = {},
 		}
