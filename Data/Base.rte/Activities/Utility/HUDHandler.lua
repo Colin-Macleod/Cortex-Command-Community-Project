@@ -465,8 +465,8 @@ function HUDHandler:AddObjective(objTeam, objInternalNameOrFullTable, objShortNa
 	end
 	objTable.positionUniqueID = GetPositionUniqueID(objTable.Position);
 	
-	for i, objTable in ipairs(self.saveTable.teamTables[objTeam].Objectives) do
-		if objTable.internalName == objInternalName then
+	for i, existingObjTable in ipairs(self.saveTable.teamTables[objTeam].Objectives) do
+		if existingObjTable.internalName == objTable.internalName then
 			print("ERROR: HUD Handler tried to add an objective with an internal name already in use!");
 			return false;
 		end

@@ -117,7 +117,7 @@ function Create(self)
 		self.console = self.saveLoadHandler:LoadLocallySavedMO(self, "savedConsoleMO");
 	end
 	
-	if not console then -- just in case the above fails
+	if not self.console then -- just in case the above fails
 		self.console = CreateMOSRotating("Buy Door Console", "Base.rte");
 		self.console.Pos = self.Pos + Vector(0, -26);
 		self.console.Team = self.Team;

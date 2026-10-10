@@ -91,7 +91,9 @@ function SiteScan:UpdateActivity()
 			-- self:SetObservationTarget(Vector(0, 0), player);
 			if self.ScanTimer[self.ScanTeam]:IsPastSimMS(2000) then
 				self.CurrentScanStage = self.ScanStage.SCANNING;
-				self.ScanTimer[team]:Reset();
+				for team = Activity.TEAM_1, Activity.MAXTEAMCOUNT - 1 do
+					self.ScanTimer[team]:Reset();
+				end
 			end
 		-- Do actual scanning process
 		elseif self.CurrentScanStage == self.ScanStage.SCANNING then

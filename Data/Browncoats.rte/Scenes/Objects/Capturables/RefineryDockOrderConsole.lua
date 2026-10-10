@@ -4,7 +4,7 @@ function OnMessage(self, message, object)
 	end
 end
 
-function DockConsoleSetupOrder(self, orderList)
+function DockConsoleSetupOrder(self, orderList, team)
 	local preActorItemList = {};
 	local lastActor
 	local finalOrder = {};

@@ -663,11 +663,18 @@ function LandingZoneMap:FindStartLZ(team, OccupiedLZs)
 		if distance then
 			GoodLZs[k].prox = distance;
 		else
-			local Dist = SceneMan:ShortestDistance(PosLZ, PosEnemy, false);
-			GoodLZs[k].prox = math.floor((math.abs(Dist.X) + Dist.Magnitude * 0.2)/20);
+			-- No path to any enemy: use the straight-line distance to the closest one instead.
+			GoodLZs[k].prox = 0;
+			for i, PosEnemy in ipairs(EnemyLocations) do
+				local Dist = SceneMan:ShortestDistance(PosLZ, PosEnemy, false);
+				local prox = math.floor((math.abs(Dist.X) + Dist.Magnitude * 0.2)/20);
+				if i == 1 or prox < GoodLZs[k].prox then
+					GoodLZs[k].prox = prox;
+				end
+			end
 		end
 
-		bestProxScore = math.max(distance, bestProxScore);
+		bestProxScore = math.max(GoodLZs[k].prox, bestProxScore);
 	end
 
 	-- add the proximity to the enemy actors to the score

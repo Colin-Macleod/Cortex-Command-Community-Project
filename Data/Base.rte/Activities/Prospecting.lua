@@ -167,7 +167,7 @@ function Prospecting:UpdateActivity()
 						if foundBrain then
 							self:SetPlayerBrain(foundBrain, player);
 							self:SetViewState(Activity.NORMAL, player);
-							self:SwitchToActor(newBrain, player, team);
+							self:SwitchToActor(foundBrain, player, team);
 						end
 					else
 						-- Check if any player's brain is dead, after they've had one
