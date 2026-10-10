@@ -346,6 +346,12 @@ namespace {
 		const uint8_t mouseReleased = queued.MouseReleased | later.MouseReleased;
 		const float movementX = queued.MouseMovement[0] + later.MouseMovement[0];
 		const float movementY = queued.MouseMovement[1] + later.MouseMovement[1];
+		// The wheel is movement too. Raw keys only come as held states, so a key tapped in the earlier frame (which input capture holds for one frame) would be lost.
+		const int8_t wheel = static_cast<int8_t>(std::clamp(queued.MouseWheel + later.MouseWheel, -128, 127));
+		uint64_t keysHeld[4];
+		for (int word = 0; word < 4; ++word) {
+			keysHeld[word] = queued.KeysHeld[word] | later.KeysHeld[word];
+		}
 		queued = later;
 		queued.ElementPressed = pressed;
 		queued.ElementReleased = released;
@@ -353,6 +359,8 @@ namespace {
 		queued.MouseReleased = mouseReleased;
 		queued.MouseMovement[0] = movementX;
 		queued.MouseMovement[1] = movementY;
+		queued.MouseWheel = wheel;
+		std::copy(std::begin(keysHeld), std::end(keysHeld), std::begin(queued.KeysHeld));
 	}
 
 	/// An input frame that keeps held inputs from the previous one but has no new presses, releases or movement. Used when a player's input is late.
