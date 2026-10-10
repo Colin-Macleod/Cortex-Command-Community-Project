@@ -943,7 +943,8 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			reader.Read(hashes);
 			// Only for sim updates checksums are made at, not far ahead, and once per client and update, so a buggy or malicious client can't grow the map.
 			// From every client in the match, also those watching it (without a player of their own): their simulation can desync too.
-			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || !peer.InMatch || simUpdate < 0 || (simUpdate + 1) % c_ChecksumInterval != 0 || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
+			// The range check comes before the modulo, as simUpdate + 1 would overflow (undefined behaviour) for the largest value.
+			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || !peer.InMatch || simUpdate < 0 || simUpdate > m_NextBundleUpdate + c_MaxInputLead || (simUpdate + 1) % c_ChecksumInterval != 0) {
 				return;
 			}
 			const std::string who = peer.Player != Players::NoPlayer ? "player " + std::to_string(peer.Player + 1) : "watching client " + std::to_string(&peer - m_Peers.data() + 1) + " (" + peer.Name + ")";
