@@ -296,7 +296,7 @@ namespace RTE {
 		static constexpr int c_TerrainChecksumInterval = 600; //!< How often the (expensive) terrain hash is included.
 		static constexpr size_t c_HostChecksumsKept = 256; //!< Host: how many of its own state hashes it keeps for clients that are behind (at the default sim speed, about 4 minutes' worth).
 		std::map<long long, std::array<uint64_t, 8>> m_HostChecksums; //!< Host: own state hashes by sim update.
-		std::map<long long, std::vector<std::pair<int, std::array<uint64_t, 8>>>> m_ClientChecksums; //!< Host: client state hashes by sim update, waiting for the host's own.
+		std::map<long long, std::vector<std::pair<std::string, std::array<uint64_t, 8>>>> m_ClientChecksums; //!< Host: client state hashes by sim update (with who sent them, for messages), waiting for the host's own.
 		bool m_Desynced = false; //!< Whether a desync has been detected in this match.
 		std::string m_DesyncMessage; //!< Description of the detected desync.
 		long long m_ChecksumsCompared = 0; //!< Host: how many checksum comparisons succeeded, for the overlay and logs.

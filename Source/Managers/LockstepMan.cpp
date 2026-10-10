@@ -916,13 +916,15 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			reader.Read(matchId);
 			reader.Read(simUpdate);
 			reader.Read(hashes);
-			// Only for sim updates checksums are made at, not far ahead, and once per player and update, so a buggy or malicious client can't grow the map.
-			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || peer.Player == Players::NoPlayer || simUpdate < 0 || (simUpdate + 1) % c_ChecksumInterval != 0 || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
+			// Only for sim updates checksums are made at, not far ahead, and once per client and update, so a buggy or malicious client can't grow the map.
+			// From every client in the match, also those watching it (without a player of their own): their simulation can desync too.
+			if (!reader.Ok() || !m_MatchRunning || matchId != m_MatchId || !peer.InMatch || simUpdate < 0 || (simUpdate + 1) % c_ChecksumInterval != 0 || simUpdate > m_NextBundleUpdate + c_MaxInputLead) {
 				return;
 			}
-			std::vector<std::pair<int, std::array<uint64_t, 8>>>& checksumsForUpdate = m_ClientChecksums[simUpdate];
-			if (std::none_of(checksumsForUpdate.begin(), checksumsForUpdate.end(), [&peer](const auto& entry) { return entry.first == peer.Player; })) {
-				checksumsForUpdate.emplace_back(peer.Player, hashes);
+			const std::string who = peer.Player != Players::NoPlayer ? "player " + std::to_string(peer.Player + 1) : "watching client " + std::to_string(&peer - m_Peers.data() + 1) + " (" + peer.Name + ")";
+			std::vector<std::pair<std::string, std::array<uint64_t, 8>>>& checksumsForUpdate = m_ClientChecksums[simUpdate];
+			if (std::none_of(checksumsForUpdate.begin(), checksumsForUpdate.end(), [&who](const auto& entry) { return entry.first == who; })) {
+				checksumsForUpdate.emplace_back(who, hashes);
 			}
 			return;
 		}
@@ -1919,13 +1921,13 @@ void LockstepMan::Update() {
 				}
 				continue;
 			}
-			for (const auto& [player, hashes]: itr->second) {
+			for (const auto& [who, hashes]: itr->second) {
 				if (hashes == own->second) {
 					++m_ChecksumsCompared;
 					continue;
 				}
 				static const char* componentNames[8] = {"combined", "RNG", "Lua RNG", "actors", "items", "particles", "terrain", "activity"};
-				std::string description = "player " + std::to_string(player + 1) + " differs in";
+				std::string description = who + " differs in";
 				for (int component = 1; component < 8; ++component) {
 					if (hashes[component] != own->second[component]) {
 						description += std::string(" ") + componentNames[component];
