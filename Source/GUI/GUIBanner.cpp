@@ -137,16 +137,19 @@ bool GUIBanner::Create(const std::string fontFilePath, const std::string fontBlu
 			}
 		}
 
-		// Add the calculated charIndexcap to the cache so we can use it in other banner instances
-		// that use the same font bitmap files.
-		m_sCharCapCache.insert(std::pair<std::string, int>(filePaths[mode], m_CharIndexCap));
-		// Also add the now calculated font char data to the cache
-		// Allocate a dynamic array to throw into the map.. probably until app close
-		FontChar* aNewCache = new FontChar[MAXBANNERFONTCHARS];
-		// Copy the font data into the cache
-		memcpy(aNewCache, m_aaFontChars[mode], sizeof(FontChar) * MAXBANNERFONTCHARS);
-		// Now put it into the cache map
-		m_sFontCache.insert(std::pair<std::string, FontChar*>(filePaths[mode], aNewCache));
+		// Only when just calculated: if it came from the cache, the insert below would fail and the new array would leak, with every banner created.
+		if (fontItr == m_sFontCache.end()) {
+			// Add the calculated charIndexcap to the cache so we can use it in other banner instances
+			// that use the same font bitmap files.
+			m_sCharCapCache.insert(std::pair<std::string, int>(filePaths[mode], m_CharIndexCap));
+			// Also add the now calculated font char data to the cache
+			// Allocate a dynamic array to throw into the map.. probably until app close
+			FontChar* aNewCache = new FontChar[MAXBANNERFONTCHARS];
+			// Copy the font data into the cache
+			memcpy(aNewCache, m_aaFontChars[mode], sizeof(FontChar) * MAXBANNERFONTCHARS);
+			// Now put it into the cache map
+			m_sFontCache.insert(std::pair<std::string, FontChar*>(filePaths[mode], aNewCache));
+		}
 	}
 
 	return true;
