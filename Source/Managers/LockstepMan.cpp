@@ -83,7 +83,8 @@ using namespace RTE;
 namespace {
 	constexpr uint32_t c_ProtocolVersion = 3; //!< Bump whenever the message format changes.
 	constexpr unsigned short c_DefaultPort = 7777; //!< Default UDP port.
-	constexpr int c_MaxClients = Players::MaxPlayerCount - 1; //!< At most one player per peer.
+	// Not called c_MaxClients: RTE has one of those (for the old network multiplayer, 4), which the member functions below would see instead of this one.
+	constexpr int c_MaxCoopClients = Players::MaxPlayerCount - 1; //!< At most one player per peer.
 	constexpr int c_InputTimeoutMS = 3000; //!< How long the host waits for a player's late input before repeating their previous input.
 	constexpr int c_WaitingOverlayDelayMS = 250; //!< How long to wait for input before showing "waiting for players".
 	constexpr int c_LeaveConfirmMS = 3000; //!< How long a first Esc press stays armed.
@@ -510,7 +511,7 @@ void LockstepMan::HandleCommandLine(int argCount, char** argValue) {
 bool LockstepMan::StartHosting(unsigned short port) {
 	m_Peer = RakNet::RakPeerInterface::GetInstance();
 	RakNet::SocketDescriptor socketDescriptor(port, nullptr);
-	if (const RakNet::StartupResult result = m_Peer->Startup(c_MaxClients, &socketDescriptor, 1); result != RakNet::RAKNET_STARTED) {
+	if (const RakNet::StartupResult result = m_Peer->Startup(c_MaxCoopClients, &socketDescriptor, 1); result != RakNet::RAKNET_STARTED) {
 		// Also for -coop-host, so the Multiplayer screen says why there's no session.
 		if (result == RakNet::SOCKET_PORT_ALREADY_IN_USE || result == RakNet::SOCKET_FAILED_TO_BIND) {
 			m_StatusMessage = "Could not host on port " + std::to_string(port) + ". Is another program (or another copy of the game) using it? Try another port.";
@@ -522,7 +523,7 @@ bool LockstepMan::StartHosting(unsigned short port) {
 		m_Peer = nullptr;
 		return false;
 	}
-	m_Peer->SetMaximumIncomingConnections(c_MaxClients);
+	m_Peer->SetMaximumIncomingConnections(c_MaxCoopClients);
 	m_Peer->SetTimeoutTime(c_ConnectionTimeoutMS, RakNet::UNASSIGNED_SYSTEM_ADDRESS);
 	m_Role = Role::Host;
 	m_StatusMessage = "Hosting co-op on port " + std::to_string(port);
@@ -752,8 +753,10 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 			return;
 		}
 		case ID_CONNECTION_ATTEMPT_FAILED:
-		case ID_NO_FREE_INCOMING_CONNECTIONS:
 			m_StatusMessage = "Could not connect to " + m_HostAddress + ", retrying...";
+			return;
+		case ID_NO_FREE_INCOMING_CONNECTIONS:
+			m_StatusMessage = "The host's session is full (" + std::to_string(c_MaxCoopClients + 1) + " players), retrying in case someone leaves...";
 			return;
 		case ID_DISCONNECTION_NOTIFICATION:
 		case ID_CONNECTION_LOST:
