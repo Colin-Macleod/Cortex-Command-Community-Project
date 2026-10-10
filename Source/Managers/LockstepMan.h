@@ -93,6 +93,10 @@ namespace RTE {
 		/// Restores the resolution from before joining, once no Activity is running (the resolution can't change during one).
 		void RestoreLocalResolutionIfPossible();
 
+		/// Call when the player picks a resolution in the video settings. A client that switched to the host's resolution then keeps the picked one
+		/// (in the settings file, and after leaving) instead of the one from before joining. The next match still switches to the host's.
+		void KeepResolutionPickedInSettings();
+
 		/// Gets a description of the session's state, for the menus and overlay.
 		/// @return The status text.
 		const std::string& GetStatusMessage() const { return m_StatusMessage; }
@@ -250,6 +254,7 @@ namespace RTE {
 		std::vector<Peer> m_Peers; //!< Host: connected clients.
 		int m_LobbyPeerCount = 0; //!< Client: number of peers in the session, as last reported by the host.
 		std::vector<std::string> m_LobbyNames; //!< Client: the names of the players in the session, as last reported by the host.
+		bool m_HostInMatch = false; //!< Client: whether the host is playing a match, as last reported by the host. If this client isn't in it, it joins the next one.
 		int m_ResolutionRequests = 0; //!< Client: how many times the host asked us to switch resolution since connecting.
 		int m_LocalResX = 0; //!< Client: the resolution before switching to the host's, to restore when leaving. 0 if not switched.
 		int m_LocalResY = 0; //!< Client: see m_LocalResX.

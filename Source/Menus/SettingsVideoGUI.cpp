@@ -2,6 +2,7 @@
 #include "WindowMan.h"
 #include "FrameMan.h"
 #include "ActivityMan.h"
+#include "LockstepMan.h"
 
 #include "GUIInputWrapper.h"
 #include "GUI.h"
@@ -234,6 +235,8 @@ void SettingsVideoGUI::ApplyNewResolution(bool displaysWereMapped) {
 	} else {
 		m_ResolutionChangeDialogBox->SetVisible(false);
 		m_VideoSettingsBox->SetEnabled(true);
+		// A co-op client playing at the host's resolution would otherwise go back to (and save) the one from before joining, not this one.
+		g_LockstepMan.KeepResolutionPickedInSettings();
 		g_WindowMan.ChangeResolution(m_NewResX, m_NewResY, m_NewResMultiplier, m_NewFullscreen, displaysWereMapped);
 		m_FullscreenCheckbox->SetCheck(g_WindowMan.IsFullscreen());
 		std::string windowedText = g_WindowMan.IsFullscreen() ? "Windowed" : "Scale To Window";

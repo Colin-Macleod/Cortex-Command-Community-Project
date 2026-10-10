@@ -413,6 +413,7 @@ void LockstepMan::ResetSessionState() {
 	m_Peers.clear();
 	m_LobbyPeerCount = 0;
 	m_LobbyNames.clear();
+	m_HostInMatch = false;
 	m_ResolutionRequests = 0;
 	m_AutoStartDone = false;
 	m_MatchStartPending = false;
@@ -618,6 +619,14 @@ void LockstepMan::RestoreLocalResolutionIfPossible() {
 	}
 }
 
+void LockstepMan::KeepResolutionPickedInSettings() {
+	if (m_LocalResX > 0) {
+		m_LocalResX = 0;
+		m_LocalResY = 0;
+		g_WindowMan.ClearResolutionToSave();
+	}
+}
+
 std::vector<std::string> LockstepMan::GetLobbyPlayerNames() const {
 	if (m_Role != Role::Host) {
 		return m_LobbyNames;
@@ -692,6 +701,8 @@ void LockstepMan::BroadcastLobbyStatus() {
 	for (const std::string& name: GetLobbyPlayerNames()) {
 		message.WriteString(name);
 	}
+	// So players who join during a match know they'll join the next one, rather than wait for the host to start one.
+	message.Write(static_cast<uint8_t>(m_MatchRunning ? 1 : 0));
 	Broadcast(message.Data());
 	m_StatusMessage = "Hosting co-op: " + std::to_string(accepted) + " player" + (accepted == 1 ? "" : "s") + " connected";
 }
@@ -988,8 +999,16 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 					names.push_back(name);
 				}
 				m_LobbyNames = names.empty() ? std::vector<std::string>{"?"} : names;
-				if (!m_MatchRunning) {
-					m_StatusMessage = "In the host's lobby (" + std::to_string(count) + " player" + (count == 1 ? "" : "s") + "), waiting for the host to start an activity...";
+				uint8_t hostInMatch = 0;
+				reader.Read(hostInMatch);
+				m_HostInMatch = hostInMatch != 0;
+				if (!m_MatchRunning && !m_MatchStartPending && !m_DeferredMatchStart) {
+					const std::string playerCount = std::to_string(count) + " player" + (count == 1 ? "" : "s");
+					if (m_HostInMatch) {
+						m_StatusMessage = "In the host's lobby (" + playerCount + "). The host is playing a match that started without you; you'll join the next one.";
+					} else {
+						m_StatusMessage = "In the host's lobby (" + playerCount + "), waiting for the host to start an activity...";
+					}
 				}
 			}
 			return;
@@ -1144,6 +1163,12 @@ bool LockstepMan::SwitchToHostResolution(int resX, int resY) {
 
 void LockstepMan::FinishMatchStartFromHost() {
 	m_DeferredMatchStart = false;
+	if (g_MetaMan.GameInProgress()) {
+		// As when starting any other Activity from the menus. A Conquest campaign in progress changes how the scene is set up (no bunker deployments) and
+		// what things cost, which would desync the match, and the menus would treat the match as a Conquest battle afterwards.
+		g_ConsoleMan.PrintString("CO-OP: The host started a match, so the Conquest campaign in progress on this computer was closed.");
+		g_MetaMan.EndGame();
+	}
 	int unusedLocalPlayer = Players::NoPlayer;
 	GameActivity* activity = BuildActivityFromConfig(m_MatchConfig, unusedLocalPlayer);
 	if (!activity) {
@@ -1669,6 +1694,15 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 				break;
 			}
 		}
+		// Other human players the host put in the Activity (P2-P4, local split-screen players, which co-op doesn't have) go to the connected players first,
+		// in order and on the teams the host picked for them, so the host can e.g. put someone on the other team. Then free player slots on the host's team.
+		std::vector<int> configuredPlayers;
+		for (int player = localPlayer + 1; localPlayer != Players::NoPlayer && player < Players::MaxPlayerCount; ++player) {
+			if (activity->PlayerActive(player) && activity->PlayerHuman(player)) {
+				configuredPlayers.push_back(player);
+			}
+		}
+		size_t nextConfiguredPlayer = 0;
 		for (size_t peerIndex = 0; peerIndex < m_Peers.size(); ++peerIndex) {
 			Peer& peer = m_Peers[peerIndex];
 			peer.Player = Players::NoPlayer;
@@ -1676,16 +1710,28 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 			if (!peer.Accepted || !peer.Connected) {
 				continue;
 			}
-			for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
-				if (!activity->PlayerActive(player)) {
-					activity->AddPlayer(player, true, hostTeam, 0);
-					peer.Player = player;
-					m_PlayerOwnerPeer[player] = static_cast<int>(peerIndex);
-					m_PlayerDevices[player] = peer.Device;
-					m_PlayerDigitalAimSpeeds[player] = peer.DigitalAimSpeed;
-					break;
+			if (nextConfiguredPlayer < configuredPlayers.size()) {
+				peer.Player = configuredPlayers[nextConfiguredPlayer++];
+			} else {
+				for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+					if (!activity->PlayerActive(player)) {
+						activity->AddPlayer(player, true, hostTeam, 0);
+						peer.Player = player;
+						break;
+					}
 				}
 			}
+			if (peer.Player != Players::NoPlayer) {
+				m_PlayerOwnerPeer[peer.Player] = static_cast<int>(peerIndex);
+				m_PlayerDevices[peer.Player] = peer.Device;
+				m_PlayerDigitalAimSpeeds[peer.Player] = peer.DigitalAimSpeed;
+				g_ConsoleMan.PrintString("CO-OP: " + peer.Name + " plays player " + std::to_string(peer.Player + 1) + " on team " + std::to_string(activity->GetTeamOfPlayer(peer.Player) + 1) + ".");
+			}
+		}
+		// Nobody could control the ones left over, and Activities wait for every human player (e.g. to place a brain and finish the build phase).
+		for (size_t index = nextConfiguredPlayer; index < configuredPlayers.size(); ++index) {
+			activity->DeactivatePlayer(configuredPlayers[index]);
+			g_ConsoleMan.PrintString("CO-OP: Player " + std::to_string(configuredPlayers[index] + 1) + " was removed from the activity, as there's nobody to play it. Every other computer plays one player.");
 		}
 
 		if (!m_Options.InputDelayFixed) {
@@ -1764,6 +1810,10 @@ void LockstepMan::BeginMatch() {
 	m_Desynced = false;
 	m_DesyncMessage.clear();
 	m_LeaveRequested = false;
+	if (m_Role == Role::Host) {
+		// Tells players in the lobby that a match is running now.
+		BroadcastLobbyStatus();
+	}
 	if (m_Options.BotSeed >= 0) {
 		m_BotRNG.seed(static_cast<unsigned int>(m_Options.BotSeed));
 		m_BotHeld = VirtualInputFrame();
@@ -1814,7 +1864,7 @@ void LockstepMan::EndMatch() {
 			m_AutoStartDone = false;
 		}
 	} else if (m_ConnectedToHost) {
-		m_StatusMessage = "Waiting for the host to start an activity...";
+		m_StatusMessage = (m_HostInMatch && !m_MatchEndedByHost) ? "You left the match. The host is still playing it; you'll join the next one." : "Waiting for the host to start an activity...";
 	}
 	g_ConsoleMan.PrintString("CO-OP: Match ended.");
 }

@@ -12,7 +12,7 @@ Everything is in the main menu's **Multiplayer** screen. Enter your name there; 
 
 1. Click **Host Game** (UDP port 7777 by default; change it in the box next to the button).
 2. Wait for the other players to show up under *Players in session*.
-3. Click **Choose Activity** (or go to *Scenario Battle* from the main menu), pick an Activity and scene, put yourself on a team as usual and start it. Every connected player joins your team as an extra human player, as long as the Activity has free player slots (four in all); anyone left over watches the match instead, and is told so. Players who connect after the match has started join the next one.
+3. Click **Choose Activity** (or go to *Scenario Battle* from the main menu), pick an Activity and scene, put yourself on a team as usual and start it. If you also put players 2-4 on teams, the connected players take those slots in order (so you can put someone on the other team); the rest join your team as extra human players, as long as the Activity has free player slots (four in all), and anyone left over watches the match instead, and is told so. Player slots you set up that nobody connected to take are removed from the match. Players who connect after the match has started join the next one; their Multiplayer screen says so.
 
 Players outside your local network need to reach your UDP port: forward it on your router.
 
@@ -20,7 +20,7 @@ Players outside your local network need to reach your UDP port: forward it on yo
 
 Enter the host's address (e.g. `192.168.1.20`, or `192.168.1.20:7778` for another port) and click **Join Game**. The game keeps retrying until the host is up, and starts the match by itself when the host starts one, whichever menu you're in.
 
-If your game resolution differs from the host's, the game switches to the host's resolution when you join (the screen size affects gameplay, e.g. how far actors can see), checks it again whenever the host starts a match (in case either of you changed it in the video settings meanwhile), and switches back when you leave. If the host's resolution is bigger than your screen, the window is scaled down to fit. If switching fails, the game says so; set a matching resolution in the video settings and join again.
+If your game resolution differs from the host's, the game switches to the host's resolution when you join (the screen size affects gameplay, e.g. how far actors can see), checks it again whenever the host starts a match (in case either of you changed it in the video settings meanwhile), and switches back when you leave (to the resolution you picked in the video settings while in the session, if you did). If the host's resolution is bigger than your screen, the window is scaled down to fit. If switching fails, the game says so; set a matching resolution in the video settings and join again.
 
 **Leave Session** disconnects. Leaving the main menu screen doesn't.
 
@@ -174,5 +174,5 @@ A later AddressSanitizer sweep over every stock activity found more objects bein
 - **Scripts:**
   - Mods whose scripts read state outside the engine's control (`os.clock`, `io`, `TimerMan:TimeForSimUpdate()`, the mouse position without a player), or keep tables keyed by objects and act on `pairs()` order, can still desync. The desync detector will report it. Mods can use `SortedPairs` from `Base.rte/Utilities.lua` for object-keyed tables.
   - Scripts that read `FrameMan.PlayerScreenWidth` behave as if every player had a full screen at the shared resolution.
-- **Activities:** Conquest (MetaGame) battles, the tutorial, editor Activities and saved games aren't supported. Started while hosting, they're played on the host's computer only, and the other players keep waiting in the lobby.
+- **Activities:** Conquest (MetaGame) battles, the tutorial, editor Activities and saved games aren't supported. Started while hosting, they're played on the host's computer only, and the other players keep waiting in the lobby. A client with a Conquest campaign open when the host starts a match has the campaign closed (unsaved progress is lost), as it would change the match.
 - **Raw keyboard input in GUIs** (e.g. typing into a text box in the buy menu) isn't sent, so it doesn't work for any player in a match.
