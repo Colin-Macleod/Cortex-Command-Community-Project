@@ -927,8 +927,10 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 		case MsgPong: {
 			int64_t sentNanoseconds = 0;
 			const int64_t nowNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-			// The client echoes the time of our own ping, so anything outside 0..now is garbage (and the subtraction below could overflow, which is undefined behaviour).
-			if (reader.Read(sentNanoseconds) && sentNanoseconds >= 0 && sentNanoseconds <= nowNanoseconds) {
+			// The client echoes the time of our own ping (sent every half second), so anything in the future or more than a minute ago is garbage. Checked
+			// in this order so the subtraction can't overflow (undefined behaviour), and so the round trip time stays in a sane range (it's converted to int).
+			constexpr int64_t c_MaxRoundTripNanoseconds = 60'000'000'000LL;
+			if (reader.Read(sentNanoseconds) && sentNanoseconds >= 0 && sentNanoseconds <= nowNanoseconds && nowNanoseconds - sentNanoseconds <= c_MaxRoundTripNanoseconds) {
 				const float roundTripMS = static_cast<float>(nowNanoseconds - sentNanoseconds) / 1.0e6F;
 				peer.RoundTripMS = peer.RoundTripSamples == 0 ? roundTripMS : peer.RoundTripMS * 0.8F + roundTripMS * 0.2F;
 				++peer.RoundTripSamples;
