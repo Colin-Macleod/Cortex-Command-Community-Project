@@ -509,6 +509,21 @@ LuaStateWrapper* LuaMan::GetThreadCurrentLuaState() const {
 	return s_currentLuaState;
 }
 
+namespace {
+	/// Makes a Lua state this thread's current one while it runs a script, and puts back the previous one (usually none) afterwards. Otherwise it would
+	/// keep pointing at the last state that ran anything, also once that state is gone (e.g. while the game exits), and the crash handler, which prints
+	/// the current state's Lua traceback, would read freed memory and crash again, hiding the original crash.
+	class CurrentLuaStateScope {
+	public:
+		explicit CurrentLuaStateScope(LuaStateWrapper* luaState) :
+		    m_Previous(s_currentLuaState) { s_currentLuaState = luaState; }
+		~CurrentLuaStateScope() { s_currentLuaState = m_Previous; }
+
+	private:
+		LuaStateWrapper* m_Previous;
+	};
+} // namespace
+
 LuaStateWrapper* LuaMan::GetAndLockFreeScriptState(long uniqueID) {
 	if (s_luaStateOverride) {
 		// We're creating this object in a multithreaded environment, ensure that it's assigned to the same script state as us
@@ -666,7 +681,7 @@ int LuaStateWrapper::RunScriptFunctionString(const std::string& functionName, co
 
 	// Lock here, even though we also lock in RunScriptString(), to ensure that the temp entity vector isn't stomped by separate threads.
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 
 	scriptString << functionName + "(";
 	if (!selfObjectName.empty()) {
@@ -711,7 +726,7 @@ int LuaStateWrapper::RunScriptString(const std::string& scriptString, bool conso
 	int error = 0;
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 
 	lua_pushcfunction(m_State, &AddFileAndLineToError);
 	// Load the script string onto the stack and then execute it with pcall. Pcall will call the file and line error handler if there's an error by pointing 2 up the stack to it.
@@ -736,7 +751,7 @@ int LuaStateWrapper::RunScriptFunctionObject(const LuabindObjectWrapper* functio
 	int status = 0;
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 	m_CurrentlyRunningScriptPath = functionObject->GetFilePath();
 
 	lua_pushcfunction(m_State, &AddFileAndLineToError);
@@ -818,7 +833,7 @@ int LuaStateWrapper::RunScriptConditionalTestFunctionObject(const LuabindObjectW
 	int status = 0;
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 	m_CurrentlyRunningScriptPath = functionObject->GetFilePath();
 
 	lua_pushcfunction(m_State, &AddFileAndLineToError);
@@ -910,7 +925,7 @@ int LuaStateWrapper::RunScriptFile(const std::string& filePath, bool consoleErro
 	int error = 0;
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 	m_CurrentlyRunningScriptPath = filePath;
 
 	const int stackStart = lua_gettop(m_State);
@@ -969,7 +984,7 @@ int LuaStateWrapper::RunScriptFile(const std::string& filePath, bool consoleErro
 
 bool LuaStateWrapper::RetrieveFunctions(const std::string& funcObjectName, const std::vector<std::string>& functionNamesToLookFor, std::unordered_map<std::string, LuabindObjectWrapper*>& outFunctionNamesAndObjects) {
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 
 	luabind::object funcHoldingObject = luabind::globals(m_State)[funcObjectName.c_str()];
 	if (luabind::type(funcHoldingObject) == LUA_TNIL) {
@@ -1016,7 +1031,7 @@ int LuaStateWrapper::RunScriptFileAndRetrieveFunctions(const std::string& filePa
 	}
 
 	std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-	s_currentLuaState = this;
+	CurrentLuaStateScope currentLuaStateScope(this);
 
 	if (int error = RunScriptFile(filePath); error < 0) {
 		return error;
