@@ -45,6 +45,8 @@ BuyMenuGUI::BuyMenuGUI() {
 
 BuyMenuGUI::~BuyMenuGUI() {
 	Destroy();
+	// Destroy ends with Clear, which allocates a fresh array.
+	delete[] m_aExpandedModules;
 }
 
 void BuyMenuGUI::Clear() {
