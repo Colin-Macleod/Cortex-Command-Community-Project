@@ -1560,6 +1560,19 @@ void MovableMan::Update() {
 		////////////////////////////////////////////////////////////////////////////
 		// Copy (Settle) Pass
 
+		// Forget a deleted actor as a brain, to avoid crashes due to brain deletion. For every player it's the brain of: several players can share
+		// one (e.g. Keepie Uppie's rocket in co-op). Actors can end up in the item and particle lists too (scripts can add them there), so check those too.
+		auto forgetBrain = [](MovableObject* movableObject) {
+			Activity* activity = g_ActivityMan.GetActivity();
+			if (Actor* actor = activity ? dynamic_cast<Actor*>(movableObject) : nullptr; actor && activity->IsAssignedBrain(actor)) {
+				for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
+					if (activity->GetPlayerBrain(player) == actor) {
+						activity->SetPlayerBrain(nullptr, player);
+					}
+				}
+			}
+		};
+
 		{
 			// DEATH //////////////////////////////////////////////////////////
 			// Transfer dead actors from Actor list to particle list
@@ -1615,19 +1628,6 @@ void MovableMan::Update() {
 			// Actors
 			aIt = partition(m_Actors.begin(), m_Actors.end(), std::not_fn(std::mem_fn(&MovableObject::ToDelete)));
 			amidIt = aIt;
-
-			// Forget a deleted actor as a brain, to avoid crashes due to brain deletion. For every player it's the brain of: several players can share
-			// one (e.g. Keepie Uppie's rocket in co-op). Actors can end up in the item and particle lists too (scripts can add them there), so check those too.
-			auto forgetBrain = [](MovableObject* movableObject) {
-				Activity* activity = g_ActivityMan.GetActivity();
-				if (Actor* actor = activity ? dynamic_cast<Actor*>(movableObject) : nullptr; actor && activity->IsAssignedBrain(actor)) {
-					for (int player = Players::PlayerOne; player < Players::MaxPlayerCount; ++player) {
-						if (activity->GetPlayerBrain(player) == actor) {
-							activity->SetPlayerBrain(nullptr, player);
-						}
-					}
-				}
-			};
 
 			while (aIt != m_Actors.end()) {
 				forgetBrain(*aIt);
@@ -1701,6 +1701,8 @@ void MovableMan::Update() {
 				if ((*parIt)->GetDrawPriority() >= terrMat->GetPriority()) {
 					(*parIt)->DrawToTerrain(g_SceneMan.GetTerrain());
 				}
+				// Dead actors are moved to the particle list, so this can be a dead brain, which the Activity still checks.
+				forgetBrain(*parIt);
 				(*parIt)->DestroyScriptState();
 				delete (*parIt);
 				RemoveValidMO(m_ValidParticles, *parIt);
