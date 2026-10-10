@@ -768,6 +768,7 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 				g_ActivityMan.SetInActivity(false);
 				EndMatch();
 			}
+			CancelPendingMatchStart();
 			return;
 		default:
 			break;
@@ -1092,6 +1093,8 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 				g_ActivityMan.SetInActivity(false);
 				EndMatch();
 			}
+			// The host may end a match before this computer got round to starting it (e.g. it was busy for a while), and must then not start it at all.
+			CancelPendingMatchStart();
 			m_StatusMessage = "The host ended the match, waiting for the host to start an activity...";
 			return;
 		}
@@ -1147,6 +1150,21 @@ void LockstepMan::FinishMatchStartFromHost() {
 	} else {
 		g_ConsoleMan.PrintString("CO-OP: The host started \"" + activity->GetPresetName() + "\". You are player " + std::to_string(m_LocalPlayer + 1) + ".");
 	}
+}
+
+void LockstepMan::CancelPendingMatchStart() {
+	if (m_Role != Role::Client || (!m_MatchStartPending && !m_DeferredMatchStart)) {
+		return;
+	}
+	if (m_MatchStartPending) {
+		g_ActivityMan.SetRestartActivity(false);
+	}
+	m_MatchStartPending = false;
+	m_DeferredMatchStart = false;
+	m_UpdateInputs.clear();
+	// The host's settings are applied as soon as its match configuration arrives.
+	RestoreLocalSettings();
+	g_ConsoleMan.PrintString("CO-OP: The host's match ended (or the connection to the host was lost) before this computer started it, so it isn't started.");
 }
 
 #pragma endregion

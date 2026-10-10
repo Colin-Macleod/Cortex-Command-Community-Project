@@ -359,6 +359,10 @@ namespace RTE {
 		/// Client: builds the Activity from the match configuration the host sent (m_MatchConfig) and sets it to start.
 		void FinishMatchStartFromHost();
 
+		/// Client: forgets a match start received from the host that hasn't been acted on yet (because the host ended that match, or the connection to it
+		/// was lost, before this computer started it), so the match isn't started alone, waiting for the host's input forever.
+		void CancelPendingMatchStart();
+
 		/// Forgets all session and connection state, after the network peer has been shut down.
 		void ResetSessionState();
 
