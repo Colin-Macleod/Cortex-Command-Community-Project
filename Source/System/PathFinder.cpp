@@ -47,6 +47,37 @@ thread_local int s_JumpHeightDiagonal = 0;
 // TODO: Enhance MicroPather to add that capability (or write our own pather)!
 thread_local float s_DigStrength = 0.0F;
 
+// The no-gravity area's boxes, wrapped, as they were when a deterministic-mode path request was made, or nullptr to look at the live area.
+// Deterministic-mode requests are calculated in the background while the simulation goes on, and scripts can add boxes to the area meanwhile (the automovers do,
+// over several updates); whether the search saw a box added during that time would depend on thread timing.
+thread_local const std::vector<Box>* s_NoGravityBoxes = nullptr;
+
+namespace {
+	/// Takes a copy of the no-gravity area's boxes, wrapped, for a deterministic-mode path request. Must be called where the request is made.
+	std::shared_ptr<const std::vector<Box>> SnapshotNoGravityBoxes() {
+		auto boxes = std::make_shared<std::vector<Box>>();
+		if (Scene* scene = g_SceneMan.GetScene()) {
+			if (const Scene::Area* noGravityArea = scene->GetArea("NoGravityArea")) {
+				std::list<Box> wrappedBoxes;
+				for (const Box* box: noGravityArea->GetBoxes()) {
+					wrappedBoxes.clear();
+					g_SceneMan.WrapBox(*box, wrappedBoxes);
+					boxes->insert(boxes->end(), wrappedBoxes.begin(), wrappedBoxes.end());
+				}
+			}
+		}
+		return boxes;
+	}
+
+	/// Whether a point is in the no-gravity area, as seen by the path search running on this thread.
+	bool IsPointInNoGravityAreaForPathing(const Vector& point) {
+		if (!s_NoGravityBoxes) {
+			return g_SceneMan.IsPointInNoGravArea(point);
+		}
+		return std::any_of(s_NoGravityBoxes->begin(), s_NoGravityBoxes->end(), [&point](const Box& box) { return box.IsWithinBox(point); });
+	}
+} // namespace
+
 RTE::PathNode::PathNode(const Vector& pos) :
     Pos(pos) {
 	const Material* outOfBounds = g_SceneMan.GetMaterialFromID(MaterialColorKeys::g_MaterialOutOfBounds);
@@ -244,11 +275,14 @@ std::shared_ptr<volatile PathRequest> PathFinder::CalculatePathAsync(Vector star
 	if (g_TimerMan.IsInDeterministicMode()) {
 		// Calculate in the background as usual, but hold the result back until PublishDeterministicResults, so when it becomes visible doesn't depend on thread timing.
 		uint64_t order = g_LuaMan.GetNextDeterministicOrderKey();
+		std::shared_ptr<const std::vector<Box>> noGravityBoxes = SnapshotNoGravityBoxes();
 		++s_PendingDeterministicRequests;
 		g_ThreadMan.GetBackgroundThreadPool().push_task(
-		    [this, start, end, jumpHeight, digStrength, callback, order](std::shared_ptr<volatile PathRequest> volRequest) {
+		    [this, start, end, jumpHeight, digStrength, callback, order, noGravityBoxes](std::shared_ptr<volatile PathRequest> volRequest) {
 			    PathRequest& request = const_cast<PathRequest&>(*volRequest);
+			    s_NoGravityBoxes = noGravityBoxes.get();
 			    request.status = this->CalculatePath(start, end, request.path, request.totalCost, jumpHeight, digStrength);
+			    s_NoGravityBoxes = nullptr;
 			    request.pathLength = request.path.size();
 			    {
 				    std::scoped_lock lock(s_DeterministicResultsMutex);
@@ -378,7 +412,7 @@ void PathFinder::AdjacentCost(void* state, std::vector<micropather::StateCost>* 
 	const float costRadiationMultiplier = 0.2F;
 	float radiatedCost = 0.0F; // GetNodeAverageTransitionCost(*node) * costRadiationMultiplier;
 
-	bool isInNoGrav = g_SceneMan.IsPointInNoGravArea(node->Pos);
+	bool isInNoGrav = IsPointInNoGravityAreaForPathing(node->Pos);
 	bool allowDiagonal = !isInNoGrav; // We don't allow diagonals in nograv to improve automover behaviour
 
 	if (node->Down && node->Down->m_Navigable) {
