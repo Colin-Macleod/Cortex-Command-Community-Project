@@ -10,7 +10,7 @@ function Create(self)
 		
 		if oldStockReplacement then
 			if self:IsAttached() then
-				local parent = self.Parent;
+				local parent = self:GetParent();
 				local rootParent = self:GetRootParent();
 				self:RemoveFromParent();
 				
