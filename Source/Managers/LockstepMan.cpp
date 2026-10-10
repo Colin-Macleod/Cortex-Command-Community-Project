@@ -1097,7 +1097,10 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 				}
 			}
 			// Only while in (or about to start) the match: a client that reconnected during one isn't in it, and would otherwise collect its ticks until it ends.
-			if (reader.Ok() && matchId == m_MatchId && (m_MatchRunning || m_MatchStartPending || m_DeferredMatchStart)) {
+			// Sim update numbers are never negative and stay far from the type's limits (UpdateCatchUp does arithmetic on them, which would overflow),
+			// and a bundle for an update this computer already ran would never be erased.
+			const bool plausibleUpdate = simUpdate >= 0 && simUpdate < (1LL << 48) && (!m_MatchRunning || simUpdate >= m_NextSimUpdate);
+			if (reader.Ok() && plausibleUpdate && matchId == m_MatchId && (m_MatchRunning || m_MatchStartPending || m_DeferredMatchStart)) {
 				m_UpdateInputs[simUpdate] = frames;
 			}
 			return;
