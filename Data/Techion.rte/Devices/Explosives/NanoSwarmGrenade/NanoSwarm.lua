@@ -175,10 +175,10 @@ function Update(self)
 				end
 			end
 		else
-			target = nil;
+			self.target = nil;
 		end
 	else
-		target = nil;
+		self.target = nil;
 	end
 
 	if not moving then

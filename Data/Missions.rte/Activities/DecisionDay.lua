@@ -48,11 +48,11 @@ function DecisionDaySwapControlPieSliceActivation(pieMenuOwner, pieMenu, pieSlic
 end
 
 function DecisionDay:GetAreaNameForBunker(bunkerNameOrId)
-	if bunkerNameOrId == 1 or bunkerNameOrNumber == "frontBunker" then
+	if bunkerNameOrId == 1 or bunkerNameOrId == "frontBunker" then
 		return "Front Bunker";
-	elseif bunkerNameOrId == 2 or bunkerNameOrNumber == "middleBunker" then
+	elseif bunkerNameOrId == 2 or bunkerNameOrId == "middleBunker" then
 		return "Middle Bunker";
-	elseif bunkerNameOrId == 3 or bunkerNameOrNumber == "mainBunker" then
+	elseif bunkerNameOrId == 3 or bunkerNameOrId == "mainBunker" then
 		return "Main Bunker";
 	end
 end

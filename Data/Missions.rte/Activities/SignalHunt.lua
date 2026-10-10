@@ -217,7 +217,7 @@ function SignalHunt:SetupHumanPlayerBrains()
 
 				local humanTeamTechId = PresetMan:GetModuleID(self.humanTeamTechName);
 				local actor;
-				if humanTeamTechId ~= -1 and team == self.attackerTeam then
+				if humanTeamTechId ~= -1 then
 					actor = PresetMan:GetLoadout("Infantry Brain", humanTeamTechId, false);
 					actor:RemoveInventoryItem("Constructor");
 				else

@@ -434,7 +434,8 @@ function TacticsHandler:RetaskSquad(squad, team, allowMerge)
 			end
 			squad.Actors = {}; -- will be wiped next update for being empty
 			squad.activeActorCount = 0;
-			return self:ApplyTaskToSquadActors(squadToMergeInto.Actors, taskName);	
+			squadToMergeInto.taskName = newTask.Name;
+			return self:ApplyTaskToSquadActors(squadToMergeInto.Actors, newTask);	
 		else
 			squad.taskName = newTask.Name;
 			return self:ApplyTaskToSquadActors(squad.Actors, newTask);
@@ -617,9 +618,10 @@ function TacticsHandler:AddSquad(team, squadTable, taskName, applyTask, allowMer
 				--print(actor)
 			end
 			if self.verboseLogging then
-				print("INFO: TacticsHandler merged a newly added squad into an old one instead of adding it. New task name: " .. taskNmae);
+				print("INFO: TacticsHandler merged a newly added squad into an old one instead of adding it. New task name: " .. taskName);
 			end
-			self:ApplyTaskToSquadActors(squadToMergeInto.Actors, taskName);
+			squadToMergeInto.taskName = taskName;
+			self:ApplyTaskToSquadActors(squadToMergeInto.Actors, self:GetTaskByName(taskName, team));
 		else
 	
 			local squadEntry = {};
