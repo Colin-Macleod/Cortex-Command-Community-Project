@@ -216,6 +216,8 @@ namespace RTE {
 			std::chrono::steady_clock::time_point ConnectedSince = std::chrono::steady_clock::now(); //!< When the client connected, to drop connections that never say hello.
 			float RoundTripMS = 0; //!< Smoothed round trip time to this client, as seen by the game loop (includes waiting for the next frame to process messages).
 			int RoundTripSamples = 0; //!< How many round trip measurements have been made.
+			std::chrono::steady_clock::time_point UnansweredPingSince{}; //!< When the first of the host's pings sent since the client was last heard from went out, or zero if there's none. Clients answer them in the menus and in matches.
+			bool JustAccepted = false; //!< Whether the client was accepted while handling the messages that arrived this frame.
 		};
 
 		/// Configuration from the command line.

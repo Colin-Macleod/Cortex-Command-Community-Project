@@ -90,6 +90,7 @@ namespace {
 	constexpr int c_LeaveConfirmMS = 3000; //!< How long a first Esc press stays armed.
 	constexpr int c_ConnectionTimeoutMS = 30000; //!< How long a connection may go silent before it's considered lost. Generous, as loading a big scene on a slow machine can starve the network thread.
 	constexpr int c_ReconnectIntervalMS = 2000; //!< How often a client retries connecting to a host that isn't up yet.
+	constexpr int c_ReplacedConnectionSilenceMS = 5000; //!< How long a connection must have left the host's pings unanswered to be taken for the old one of a player who joins again from the same address with the same name.
 	constexpr int c_HelloTimeoutMS = 30000; //!< How long the host keeps a connection that hasn't been accepted (no valid hello yet) before closing it, so it doesn't hold a slot forever.
 	constexpr int c_LagIdleMS = 10000; //!< After lagging this long, a player's held input is no longer repeated, so their actor stops instead of e.g. firing forever.
 	constexpr long long c_MaxInputLead = 600; //!< Input or checksums for sim updates further ahead than this are ignored (a buggy or malicious peer could otherwise grow the queues without bound).
@@ -782,6 +783,7 @@ void LockstepMan::HandlePacket(RakNet::Packet* packet) {
 }
 
 void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t* data, size_t size) {
+	peer.UnansweredPingSince = {};
 	MessageReader reader(data, size);
 	switch (type) {
 		case MsgHello: {
@@ -863,6 +865,7 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 			if (peer.Name.empty()) {
 				peer.Name = "Player";
 			}
+			peer.JustAccepted = true;
 			g_ConsoleMan.PrintString("CO-OP: " + peer.Name + " (" + peer.Address + ") joined.");
 			BroadcastLobbyStatus();
 			return;
@@ -1847,6 +1850,34 @@ void LockstepMan::Update() {
 		}
 	}
 
+	if (m_Role == Role::Host) {
+		// A player whose game crashed (or lost its connection) and who joins again gets a new connection, while the old one only times out after
+		// c_ConnectionTimeoutMS. Until then it would count as a player, and get a player slot in a match started meanwhile, which waits for it. A connection
+		// from the same address with the same name that has left the host's pings unanswered is that player's old one, so it's closed. Checked once every
+		// message that arrived has been handled, so answers that waited while this computer was busy count.
+		bool closedAny = false;
+		for (Peer& peer: m_Peers) {
+			if (!std::exchange(peer.JustAccepted, false) || !peer.Connected) {
+				continue;
+			}
+			const std::string ipAddress = peer.Address.substr(0, peer.Address.rfind('|'));
+			for (Peer& oldPeer: m_Peers) {
+				if (&oldPeer != &peer && oldPeer.Accepted && oldPeer.Connected && oldPeer.Name == peer.Name && oldPeer.Address.substr(0, oldPeer.Address.rfind('|')) == ipAddress &&
+				    oldPeer.UnansweredPingSince != std::chrono::steady_clock::time_point() && ElapsedMS(oldPeer.UnansweredPingSince) > c_ReplacedConnectionSilenceMS) {
+					const bool playingInMatch = m_MatchRunning && oldPeer.InMatch && oldPeer.Player != Players::NoPlayer;
+					g_ConsoleMan.PrintString("CO-OP: " + oldPeer.Address + " hasn't answered for " + std::to_string(ElapsedMS(oldPeer.UnansweredPingSince) / 1000) + " s and " + peer.Name + " joined again from " + peer.Address +
+					                         ", closing the old connection." + (playingInMatch ? " Player " + std::to_string(oldPeer.Player + 1) + " will stand idle." : ""));
+					m_Peer->CloseConnection(RakNet::AddressOrGUID(RakNet::RakNetGUID(oldPeer.Guid)), true);
+					oldPeer.Connected = false;
+					closedAny = true;
+				}
+			}
+		}
+		if (closedAny) {
+			BroadcastLobbyStatus();
+		}
+	}
+
 	if (m_DeferredMatchStart && !g_WindowMan.ResolutionChanged()) {
 		FinishMatchStartFromHost();
 	}
@@ -1890,6 +1921,11 @@ void LockstepMan::Update() {
 			MessageWriter ping(MsgPing);
 			ping.Write(static_cast<int64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()));
 			Broadcast(ping.Data());
+			for (Peer& peer: m_Peers) {
+				if (peer.Accepted && peer.Connected && peer.UnansweredPingSince == std::chrono::steady_clock::time_point()) {
+					peer.UnansweredPingSince = m_LastPingTime;
+				}
+			}
 		}
 
 		if (!m_AutoStartDone && !m_Options.AutoActivity.empty() && !m_MatchRunning && !g_ActivityMan.ActivitySetToRestart()) {
