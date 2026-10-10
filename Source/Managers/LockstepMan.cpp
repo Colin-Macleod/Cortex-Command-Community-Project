@@ -984,12 +984,15 @@ void LockstepMan::HandleClientMessage(MessageType type, const uint8_t* data, siz
 	}
 	MessageReader reader(data, size);
 	switch (type) {
-		case MsgReject:
-			reader.ReadString(m_RejectReason);
-			m_RejectReason = "The host rejected the connection: " + m_RejectReason;
+		case MsgReject: {
+			// Read into a local: a failed read leaves its argument as it was, and m_RejectReason would then get the prefix again with every such message.
+			std::string reason;
+			reader.ReadString(reason);
+			m_RejectReason = "The host rejected the connection: " + reason;
 			m_StatusMessage = m_RejectReason;
 			g_ConsoleMan.PrintString("CO-OP: " + m_RejectReason);
 			return;
+		}
 		case MsgLobby: {
 			uint8_t count = 0;
 			if (reader.Read(count)) {
