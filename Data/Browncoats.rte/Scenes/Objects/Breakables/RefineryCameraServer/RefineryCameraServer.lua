@@ -1,11 +1,17 @@
 function Create(self)
 
 	self.Activity = ToGameActivity(ActivityMan:GetActivity());
-	
+
 end
 
-function OnDestroy(self)
+-- The engine calls Destroy (there's no OnDestroy callback) whenever this object is deleted, also when the scene is cleared, so only report it when it was destroyed during play.
+function Destroy(self)
 
-	self.Activity:SendMessage("Refinery_S4CameraServerBroken");
+	if self.ToDelete then
+		local activity = ActivityMan:GetActivity();
+		if activity and activity.ActivityState == Activity.RUNNING then
+			activity:SendMessage("Refinery_S4CameraServerBroken");
+		end
+	end
 
 end

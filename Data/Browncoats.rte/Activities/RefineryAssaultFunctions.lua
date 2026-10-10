@@ -572,7 +572,7 @@ function RefineryAssault:HandleMessage(message, object)
 		
 	elseif message == "Refinery_S4CameraServerBroken" then
 	
-		self.saveTable.cameraServerBroken = self.saveTable.cameraServerBroken == nil and 1 or self.saveTable.cameraServerBroken + 1;
+		self.saveTable.cameraServersBroken = (self.saveTable.cameraServersBroken or 0) + 1;
 		
 	elseif message == "RefineryAssault_KeycardPickedUp" then
 		
@@ -1011,6 +1011,8 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 	
 	if order then
 		local taskPos;
+		-- Declared out here, as it's used after the if-block below. Otherwise that would read a global left over from earlier calls (or Activities).
+		local areaThisIsIn;
 		if task then
 			
 			taskPos = self.tacticsHandler:GetTaskPosition(task);
@@ -1018,7 +1020,6 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 				taskPos = taskPos.RandomPoint;
 			end
 			-- check if it's in an area this team owns
-			local areaThisIsIn
 			for i = 1, #self.saveTable.buyDoorTables.teamAreas[team] do
 				local area = SceneMan.Scene:GetArea("BuyDoorArea_" .. self.saveTable.buyDoorTables.teamAreas[team][i]);
 				if area:IsInside(taskPos) then
@@ -1038,6 +1039,7 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 			-- might be ineffective, but who cares.
 			
 			local closestDist = false;
+			local closestAreaName;
 			if #self.saveTable.buyDoorTables.teamAreas[team] > 0 then
 				for k, area in pairs(self.saveTable.buyDoorTables.teamAreas[team]) do
 					--print(area)
@@ -1047,10 +1049,10 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 							local dist = SceneMan:ShortestDistance(taskPos, buyDoor.Pos, SceneMan.SceneWrapsX).Magnitude;
 							if not closestDist then
 								closestDist = dist;
-								areaThisIsIn = area;
+								closestAreaName = area;
 							elseif dist < closestDist then
 								closestDist = dist;
-								areaThisIsIn = area;
+								closestAreaName = area;
 							end
 						end
 					end
@@ -1058,7 +1060,7 @@ function RefineryAssault:SendBuyDoorDelivery(team, task, squadType, specificInde
 				--print("found closest area to task:");
 				--print(area);
 				-- actually get the Area
-				areaThisIsIn = SceneMan.Scene:GetArea("BuyDoorArea_" .. areaThisIsIn);
+				areaThisIsIn = closestAreaName and SceneMan.Scene:GetArea("BuyDoorArea_" .. closestAreaName) or nil;
 			else
 				--print("team " .. team .. " doesn't have a backup area");
 			end
