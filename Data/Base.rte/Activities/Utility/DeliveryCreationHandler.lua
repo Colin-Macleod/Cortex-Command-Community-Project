@@ -607,7 +607,7 @@ function DeliveryCreationHandler:GiveActorRandomAdditions(team, actor, multiplie
 	end
 	
 	if rand < self.saveTable.teamExtraItemChances[team].Digger * multiplier then
-		presetName, createFunc, techName = self:SelectPresetByGroupPair(team, "Tools - Diggers", "Tools - Diggers", "Tools - Diggers", "Tools - Diggers");
+		local presetName, createFunc, techName = self:SelectPresetByGroupPair(team, "Tools - Diggers", "Tools - Diggers", "Tools - Diggers", "Tools - Diggers");
 		
 		local weapon = _G[createFunc](presetName, techName);
 		actor:AddInventoryItem(weapon)
@@ -638,7 +638,7 @@ function DeliveryCreationHandler:SelectPresetByGroupPair(team, primaryGroup, sec
 	local presetTable = self:CheckTwoGroupIntersections(team, primaryGroup, secondaryGroup, true)
 	if not presetTable then
 		actingTech = self.teamTechTable[team];
-		actingGroupTable = self.teamPresetTables[team][primaryGroup];
+		local actingGroupTable = self.teamPresetTables[team][primaryGroup];
 		
 		if #actingGroupTable == 0 then
 			actingGroupTable = self.teamPresetTables[team][secondaryGroup];
@@ -1032,7 +1032,7 @@ function DeliveryCreationHandler:CreateCraft(team, forceRocketUsage)
 	if forceRocketUsage then
 		craftGroup = "Craft - Rockets";
 	end
-	presetName, createFunc, techName = self:SelectPresetByGroupPair(team, craftGroup, craftGroup, craftGroup, craftGroup);
+	local presetName, createFunc, techName = self:SelectPresetByGroupPair(team, craftGroup, craftGroup, craftGroup, craftGroup);
 	
 	local craft = _G[createFunc](presetName, techName);
 	craft.Team = team;
@@ -1049,7 +1049,7 @@ function DeliveryCreationHandler:CreateSquadWithCraft(team, forceRocketUsage, sq
 	if forceRocketUsage then
 		craftGroup = "Craft - Rockets";
 	end
-	presetName, createFunc, techName = self:SelectPresetByGroupPair(team, craftGroup, craftGroup, craftGroup, craftGroup);
+	local presetName, createFunc, techName = self:SelectPresetByGroupPair(team, craftGroup, craftGroup, craftGroup, craftGroup);
 	
 	local craft = _G[createFunc](presetName, techName);
 	craft.Team = team;

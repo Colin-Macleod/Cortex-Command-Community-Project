@@ -1145,7 +1145,7 @@ function DecisionDay:UpdateCamera()
 	if scrollTargetAndSpeed then
 		for _, player in pairs(self.humanPlayers) do
 			if not scrollTargetAndSpeed[1] then
-				brain = self:GetPlayerBrain(player)
+				local brain = self:GetPlayerBrain(player)
 				if brain then
 					CameraMan:SetScrollTarget(brain.Pos, scrollTargetAndSpeed[2], self:ScreenOfPlayer(player))
 				end
@@ -2351,7 +2351,7 @@ function DecisionDay:SpawnCraft(team, avoidPreviousCraftPos, useRocketsInsteadOf
 	end
 	passengerCount = math.min(passengerCount, craft.MaxPassengers);
 	for i = 1, passengerCount do
-		local actor;
+		local passenger;
 		if infantryType then
 			passenger = self:CreateInfantry(team, infantryType);
 		elseif math.random() < crabToHumanSpawnRatio then

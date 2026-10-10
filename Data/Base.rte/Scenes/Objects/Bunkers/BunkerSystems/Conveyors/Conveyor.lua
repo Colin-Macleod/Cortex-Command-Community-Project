@@ -1,5 +1,4 @@
 function Create(self)
-	x = self;
 	--Set the speed in pixels per frame at which to move the actors/items.
 	self.speed = 2;
 end

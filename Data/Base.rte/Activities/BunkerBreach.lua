@@ -764,7 +764,7 @@ function BunkerBreach:CreateDrop(loadout, aiMode, passengerCount, avoidPreviousC
 	end
 	passengerCount = math.min(passengerCount, craft.MaxPassengers);
 	for i = 1, passengerCount do
-		local actor;
+		local passenger;
 		if loadout then
 			passenger = self:CreateInfantry(techID, loadout);
 		elseif math.random() < crabToHumanSpawnRatio and self.AI.crabCount < self.AI.maxCrabCount then
@@ -783,7 +783,7 @@ function BunkerBreach:CreateDrop(loadout, aiMode, passengerCount, avoidPreviousC
 			if passenger:IsInGroup("Actors - Turrets") then
 				passenger.AIMode = Actor.AIMODE_SENTRY;
 			elseif IsACrab(passenger) and passenger.AIMode == Actor.AIMODE_GOLDDIG then
-				passenger.AIMode = Actor.Actor.AIMODE_PATROL;
+				passenger.AIMode = Actor.AIMODE_PATROL;
 			end
 			craft:AddInventoryItem(passenger);
 

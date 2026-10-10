@@ -240,7 +240,7 @@ function ThreadedUpdate(self)
 					local hitPos = Vector(0, 0);
 					local ray = SceneMan:CastObstacleRay(self.Pos, Vector(0, 50), hitPos, Vector(0, 0), self.ID, self.Team, 0, 3);	
 					if ray ~= -1 then
-						terrainID = SceneMan:GetTerrMatter(hitPos.X, hitPos.Y)
+						local terrainID = SceneMan:GetTerrMatter(hitPos.X, hitPos.Y)
 						
 						if terrainID ~= -1 then
 							if terrainIDs[terrainID] then

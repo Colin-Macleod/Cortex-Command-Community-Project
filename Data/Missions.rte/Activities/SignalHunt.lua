@@ -647,7 +647,7 @@ function SignalHunt:UpdateActivity()
 	self:DoGameOverCheck();
 	
 	if self.speedrunData and not ActivitySpeedrunHelper.SpeedrunActive(self.speedrunData) then
-		brainbot_spawned = false
+		local brainbot_spawned = false
 		for player = Activity.PLAYER_1, Activity.MAXPLAYERCOUNT - 1 do
 			if self:PlayerActive(player) and self:PlayerHuman(player) and IsAHuman(self:GetPlayerBrain(player)) then
 				brainbot_spawned = true

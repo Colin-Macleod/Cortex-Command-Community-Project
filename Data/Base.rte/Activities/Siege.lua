@@ -498,6 +498,7 @@ function Siege:CreateHeavyDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			if math.random() < self:GetCrabToHumanSpawnRatio(PresetMan:GetModuleID(techName)) then
 				Passenger = self:CreateCrab(Actor.AIMODE_GOTO, techName);
 			elseif RangeRand(0, 105) < self.Difficulty then
@@ -541,6 +542,7 @@ function Siege:CreateSWATDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			Passenger = self:CreateSWATInfantry(Actor.AIMODE_GOTO,techName);
 
 			if Passenger then
@@ -579,6 +581,7 @@ function Siege:CreateArtilleryDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			Passenger = self:CreateArtilleryInfantry(Actor.AIMODE_BRAINHUNT, techName);
 			if Passenger then
 				Passenger.AIMode = Actor.AIMODE_BRAINHUNT;
@@ -626,6 +629,7 @@ function Siege:CreateMediumDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			if RangeRand(-5, 125) < self.Difficulty then
 				Passenger = self:CreateMediumInfantry(Actor.AIMODE_GOTO,techName);
 			elseif math.random() < 0.65 then
@@ -680,6 +684,7 @@ function Siege:CreateLightDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			if RangeRand(10, 200) < self.Difficulty then
 				Passenger = self:CreateMediumInfantry(Actor.AIMODE_GOTO,techName);
 			else
@@ -732,6 +737,7 @@ function Siege:CreateEngineerDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			Passenger = self:CreateEngineer(Actor.AIMODE_GOTO,techName);
 
 			if Passenger then
@@ -781,6 +787,7 @@ function Siege:CreateScoutDrop(xPosLZ, techName)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			if math.random() < 0.3 then
 				Passenger = self:CreateLightInfantry(Actor.AIMODE_GOTO,techName);
 			else

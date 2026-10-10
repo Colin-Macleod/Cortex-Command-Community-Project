@@ -17,7 +17,7 @@ function Update(self)
 	self.target = self.targetUniqueID and MovableMan:FindObjectByUniqueID(self.targetUniqueID) or nil;
 	if self.target and self.target.ID ~= rte.NoMOID then
 		self:NotResting();
-		targetPos = IsHDFirearm(self.target) and ToHDFirearm(self.target).MuzzlePos or self.target.Pos;
+		local targetPos = IsHDFirearm(self.target) and ToHDFirearm(self.target).MuzzlePos or self.target.Pos;
 		local dist = SceneMan:ShortestDistance(self.Pos, targetPos, SceneMan.SceneWrapsX);
 		if dist:MagnitudeIsGreaterThan(self.speed) then
 			self.Vel = Vector(dist.X, dist.Y):SetMagnitude(self.speed) - (SceneMan.GlobalAcc * TimerMan.DeltaTimeSecs) * self.GlobalAccScalar;

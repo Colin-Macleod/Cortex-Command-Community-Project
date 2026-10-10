@@ -501,7 +501,7 @@ function LandingZoneMap.SearchForLZ(self, team, Destination, digStrength)
 	end
 
 	for k, LZ in pairs(GoodLZs) do
-		pathRequest = completedPathRequests[k];
+		local pathRequest = completedPathRequests[k];
 		if pathRequest.PathLength > -1 then
 			local NextWpt, PrevWpt, deltaY;
 			local height = 0;

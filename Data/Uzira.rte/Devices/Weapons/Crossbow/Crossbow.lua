@@ -11,7 +11,7 @@ function Update(self)
 		if IsAHuman(parent) then
 			parent = ToAHuman(parent);
 			if parent.FGArm and parent.BGArm then
-				pullArm = self:GetParent().ID == parent.BGArm.ID and parent.FGArm or parent.BGArm;
+				local pullArm = self:GetParent().ID == parent.BGArm.ID and parent.FGArm or parent.BGArm;
 				pullArm:ClearHandTargets();
 				pullArm.HandPos = self.Pos + Vector(6 * self.FlipFactor * math.sin(inverseProgress * math.pi), -2):RadRotate(self.RotAngle);
 			end

@@ -593,6 +593,7 @@ function BrainvsBrain:CreateHeavyDrop(xPosLZ)
 		Craft.Pos = Vector(xPosLZ, -30);	-- Set the spawn point of the craft
 
 		for i = 1, Craft.MaxPassengers do
+			local Passenger;
 			if math.random() < self:GetCrabToHumanSpawnRatio(PresetMan:GetModuleID(self.TechName[self.CPUTeam])) then
 				Passenger = self:CreateCrab(self.CPUTeam);
 			elseif RangeRand(0, 105) < self.Difficulty then
@@ -653,6 +654,7 @@ function BrainvsBrain:CreateMediumDrop(xPosLZ)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for _ = 1, Craft.MaxPassengers do
+			local Passenger;
 			if RangeRand(-5, 125) < self.Difficulty then
 				Passenger = self:CreateMediumInfantry(self.CPUTeam);
 			elseif math.random() < 0.65 then
@@ -713,6 +715,7 @@ function BrainvsBrain:CreateLightDrop(xPosLZ)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for _ = 1, Craft.MaxPassengers do
+			local Passenger;
 			if RangeRand(10, 200) < self.Difficulty then
 				Passenger = self:CreateMediumInfantry(self.CPUTeam);
 			else
@@ -771,6 +774,7 @@ function BrainvsBrain:CreateScoutDrop(xPosLZ)
 		Craft.Pos = Vector(xPosLZ, -30); -- Set the spawn point of the craft
 
 		for _ = 1, Craft.MaxPassengers do
+			local Passenger;
 			if math.random() < 0.3 then
 				Passenger = self:CreateLightInfantry(self.CPUTeam);
 			else
