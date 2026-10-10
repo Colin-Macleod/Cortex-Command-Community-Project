@@ -1427,7 +1427,7 @@ function HumanBehaviors.ThrowTarget(AI, Owner, Abort)
 									end
 								elseif MO.ClassName == "ACrab" then
 									AI.Target = ToACrab(MO);
-									local Legs = AI.Target.LeftFGLeg or AI.Target.RightFGLeg or AI.Target.LeftBGLeg or AI.Target.RightFGLeg; -- the legs
+									local Legs = AI.Target.LeftFGLeg or AI.Target.RightFGLeg or AI.Target.LeftBGLeg or AI.Target.RightBGLeg; -- the legs
 									if Legs then
 										AimPoint = Legs.Pos;
 									end
