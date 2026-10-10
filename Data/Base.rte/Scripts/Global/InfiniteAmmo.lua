@@ -12,12 +12,11 @@ function InfiniteAmmo:UpdateScript()
 					local grenade = ToTDExplosive(item);
 					if actor:GetController():IsState(Controller.WEAPON_FIRE) then
 						local count = 0;
-						for i = 1, actor.InventorySize do
-							local potentialWep = actor:Inventory();
+						-- Just look through the inventory. Cycling it with SwapNextInventory handed scripts ownership of an item that stayed in the inventory, which Lua would then delete.
+						for potentialWep in actor.Inventory do
 							if potentialWep.PresetName == grenade.PresetName then
 								count = count + 1;
 							end
-							actor:SwapNextInventory(potentialWep, true);
 						end
 						if count == 0 then
 							actor:AddInventoryItem(CreateTDExplosive(grenade:GetModuleAndPresetName()));
