@@ -355,7 +355,9 @@ float AtomGroup::Travel(Vector& position, Vector& velocity, Matrix& rotation, fl
 	HitData hitData;
 
 	// Thread locals for performance (avoid memory allocs)
-	thread_local std::unordered_map<MOID, std::vector<Atom*>> hitMOAtoms;
+	// The hit MOs are visited in order, and the order decides in which order impulses are summed and OnMOHit runs. An unordered_map's order would depend on its
+	// bucket count, which clear() keeps, so on the most MOs this thread ever saw hit in one step (e.g. in an earlier match or in single player), not just on this hit.
+	thread_local std::map<MOID, std::vector<Atom*>> hitMOAtoms;
 	hitMOAtoms.clear();
 	thread_local std::vector<Atom*> hitTerrAtoms;
 	hitTerrAtoms.clear();
@@ -800,7 +802,8 @@ Vector AtomGroup::PushTravel(Vector& position, const Vector& velocity, float pus
 	// Thread locals for performance reasons (avoid memory allocs)
 	thread_local std::unordered_map<MOID, std::unordered_set<Atom*>> MOIgnoreMap;
 	MOIgnoreMap.clear();
-	thread_local std::unordered_map<MOID, std::vector<std::pair<Atom*, Vector>>> hitMOAtoms;
+	// Ordered, not unordered, for the same reason as in AtomGroup::Travel.
+	thread_local std::map<MOID, std::vector<std::pair<Atom*, Vector>>> hitMOAtoms;
 	hitMOAtoms.clear();
 	thread_local std::deque<std::pair<Atom*, Vector>> hitTerrAtoms;
 	hitTerrAtoms.clear();
