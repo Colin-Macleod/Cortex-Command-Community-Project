@@ -1254,7 +1254,10 @@ void UInputMan::HandleSpecialInput() {
 		// Esc also closes the buy menu (through the synced input, a few sim updates later), so only arm leaving when this machine's player has none open.
 		const GameActivity* gameActivity = dynamic_cast<const GameActivity*>(g_ActivityMan.GetActivity());
 		const bool localMenuOpen = gameActivity && m_LocalVirtualPlayer >= Players::PlayerOne && m_LocalVirtualPlayer < Players::MaxPlayerCount && gameActivity->IsBuyGUIVisible(m_LocalVirtualPlayer);
-		if (g_ActivityMan.IsInActivity() && KeyPressed(SDLK_ESCAPE) && !localMenuOpen) {
+		// Esc also closes the console (ConsoleMan updates after this), which shouldn't count towards leaving either. And a press already counted while the sim was stalled
+		// mustn't count again here, which would leave the match on a single press held through the end of the stall.
+		const bool escapeAlreadyCounted = g_LockstepMan.TakeStalledEscapePress();
+		if (g_ActivityMan.IsInActivity() && KeyPressed(SDLK_ESCAPE) && !localMenuOpen && !g_ConsoleMan.IsEnabled() && !escapeAlreadyCounted) {
 			g_LockstepMan.RequestLeave();
 		}
 		if (m_SkipHandlingSpecialInput) {

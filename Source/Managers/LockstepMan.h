@@ -157,6 +157,11 @@ namespace RTE {
 
 		/// Leaves the current match after the player confirms by pressing Esc twice. Hosts end the match for everyone.
 		void RequestLeave();
+
+		/// Whether an Esc press was already counted towards leaving while the sim was stalled, clearing it. The key's pressed state isn't cleared until the
+		/// next sim update, so without this the same press would count again there.
+		/// @return Whether the Esc press seen in this sim update was already counted.
+		bool TakeStalledEscapePress() { return std::exchange(m_StalledEscapePressCounted, false); }
 #pragma endregion
 
 #pragma region Per-Frame and Per-Update Hooks
@@ -296,6 +301,7 @@ namespace RTE {
 		std::array<bool, Players::MaxPlayerCount> m_PlayerLagging{}; //!< Host: whether each player's input timed out and hasn't caught up since. Their missing input is repeated without waiting.
 		std::array<std::chrono::steady_clock::time_point, Players::MaxPlayerCount> m_PlayerLaggingSince{}; //!< Host: when each lagging player started lagging.
 		bool m_StalledEscapeHeld = false; //!< Whether Esc was held on the previous frame while the sim was stalled.
+		bool m_StalledEscapePressCounted = false; //!< Whether an Esc press was counted towards leaving while the sim was stalled, and the next sim update hasn't seen it yet.
 		long long m_NextBundleUpdate = 0; //!< Host: the next sim update to build a bundle for.
 
 		// Desync detection

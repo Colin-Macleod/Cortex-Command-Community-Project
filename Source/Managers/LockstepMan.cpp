@@ -2050,6 +2050,7 @@ void LockstepMan::Update() {
 		const bool* keyStates = SDL_GetKeyboardState(nullptr);
 		const bool escapeHeld = keyStates && keyStates[SDL_SCANCODE_ESCAPE];
 		if (escapeHeld && !m_StalledEscapeHeld) {
+			m_StalledEscapePressCounted = true;
 			RequestLeave();
 		}
 		m_StalledEscapeHeld = escapeHeld;
