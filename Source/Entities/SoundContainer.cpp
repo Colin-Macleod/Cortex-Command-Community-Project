@@ -4,6 +4,9 @@
 #include "SoundSet.h"
 #include "SettingsMan.h"
 
+#include <chrono>
+#include <thread>
+
 using namespace RTE;
 
 ConcreteClassInfo(SoundContainer, Entity, 50);
@@ -250,7 +253,17 @@ float SoundContainer::GetLength(LengthOfSoundType type) const {
 		if (!selectedSoundData->SoundObject) {
 			continue;
 		}
-		selectedSoundData->SoundObject->getLength(&length, FMOD_TIMEUNIT_MS);
+		if (selectedSoundData->SoundObject->getLength(&length, FMOD_TIMEUNIT_MS) == FMOD_ERR_NOTREADY && g_TimerMan.IsInDeterministicMode()) {
+			// Sounds are loaded in the background (FMOD_NONBLOCKING), which can still be going on for a while after start-up, and until a sound is loaded its length
+			// can't be read. In deterministic mode the length decides how long the sound counts as playing (see StartDeterministicPlayback), which gameplay depends on,
+			// so wait for it rather than have it depend on how far this computer has got with loading.
+			FMOD_OPENSTATE openState = FMOD_OPENSTATE_LOADING;
+			while (selectedSoundData->SoundObject->getOpenState(&openState, nullptr, nullptr, nullptr) == FMOD_OK && openState != FMOD_OPENSTATE_READY && openState != FMOD_OPENSTATE_ERROR) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
+			length = 0;
+			selectedSoundData->SoundObject->getLength(&length, FMOD_TIMEUNIT_MS);
+		}
 		lengthMilliseconds = std::max(lengthMilliseconds, static_cast<float>(length));
 	}
 
