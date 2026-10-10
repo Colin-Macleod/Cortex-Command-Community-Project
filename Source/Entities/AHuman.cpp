@@ -2948,7 +2948,7 @@ float AHuman::GetLimbPathTravelSpeed(MovementState movementState) {
 
 void AHuman::SetLimbPathTravelSpeed(MovementState movementState, float newSpeed) {
 	m_Paths[FGROUND][movementState].SetTravelSpeed(newSpeed);
-	m_Paths[FGROUND][movementState].SetTravelSpeed(newSpeed);
+	m_Paths[BGROUND][movementState].SetTravelSpeed(newSpeed);
 }
 
 float AHuman::GetLimbPathPushForce(MovementState movementState) {
