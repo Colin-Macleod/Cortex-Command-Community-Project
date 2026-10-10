@@ -39,7 +39,7 @@ function Update(self)
 						end
 						local gravity = SceneMan.GlobalAcc * TimerMan.DeltaTimeSecs;
 						if climb or (controller:IsState(Controller.MOVE_LEFT) or controller:IsState(Controller.MOVE_RIGHT)) then
-							local speed = actor:GetLimbPathSpeed(1)/velFactor;
+							local speed = actor:GetLimbPathTravelSpeed(Actor.WALK)/velFactor;
 							actor.Vel = actor.Vel * (1 - 1/velFactor) + Vector(speed, 0):RadRotate(actor:GetAimAngle(true)) - gravity * (0.4 + self.skipFrames/velFactor);
 						elseif actor.Vel:MagnitudeIsLessThan(5) then
 							--Counter gravity to keep actor still

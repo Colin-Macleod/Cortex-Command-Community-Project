@@ -332,7 +332,7 @@ function DoainarMission:UpdateActivity()
 								self:ResetMessageTimer(player);
 								FrameMan:ClearScreenText(screen);
 								FrameMan:SetScreenText("What the...?  It's some kind of ancient bunker?  There seems to be a control panel inside, go see what's on it...", screen, 0, 7500, true);
-								AudioMan:ClearMusicQueue();
+								MusicMan:EndDynamicMusic();
 								self.passedPitfall = true;
 
 								for actor in MovableMan.Actors do

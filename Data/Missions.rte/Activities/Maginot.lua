@@ -160,7 +160,6 @@ function MaginotMission:EndActivity()
 	if not self:IsPaused() then
 		-- Play sad music if no humans are left
 		if self:HumanBrainCount() == 0 then
-			AudioMan:ClearMusicQueue();
 			MusicMan:PlayDynamicSong("Generic Defeat Music", "Default", true);
 			MusicMan:PlayDynamicSong("Generic Ambient Music");
 		else

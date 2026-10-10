@@ -21,7 +21,7 @@ function Update(self)
 				if actor.Status == Actor.STABLE and actor.FlipFactor ~= self.FlipFactor and not controller:IsState(Controller.BODY_JUMP) then
 					actor.Vel = actor.Vel * (1 - 1/velFactor);
 					if controller:IsState(Controller.MOVE_LEFT) or controller:IsState(Controller.MOVE_RIGHT) then
-						local speed = actor:GetLimbPathSpeed(1)/velFactor;
+						local speed = actor:GetLimbPathTravelSpeed(Actor.WALK)/velFactor;
 						actor.Vel = actor.Vel + Vector(speed * 0.5, 0):RadRotate(actor:GetAimAngle(true)) - Vector(0, speed);
 					elseif controller:IsState(Controller.BODY_PRONE) then
 						actor.Vel = actor.Vel * 0.5;
