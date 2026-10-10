@@ -313,7 +313,7 @@ function OneManArmyZeroG:UpdateActivity()
 					FrameMan:ClearScreenText(screen);
 					FrameMan:SetScreenText("You survived!", screen, 333, -1, false);
 
-					self.WinnerTeam = player;
+					self.WinnerTeam = team;
 
 					--Kill all enemies
 					for actor in MovableMan.Actors do

@@ -123,7 +123,7 @@ function KeepieUppie:ResumeLoadedGame()
 				if actor.ClassName == "ACRocket" and actor.Team == Activity.TEAM_1 then
 					self:SetPlayerBrain(actor, player);
 					self:SetObservationTarget(actor.Pos, player);
-					self:SwitchToActor(actor, player, player);
+					self:SwitchToActor(actor, player, self:GetTeamOfPlayer(player));
 
 					self.playerRocketSpawned = true;
 				end
@@ -195,7 +195,7 @@ function KeepieUppie:UpdateActivity()
 						FrameMan:ClearScreenText(screen);
 						FrameMan:SetScreenText("You survived!", screen, 333, -1, false);
 
-						self.WinnerTeam = player;
+						self.WinnerTeam = team;
 
 						--Kill all enemies.
 						for actor in MovableMan.Actors do
