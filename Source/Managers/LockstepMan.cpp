@@ -926,8 +926,9 @@ void LockstepMan::HandleHostMessage(Peer& peer, MessageType type, const uint8_t*
 		}
 		case MsgPong: {
 			int64_t sentNanoseconds = 0;
-			if (reader.Read(sentNanoseconds)) {
-				const int64_t nowNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+			const int64_t nowNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+			// The client echoes the time of our own ping, so anything outside 0..now is garbage (and the subtraction below could overflow, which is undefined behaviour).
+			if (reader.Read(sentNanoseconds) && sentNanoseconds >= 0 && sentNanoseconds <= nowNanoseconds) {
 				const float roundTripMS = static_cast<float>(nowNanoseconds - sentNanoseconds) / 1.0e6F;
 				peer.RoundTripMS = peer.RoundTripSamples == 0 ? roundTripMS : peer.RoundTripMS * 0.8F + roundTripMS * 0.2F;
 				++peer.RoundTripSamples;
@@ -1748,7 +1749,9 @@ GameActivity* LockstepMan::PrepareMatch(GameActivity* activity) {
 				}
 			}
 			const float simUpdateMS = g_TimerMan.GetDeltaTimeMS();
-			m_InputDelay = std::clamp(static_cast<int>(std::ceil((slowestRoundTripMS * 1.25F + simUpdateMS) / simUpdateMS)), c_MinAutoInputDelay, c_MaxAutoInputDelay);
+			// Clamped before converting to int: a float outside int's range (e.g. from a bogus round trip measurement) converts with undefined behaviour.
+			const float inputDelay = std::ceil((slowestRoundTripMS * 1.25F + simUpdateMS) / simUpdateMS);
+			m_InputDelay = static_cast<int>(std::clamp(std::isfinite(inputDelay) ? inputDelay : 0.0F, static_cast<float>(c_MinAutoInputDelay), static_cast<float>(c_MaxAutoInputDelay)));
 			g_ConsoleMan.PrintString("CO-OP: Slowest round trip " + std::to_string(static_cast<int>(slowestRoundTripMS)) + " ms, using an input delay of " + std::to_string(m_InputDelay) + " sim updates.");
 		}
 
