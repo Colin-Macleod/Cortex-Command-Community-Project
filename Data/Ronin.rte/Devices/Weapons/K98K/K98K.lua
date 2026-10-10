@@ -166,7 +166,7 @@ function ThreadedUpdate(self)
 		
 		if self.reloadCycle ~= true then
 			--self.chamberDelay = 300;
-			if not self.Frame == 1 then
+			if self.Frame ~= 1 then
 				self.openAnim = true;
 			end
 			self.InheritedRotAngleTarget = 0.1; -- not respected by the game currently

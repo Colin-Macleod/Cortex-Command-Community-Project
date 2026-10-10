@@ -553,7 +553,7 @@ function TacticsHandler:AddTask(name, team, taskPos, taskType, priority, retaskT
 		if task.Position.PresetName then -- ghetto check if this is an MO, IsMOSRotating wigs out
 			task.PositionMOUniqueID = taskPos.UniqueID;
 			task.Position = Vector(taskPos.Pos.X, taskPos.Pos.Y);
-		elseif task.Position.Name and not taskType == "PatrolArea" then -- ghetto isarea check	
+		elseif task.Position.Name and taskType ~= "PatrolArea" then -- ghetto isarea check	
 			-- non-patrol task types have no applicable behavior for areas, so just pick a point and stick with it.
 			task.Position = task.Position.RandomPoint;
 		end

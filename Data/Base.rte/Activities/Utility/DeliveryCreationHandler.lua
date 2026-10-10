@@ -336,7 +336,7 @@ function DeliveryCreationHandler:AddVirtualTeam(team, techName)
 		if moduleID ~= -1 then
 			self.teamTechTable[team] = PresetMan:GetDataModule(moduleID);
 		else
-			if not techName == "All" then
+			if techName ~= "All" then
 				print("WARNING: DeliveryCreationHandler could not find module " .. techName .. " when adding a virtual team. Defaulting to All.");
 			end
 			self.teamTechTable[team] = {["FileName"] = "All"}; -- master of ghetto
